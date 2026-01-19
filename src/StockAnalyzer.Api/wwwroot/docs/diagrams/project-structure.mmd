@@ -1,0 +1,15 @@
+%% AUTO-GENERATED - Do not edit manually
+%% Regenerated during build by MSBuild target
+graph TD
+    subgraph Solution["StockAnalyzer Solution"]
+        API["StockAnalyzer.Api<br/><i>ASP.NET Core Web API</i>"]
+        Core["StockAnalyzer.Core<br/><i>Business Logic & Models</i>"]
+        Tests["StockAnalyzer.Core.Tests<br/><i>xUnit Test Project</i>"]
+    end
+
+    API --> Core
+    Tests --> Core
+
+    style API fill:#3B82F6,color:#fff
+    style Core fill:#10B981,color:#fff
+    style Tests fill:#8B5CF6,color:#fff

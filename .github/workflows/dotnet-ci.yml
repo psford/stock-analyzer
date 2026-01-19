@@ -1,0 +1,134 @@
+name: .NET CI
+
+on:
+  push:
+    branches: [ master, main, develop ]
+    paths:
+      - 'projects/stock-analyzer/**'
+      - 'projects/stock-analyzer/.github/workflows/dotnet-ci.yml'
+  pull_request:
+    branches: [ master, main, develop ]
+    paths:
+      - 'projects/stock-analyzer/**'
+      - 'projects/stock-analyzer/.github/workflows/dotnet-ci.yml'
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  NODE_VERSION: '20.x'
+  SOLUTION_PATH: 'projects/stock-analyzer/StockAnalyzer.sln'
+  FRONTEND_PATH: 'projects/stock-analyzer/src/StockAnalyzer.Api/wwwroot'
+
+jobs:
+  # JavaScript unit tests for frontend portfolio calculations
+  frontend-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    - name: Install dependencies
+      run: npm install
+      working-directory: ${{ env.FRONTEND_PATH }}
+
+    - name: Run JavaScript tests
+      run: npm test -- --ci --coverage
+      working-directory: ${{ env.FRONTEND_PATH }}
+
+    - name: Upload coverage report
+      uses: actions/upload-artifact@v6
+      if: always()
+      with:
+        name: js-coverage
+        path: ${{ env.FRONTEND_PATH }}/coverage
+        retention-days: 30
+
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restore dependencies
+      run: dotnet restore ${{ env.SOLUTION_PATH }}
+
+    - name: Build
+      run: dotnet build ${{ env.SOLUTION_PATH }} --configuration Release --no-restore
+
+    - name: Run tests
+      run: dotnet test ${{ env.SOLUTION_PATH }} --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx"
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v6
+      if: always()  # Upload even if tests fail
+      with:
+        name: test-results
+        path: '**/TestResults/*.trx'
+        retention-days: 30
+
+  # Security: Dependency vulnerability scanning
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restore dependencies
+      run: dotnet restore ${{ env.SOLUTION_PATH }}
+
+    - name: OWASP Dependency Check
+      uses: dependency-check/Dependency-Check_Action@main
+      id: depcheck
+      with:
+        project: 'StockAnalyzer'
+        path: 'stock_analyzer_dotnet'
+        format: 'HTML'
+        args: >
+          --failOnCVSS 7
+          --enableRetired
+
+    - name: Upload Dependency Check Report
+      uses: actions/upload-artifact@v6
+      if: always()
+      with:
+        name: dependency-check-report
+        path: ${{ github.workspace }}/reports
+        retention-days: 30
+
+  # Optional: Build for Windows to ensure cross-platform compatibility
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restore dependencies
+      run: dotnet restore ${{ env.SOLUTION_PATH }}
+
+    - name: Build
+      run: dotnet build ${{ env.SOLUTION_PATH }} --configuration Release --no-restore

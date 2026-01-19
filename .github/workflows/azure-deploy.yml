@@ -1,0 +1,185 @@
+name: Deploy to Azure Production
+
+# PRODUCTION DEPLOYMENT - Manual trigger only
+# This workflow builds, tests, and deploys to production.
+# It requires manual approval via workflow_dispatch.
+
+on:
+  # Remove automatic push trigger - production deploys are manual only
+  # push:
+  #   branches: [master, main]
+
+  # Manual trigger with confirmation
+  workflow_dispatch:
+    inputs:
+      confirm_deploy:
+        description: 'Type "deploy" to confirm production deployment'
+        required: true
+        type: string
+      reason:
+        description: 'Reason for deployment (shown in logs)'
+        required: true
+        type: string
+
+env:
+  AZURE_WEBAPP_NAME: app-stockanalyzer-prod
+  DOTNET_VERSION: '8.0.x'
+  ACR_NAME: acrstockanalyzerer34ug
+  ACR_LOGIN_SERVER: acrstockanalyzerer34ug.azurecr.io
+
+jobs:
+  # Validate deployment confirmation and test credentials BEFORE building
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate confirmation
+        if: ${{ github.event.inputs.confirm_deploy != 'deploy' }}
+        run: |
+          echo "::error::Deployment not confirmed. You must type 'deploy' to proceed."
+          exit 1
+
+      - name: Log deployment reason
+        run: |
+          echo "## Production Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Reason:** ${{ github.event.inputs.reason }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+
+      # Test Azure credentials BEFORE doing expensive build/push
+      - name: Test Azure credentials
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Verify Azure access
+        run: |
+          echo "Testing Azure resource group access..."
+          az group show --name rg-stockanalyzer-prod --query "name" -o tsv
+          echo "✅ Azure credentials valid and resource group accessible"
+
+      - name: Test ACR credentials
+        run: |
+          echo "Testing ACR access..."
+          az acr login --name ${{ env.ACR_NAME }} --expose-token --output none
+          echo "✅ ACR credentials valid"
+
+      - name: Azure Logout
+        if: always()
+        run: az logout
+
+  build-and-test:
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore projects/stock-analyzer/StockAnalyzer.sln
+
+      - name: Build
+        run: dotnet build projects/stock-analyzer/StockAnalyzer.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test projects/stock-analyzer/StockAnalyzer.sln --configuration Release --no-build --verbosity normal
+
+  build-container:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: prod-${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Log in to ACR
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Build and push to ACR
+        run: |
+          cd projects/stock-analyzer
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/stockanalyzer:latest .
+          docker tag ${{ env.ACR_LOGIN_SERVER }}/stockanalyzer:latest ${{ env.ACR_LOGIN_SERVER }}/stockanalyzer:prod-${{ github.run_number }}
+          docker push ${{ env.ACR_LOGIN_SERVER }}/stockanalyzer:latest
+          docker push ${{ env.ACR_LOGIN_SERVER }}/stockanalyzer:prod-${{ github.run_number }}
+
+      - name: Record image info for rollback
+        run: |
+          echo "## Container Image" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** prod-${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Registry:** ${{ env.ACR_LOGIN_SERVER }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          PREV_RUN=$(( ${{ github.run_number }} - 1 ))
+          echo "To rollback, redeploy with tag: \`prod-${PREV_RUN}\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Azure Logout
+        if: always()
+        run: az logout
+
+  deploy:
+    needs: build-container
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://psfordtaurus.com
+    steps:
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to App Service
+        run: |
+          echo "Deploying image: ${{ env.ACR_LOGIN_SERVER }}/stockanalyzer:prod-${{ github.run_number }}"
+
+          # Update the container image
+          az webapp config container set \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group rg-stockanalyzer-prod \
+            --docker-custom-image-name ${{ env.ACR_LOGIN_SERVER }}/stockanalyzer:prod-${{ github.run_number }} \
+            --docker-registry-server-url https://${{ env.ACR_LOGIN_SERVER }} \
+            --docker-registry-server-user ${{ env.ACR_NAME }} \
+            --docker-registry-server-password ${{ secrets.ACR_PASSWORD }}
+
+          # Restart to pick up new image
+          az webapp restart \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group rg-stockanalyzer-prod
+
+          echo "✅ Container image updated"
+
+      - name: Wait for deployment
+        run: |
+          echo "Waiting for App Service to start new container..."
+          sleep 60
+
+      - name: Health check with retry
+        run: |
+          for i in 1 2 3 4 5; do
+            echo "Health check attempt $i..."
+            response=$(curl -s -o /dev/null -w "%{http_code}" https://psfordtaurus.com/health/live --max-time 30 || echo "000")
+            if [ "$response" = "200" ]; then
+              echo "✅ Health check passed!"
+              echo "## Deployment Successful" >> $GITHUB_STEP_SUMMARY
+              echo "Production is live at https://psfordtaurus.com" >> $GITHUB_STEP_SUMMARY
+              echo "**Image:** prod-${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+              exit 0
+            fi
+            echo "Health check returned $response, waiting 30s..."
+            sleep 30
+          done
+          echo "::error::Health check failed after 5 attempts"
+          exit 1
+
+      - name: Azure Logout
+        if: always()
+        run: az logout

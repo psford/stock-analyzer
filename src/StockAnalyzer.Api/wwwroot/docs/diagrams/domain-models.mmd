@@ -1,0 +1,90 @@
+%% MANUAL - Update when models change
+classDiagram
+    class StockInfo {
+        +string Symbol
+        +string ShortName
+        +string LongName
+        +decimal Price
+        +decimal Change
+        +decimal ChangePercent
+        +decimal? MarketCap
+        +decimal? Volume
+        +string? Exchange
+        +string? Industry
+        +string? Isin
+        +string? Cusip
+        +string? Sedol
+    }
+
+    class OhlcvData {
+        +DateTime Date
+        +decimal Open
+        +decimal High
+        +decimal Low
+        +decimal Close
+        +long Volume
+    }
+
+    class HistoricalDataResult {
+        +string Symbol
+        +string Period
+        +List~OhlcvData~ Data
+    }
+
+    class NewsItem {
+        +string Headline
+        +string Summary
+        +string Url
+        +string? ImageUrl
+        +string Source
+        +DateTime PublishedAt
+        +decimal? RelevanceScore
+        +string? SourceApi
+        +decimal? SentimentScore
+        +string? Sentiment
+    }
+
+    class Watchlist {
+        +int Id
+        +string Name
+        +string UserId
+        +List~string~ Tickers
+        +List~TickerHolding~ Holdings
+    }
+
+    class TickerHolding {
+        +string Ticker
+        +decimal? Shares
+        +decimal? Dollars
+    }
+
+    class AggregatedNewsResult {
+        +string Symbol
+        +List~NewsItem~ Articles
+        +int TotalFetched
+        +Dictionary SourceBreakdown
+        +decimal AverageRelevanceScore
+    }
+
+    class SignificantMove {
+        +DateTime Date
+        +decimal ChangePercent
+        +decimal Close
+        +string Direction
+        +List~NewsItem~ RelatedNews
+    }
+
+    class RsiData {
+        +DateTime Date
+        +decimal Value
+    }
+
+    class MacdData {
+        +DateTime Date
+        +decimal Macd
+        +decimal Signal
+        +decimal Histogram
+    }
+
+    HistoricalDataResult o-- OhlcvData : contains
+    SignificantMove o-- NewsItem : has related
