@@ -1,7 +1,7 @@
 name: Branch Guard
 
-# Prevent merging master into develop (wrong direction)
-# Correct flow: develop → PR → master (never the reverse)
+# Prevent merging main into develop (wrong direction)
+# Correct flow: develop → PR → main (never the reverse)
 
 on:
   pull_request:
@@ -18,7 +18,7 @@ jobs:
 
         if [[ "${{ github.head_ref }}" == "master" || "${{ github.head_ref }}" == "main" ]]; then
           echo "::error::BLOCKED: Cannot merge master/main into develop. This is the wrong direction!"
-          echo "::error::The correct flow is: develop → PR → master"
+          echo "::error::The correct flow is: develop → PR → main"
           exit 1
         fi
 
