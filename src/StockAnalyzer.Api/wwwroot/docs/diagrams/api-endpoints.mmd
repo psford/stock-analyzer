@@ -1,0 +1,52 @@
+%% MANUAL - Update when API endpoints change
+graph LR
+    subgraph Stock["Stock Endpoints"]
+        S1["GET /api/stock/{ticker}"]
+        S2["GET /api/stock/{ticker}/history"]
+        S3["GET /api/stock/{ticker}/news"]
+        S4["GET /api/stock/{ticker}/news/aggregated"]
+        S5["GET /api/stock/{ticker}/significant"]
+        S6["GET /api/stock/{ticker}/analysis"]
+    end
+
+    subgraph News["News Endpoints"]
+        N1["GET /api/news/market"]
+        N2["GET /api/news/market/aggregated"]
+    end
+
+    subgraph Watchlist["Watchlist Endpoints"]
+        W1["GET /api/watchlist"]
+        W2["POST /api/watchlist"]
+        W3["GET /api/watchlist/{id}"]
+        W4["PUT /api/watchlist/{id}"]
+        W5["DELETE /api/watchlist/{id}"]
+        W6["POST /api/watchlist/{id}/tickers"]
+        W7["DELETE /api/watchlist/{id}/tickers/{ticker}"]
+        W8["GET /api/watchlist/{id}/quotes"]
+        W9["PUT /api/watchlist/{id}/holdings"]
+        W10["GET /api/watchlist/{id}/combined"]
+    end
+
+    subgraph Search["Search Endpoints"]
+        Q1["GET /api/search?q="]
+        Q2["GET /api/trending"]
+    end
+
+    subgraph Images["Image Endpoints"]
+        I1["GET /api/images/cat"]
+        I2["GET /api/images/dog"]
+        I3["GET /api/images/status"]
+    end
+
+    subgraph Health["Health Endpoints"]
+        H1["GET /health"]
+        H2["GET /health/live"]
+        H3["GET /health/ready"]
+    end
+
+    style Stock fill:#3B82F6,color:#fff
+    style News fill:#3B82F6,color:#fff
+    style Watchlist fill:#EC4899,color:#fff
+    style Search fill:#10B981,color:#fff
+    style Images fill:#8B5CF6,color:#fff
+    style Health fill:#6B7280,color:#fff

@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Analyzer</title>
+    <!-- Favicons -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <!-- Tailwind CSS - built locally from src/input.css -->
+    <link rel="stylesheet" href="css/styles.css">
+    <!-- Plotly.js for charts (with SRI) - pragma: allowlist secret -->
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"
+            integrity="sha384-Hl48Kq2HifOWdXEjMsKo6qxqvRLTYqIGbvlENBmkHAxZKIGCXv43H6W1jA671RzC"
+            crossorigin="anonymous"></script>
+</head>
+<body class="h-full bg-gray-50 dark:bg-gray-900 transition-colors">
+    <div class="min-h-full">
+        <!-- Header -->
+        <header class="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 transition-colors">
+            <div class="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <svg class="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+                        </svg>
+                        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Stock Analyzer</h1>
+                    </div>
+                    <div class="flex items-center space-x-2 sm:space-x-4">
+                        <span class="hidden sm:inline text-sm text-gray-500 dark:text-gray-400">Powered by .NET 8 + Plotly.js</span>
+                        <!-- Mobile watchlist toggle button -->
+                        <button id="mobile-watchlist-toggle" class="lg:hidden p-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors" title="Toggle watchlists">
+                            <svg class="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                            </svg>
+                        </button>
+                        <!-- Dark mode toggle -->
+                        <button id="dark-mode-toggle" class="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors" title="Toggle dark mode">
+                            <!-- Sun icon (shown in dark mode) -->
+                            <svg id="sun-icon" class="w-5 h-5 text-yellow-500 hidden" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"></path>
+                            </svg>
+                            <!-- Moon icon (shown in light mode) -->
+                            <svg id="moon-icon" class="w-5 h-5 text-gray-600" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content with Watchlist Sidebar -->
+        <div class="flex max-w-screen-2xl mx-auto">
+            <!-- Main Content Area -->
+            <main class="flex-1 px-4 py-6 sm:px-6 lg:px-8 min-w-0">
+            <!-- Search Section -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-6">
+                <div class="flex flex-col sm:flex-row gap-4">
+                    <div class="flex-1">
+                        <label for="ticker-input" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Search by Ticker or Company Name
+                        </label>
+                        <div class="relative">
+                            <input type="text" id="ticker-input"
+                                class="block w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                                placeholder="Search: AAPL, Apple, Microsoft..."
+                                autocomplete="off">
+                            <div id="search-loader" class="absolute right-3 top-2.5 hidden">
+                                <div class="loader"></div>
+                            </div>
+                            <!-- Autocomplete dropdown -->
+                            <div id="search-results" class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg hidden max-h-64 overflow-y-auto">
+                                <!-- Results populated by JS -->
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Compare To Search Box -->
+                    <div class="flex-1">
+                        <label for="compare-input" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Compare to (Optional)
+                        </label>
+                        <div class="relative">
+                            <input type="text" id="compare-input"
+                                class="block w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                                placeholder="Add comparison stock..."
+                                autocomplete="off">
+                            <div id="compare-loader" class="absolute right-3 top-2.5 hidden">
+                                <div class="loader"></div>
+                            </div>
+                            <!-- Comparison autocomplete dropdown -->
+                            <div id="compare-results" class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg hidden max-h-64 overflow-y-auto">
+                                <!-- Results populated by JS -->
+                            </div>
+                        </div>
+                    </div>
+                    <div class="sm:w-48">
+                        <label for="period-select" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Time Period
+                        </label>
+                        <select id="period-select"
+                            class="block w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-primary">
+                            <option value="ytd">YTD</option>
+                            <option value="1mo">1 Month</option>
+                            <option value="3mo">3 Months</option>
+                            <option value="6mo">6 Months</option>
+                            <option value="1y" selected>1 Year</option>
+                            <option value="2y">2 Years</option>
+                            <option value="5y">5 Years</option>
+                            <option value="10y">10 Years</option>
+                        </select>
+                    </div>
+                    <div class="sm:w-48">
+                        <label for="chart-type" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Chart Type
+                        </label>
+                        <select id="chart-type"
+                            class="block w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-primary">
+                            <option value="line">Line</option>
+                            <option value="candlestick">Candlestick</option>
+                        </select>
+                    </div>
+                    <div class="sm:self-end">
+                        <button id="search-btn"
+                            class="w-full sm:w-auto px-6 py-2 bg-primary text-white font-medium rounded-lg hover:bg-blue-600 focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors">
+                            Analyze
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Moving Averages Toggle -->
+                <div class="mt-4 flex flex-wrap gap-4">
+                    <label class="inline-flex items-center">
+                        <input type="checkbox" id="ma-20" class="rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary" checked>
+                        <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">SMA 20</span>
+                    </label>
+                    <label class="inline-flex items-center">
+                        <input type="checkbox" id="ma-50" class="rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary" checked>
+                        <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">SMA 50</span>
+                    </label>
+                    <label class="inline-flex items-center">
+                        <input type="checkbox" id="ma-200" class="rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary">
+                        <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">SMA 200</span>
+                    </label>
+                </div>
+
+                <!-- Technical Indicators Toggle -->
+                <div id="technical-indicators-section" class="mt-4 flex flex-wrap gap-4">
+                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Technical Indicators:</span>
+                    <label id="rsi-label" class="inline-flex items-center">
+                        <input type="checkbox" id="show-rsi" class="rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary">
+                        <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">RSI (14)</span>
+                    </label>
+                    <label id="macd-label" class="inline-flex items-center">
+                        <input type="checkbox" id="show-macd" class="rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary">
+                        <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">MACD</span>
+                    </label>
+                    <label id="bollinger-label" class="inline-flex items-center">
+                        <input type="checkbox" id="show-bollinger" class="rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary">
+                        <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">Bollinger</span>
+                    </label>
+                </div>
+
+                <!-- Quick Compare Benchmarks -->
+                <div class="mt-4 flex flex-wrap items-center gap-2">
+                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Quick Compare:</span>
+                    <button data-compare="SPY" class="px-3 py-1 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">
+                        S&amp;P 500 (SPY)
+                    </button>
+                    <button data-compare="QQQ" class="px-3 py-1 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">
+                        Nasdaq 100 (QQQ)
+                    </button>
+                    <button data-compare="^DJI" class="px-3 py-1 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">
+                        Dow Jones (^DJI)
+                    </button>
+                    <button id="clear-compare" class="px-3 py-1 text-sm bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded hover:bg-red-200 dark:hover:bg-red-800 transition-colors hidden">
+                        ✕ Clear Comparison
+                    </button>
+                </div>
+
+                <!-- Significant Move Threshold Slider -->
+                <div class="mt-4 flex items-center gap-4">
+                    <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Significant Move Threshold:</label>
+                    <input type="range" id="threshold-slider" min="3" max="10" value="5" step="1"
+                           class="w-32 h-2 bg-gray-200 dark:bg-gray-600 rounded-lg appearance-none cursor-pointer">
+                    <span id="threshold-value" class="text-sm font-medium text-gray-900 dark:text-white w-8">5%</span>
+                    <label class="inline-flex items-center ml-4">
+                        <input type="checkbox" id="show-markers" class="rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary" checked>
+                        <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">Show markers on chart</span>
+                    </label>
+                </div>
+
+                <!-- Cats vs Dogs Toggle -->
+                <div class="mt-4 flex items-center gap-4">
+                    <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Popup thumbnails:</label>
+                    <label class="inline-flex items-center">
+                        <input type="radio" name="animal-type" id="animal-cats" value="cats"
+                               class="text-primary focus:ring-primary" checked>
+                        <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">Cats</span>
+                    </label>
+                    <label class="inline-flex items-center">
+                        <input type="radio" name="animal-type" id="animal-dogs" value="dogs"
+                               class="text-primary focus:ring-primary">
+                        <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">Dogs</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Results Section (hidden until search) -->
+            <div id="results-section" class="hidden">
+                <!-- Stock Info Card -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                    <div class="lg:col-span-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+                        <div class="flex items-start justify-between">
+                            <div id="stock-info" class="flex-1">
+                                <!-- Populated by JS -->
+                            </div>
+                            <!-- Add to Watchlist Button -->
+                            <div id="add-to-watchlist-container" class="ml-4 flex-shrink-0 hidden">
+                                <div class="relative">
+                                    <button id="add-to-watchlist-btn" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors">
+                                        <svg class="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"></path>
+                                        </svg>
+                                        Add to Watchlist
+                                    </button>
+                                    <!-- Watchlist dropdown -->
+                                    <div id="watchlist-dropdown" class="hidden absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-20">
+                                        <div class="py-1" id="watchlist-dropdown-items">
+                                            <!-- Populated by JS -->
+                                        </div>
+                                        <div class="border-t border-gray-200 dark:border-gray-700 p-2">
+                                            <button id="create-watchlist-from-dropdown" class="w-full flex items-center gap-2 px-3 py-2 text-sm text-primary hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                                                </svg>
+                                                Create new watchlist
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Key Metrics</h3>
+                        <div id="key-metrics" class="space-y-3">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chart -->
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-6">
+                    <div id="stock-chart" style="height: 500px; width: 100%;"></div>
+                </div>
+
+                <!-- Performance & Significant Moves -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Performance</h3>
+                        <div id="performance-metrics" class="space-y-3">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Significant Moves (>3%)</h3>
+                        <div id="significant-moves" class="space-y-2 max-h-64 overflow-y-auto">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- News -->
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Recent News</h3>
+                    <div id="news-list" class="space-y-4">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Error Message -->
+            <div id="error-section" class="hidden">
+                <div class="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-6 text-center">
+                    <svg class="w-12 h-12 text-red-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <h3 class="text-lg font-medium text-red-800 dark:text-red-300 mb-2">Error Loading Stock Data</h3>
+                    <p id="error-message" class="text-red-600 dark:text-red-400"></p>
+                </div>
+            </div>
+
+            <!-- Loading State -->
+            <div id="loading-section" class="hidden">
+                <div class="flex items-center justify-center py-12">
+                    <div class="text-center">
+                        <div class="loader mx-auto mb-4" style="width: 48px; height: 48px;"></div>
+                        <p class="text-gray-600 dark:text-gray-400">Loading stock data...</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+            <!-- Mobile Sidebar Overlay -->
+            <div id="sidebar-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-40 hidden lg:hidden"></div>
+
+            <!-- Watchlist Sidebar -->
+            <aside id="watchlist-sidebar" class="fixed lg:relative inset-y-0 right-0 z-50 w-80 flex-shrink-0 px-4 py-6 bg-gray-50 dark:bg-gray-900 transform translate-x-full lg:translate-x-0 transition-transform duration-300 ease-in-out lg:block overflow-y-auto">
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 sticky top-6">
+                    <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+                        <div class="flex items-center justify-between mb-2">
+                            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">My Watchlists</h2>
+                            <button id="create-watchlist-btn" class="p-1.5 text-primary hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors" title="Create new watchlist">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                                </svg>
+                            </button>
+                        </div>
+                        <!-- Export/Import buttons -->
+                        <div class="flex items-center gap-2 text-xs">
+                            <button id="export-watchlists-btn" class="flex items-center gap-1 px-2 py-1 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors" title="Export watchlists to file">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                </svg>
+                                Export
+                            </button>
+                            <label class="flex items-center gap-1 px-2 py-1 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors cursor-pointer" title="Import watchlists from file">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+                                </svg>
+                                Import
+                                <input type="file" id="import-watchlists-input" accept=".json" class="hidden">
+                            </label>
+                            <span id="storage-info" class="ml-auto text-gray-400 dark:text-gray-500" title="localStorage usage"></span>
+                        </div>
+                    </div>
+
+                    <!-- Watchlist loading state -->
+                    <div id="watchlist-loading" class="hidden p-4 text-center">
+                        <div class="loader mx-auto"></div>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mt-2">Loading watchlists...</p>
+                    </div>
+
+                    <!-- Empty state -->
+                    <div id="watchlist-empty" class="hidden p-6 text-center">
+                        <svg class="w-12 h-12 text-gray-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"></path>
+                        </svg>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">No watchlists yet</p>
+                        <button id="create-first-watchlist" class="text-sm text-primary hover:text-blue-600 font-medium">
+                            Create your first watchlist
+                        </button>
+                    </div>
+
+                    <!-- Watchlist container -->
+                    <div id="watchlist-container" class="max-h-[60vh] overflow-y-auto">
+                        <!-- Watchlists populated by JS -->
+                    </div>
+                </div>
+            </aside>
+        </div>
+
+        <!-- Footer -->
+        <footer class="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 mt-auto">
+            <div class="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
+                <p class="text-sm text-gray-500 dark:text-gray-400 text-center">
+                    Stock Analyzer &copy; 2026 | Data from Yahoo Finance &amp; Finnhub | By Patrick Ford and Claude
+                    <span class="mx-2">|</span>
+                    <a href="/docs.html" target="_blank" class="text-primary hover:text-blue-600 dark:hover:text-blue-400 hover:underline">
+                        Documentation
+                    </a>
+                    <span class="mx-2">|</span>
+                    <a href="/status.html" target="_blank" class="text-primary hover:text-blue-600 dark:hover:text-blue-400 hover:underline">
+                        System Status
+                    </a>
+                    <span class="mx-2">|</span>
+                    <a href="https://github.com/psford/claudeProjects" target="_blank" class="text-primary hover:text-blue-600 dark:hover:text-blue-400 hover:underline">
+                        GitHub
+                    </a>
+                </p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Create/Rename Watchlist Modal -->
+    <div id="watchlist-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+        <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <!-- Background overlay -->
+            <div class="fixed inset-0 bg-gray-500 dark:bg-gray-900 bg-opacity-75 dark:bg-opacity-75 transition-opacity" id="watchlist-modal-overlay"></div>
+
+            <!-- Modal panel -->
+            <div class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <div class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 id="watchlist-modal-title" class="text-lg font-semibold text-gray-900 dark:text-white">Create Watchlist</h3>
+                        <button id="watchlist-modal-close" class="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="mt-2">
+                        <label for="watchlist-name-input" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Watchlist Name
+                        </label>
+                        <input type="text" id="watchlist-name-input"
+                            class="block w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                            placeholder="e.g., Tech Stocks, Dividend Portfolio...">
+                    </div>
+                </div>
+                <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse gap-2">
+                    <button id="watchlist-modal-save" class="w-full sm:w-auto px-4 py-2 bg-primary text-white font-medium rounded-lg hover:bg-blue-600 focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors">
+                        Save
+                    </button>
+                    <button id="watchlist-modal-cancel" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-white dark:bg-gray-600 text-gray-700 dark:text-gray-200 font-medium rounded-lg border border-gray-300 dark:border-gray-500 hover:bg-gray-50 dark:hover:bg-gray-500 transition-colors">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Holdings Editor Modal -->
+    <div id="holdings-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+        <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-500 dark:bg-gray-900 bg-opacity-75 dark:bg-opacity-75 transition-opacity" id="holdings-modal-overlay"></div>
+            <div class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <div class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 id="holdings-modal-title" class="text-lg font-semibold text-gray-900 dark:text-white">Edit Holdings</h3>
+                        <button id="holdings-modal-close" class="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- Weighting Mode Selection -->
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Weighting Mode</label>
+                        <div class="space-y-2">
+                            <label class="flex items-center">
+                                <input type="radio" name="weighting-mode" value="equal" class="h-4 w-4 text-primary focus:ring-primary border-gray-300" checked>
+                                <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">Equal Weight</span>
+                            </label>
+                            <label class="flex items-center">
+                                <input type="radio" name="weighting-mode" value="shares" class="h-4 w-4 text-primary focus:ring-primary border-gray-300">
+                                <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">Number of Shares</span>
+                            </label>
+                            <label class="flex items-center">
+                                <input type="radio" name="weighting-mode" value="dollars" class="h-4 w-4 text-primary focus:ring-primary border-gray-300">
+                                <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">Dollar Value</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Add Ticker Search -->
+                    <div class="mb-4 border-t border-gray-200 dark:border-gray-700 pt-4">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Add Ticker</label>
+                        <div class="relative">
+                            <input type="text" id="holdings-ticker-search"
+                                   class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                                   placeholder="Search for a ticker to add...">
+                            <div id="holdings-search-results" class="hidden absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                                <!-- Search results populated by JS -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Holdings List -->
+                    <div class="mb-2">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Current Holdings</label>
+                    </div>
+                    <div id="holdings-inputs" class="max-h-48 overflow-y-auto space-y-1">
+                        <!-- Holdings will be populated by JS -->
+                    </div>
+                </div>
+                <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse gap-2">
+                    <button id="holdings-modal-save" class="w-full sm:w-auto px-4 py-2 bg-primary text-white font-medium rounded-lg hover:bg-blue-600 focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors">
+                        Save Holdings
+                    </button>
+                    <button id="holdings-modal-cancel" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-white dark:bg-gray-600 text-gray-700 dark:text-gray-200 font-medium rounded-lg border border-gray-300 dark:border-gray-500 hover:bg-gray-50 dark:hover:bg-gray-500 transition-colors">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Combined Portfolio View Modal/Overlay -->
+    <div id="combined-view-modal" class="hidden fixed inset-0 z-40 overflow-y-auto bg-gray-100 dark:bg-gray-900">
+        <div class="max-w-6xl mx-auto px-4 py-6">
+            <!-- Header -->
+            <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center gap-4">
+                    <button id="combined-view-back" class="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                        </svg>
+                    </button>
+                    <div>
+                        <h1 id="combined-view-title" class="text-2xl font-bold text-gray-900 dark:text-white">Portfolio Name</h1>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">Combined View</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span id="combined-view-return" class="text-xl font-bold"></span>
+                    <button id="combined-edit-holdings" class="px-3 py-1.5 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">
+                        Edit Holdings
+                    </button>
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 mb-4">
+                <div class="flex flex-wrap items-center gap-4">
+                    <!-- Period Selection -->
+                    <div class="flex items-center gap-2">
+                        <span class="text-sm text-gray-600 dark:text-gray-400">Period:</span>
+                        <div class="flex gap-1" id="combined-period-buttons">
+                            <button data-period="1mo" class="px-3 py-1 text-sm rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">1M</button>
+                            <button data-period="3mo" class="px-3 py-1 text-sm rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">3M</button>
+                            <button data-period="6mo" class="px-3 py-1 text-sm rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">6M</button>
+                            <button data-period="1y" class="px-3 py-1 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-primary text-white">1Y</button>
+                            <button data-period="2y" class="px-3 py-1 text-sm rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">2Y</button>
+                        </div>
+                    </div>
+
+                    <!-- Benchmark Comparison -->
+                    <div class="flex items-center gap-2">
+                        <span class="text-sm text-gray-600 dark:text-gray-400">Compare:</span>
+                        <div class="flex gap-1" id="combined-benchmark-buttons">
+                            <button data-benchmark="SPY" class="px-3 py-1 text-sm rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">SPY</button>
+                            <button data-benchmark="QQQ" class="px-3 py-1 text-sm rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">QQQ</button>
+                            <button id="combined-clear-benchmark" class="hidden px-3 py-1 text-sm rounded-lg border border-red-300 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">Clear</button>
+                        </div>
+                    </div>
+
+                    <!-- Significant Moves Toggle and Animal Toggle -->
+                    <div class="flex items-center gap-4 ml-auto">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="combined-show-markers" class="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded" checked>
+                            <span class="text-sm text-gray-600 dark:text-gray-400">Show ±5% Moves</span>
+                        </label>
+
+                        <!-- Cat/Dog Toggle -->
+                        <div class="flex items-center gap-2 border-l border-gray-300 dark:border-gray-600 pl-4">
+                            <span class="text-sm text-gray-600 dark:text-gray-400">🐱</span>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="combined-animal-toggle" class="sr-only peer">
+                                <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-primary"></div>
+                            </label>
+                            <span class="text-sm text-gray-600 dark:text-gray-400">🐶</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Portfolio Chart -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 mb-4">
+                <div id="portfolio-chart" style="height: 400px;"></div>
+            </div>
+
+            <!-- Weights Display -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 mb-4">
+                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Portfolio Weights</h3>
+                <div id="combined-weights" class="flex flex-wrap gap-2">
+                    <!-- Weights populated by JS -->
+                </div>
+            </div>
+
+            <!-- Market News -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Market News</h3>
+                <div id="market-news-list" class="space-y-4">
+                    <!-- News populated by JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Wikipedia-style hover card for significant moves -->
+    <div id="wiki-hover-card" class="hidden fixed z-50 w-80 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-xl overflow-hidden"
+         style="font-family: system-ui, sans-serif;">
+        <img id="wiki-hover-image" class="w-full aspect-square object-cover object-center border-b hidden" alt="">
+        <div id="wiki-hover-placeholder" class="w-full h-16 bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-2xl">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path>
+            </svg>
+        </div>
+        <div class="p-4">
+            <div id="wiki-hover-date" class="text-xs text-gray-500 dark:text-gray-400 mb-1"></div>
+            <div id="wiki-hover-return" class="text-sm font-bold mb-2"></div>
+            <a id="wiki-hover-headline" class="text-sm font-semibold text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 block mb-2 cursor-pointer line-clamp-2"
+               target="_blank" rel="noopener noreferrer" style="pointer-events: auto;"></a>
+            <div id="wiki-hover-summary" class="text-xs text-gray-600 dark:text-gray-300 line-clamp-3"></div>
+            <div id="wiki-hover-source" class="text-xs text-gray-400 dark:text-gray-500 mt-2"></div>
+        </div>
+    </div>
+
+    <script src="js/storage.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/charts.js"></script>
+    <script src="js/watchlist.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

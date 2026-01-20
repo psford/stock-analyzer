@@ -1,0 +1,691 @@
+using Microsoft.EntityFrameworkCore;
+using Serilog;
+using Serilog.Events;
+using StockAnalyzer.Core.Data;
+using StockAnalyzer.Core.Models;
+using StockAnalyzer.Core.Services;
+
+// Configure Serilog before building the app
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+    .Enrich.FromLogContext()
+    .Enrich.WithProperty("Application", "StockAnalyzer")
+    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}")
+    .WriteTo.File(
+        path: "logs/stockanalyzer-.log",
+        rollingInterval: RollingInterval.Day,
+        retainedFileCountLimit: 7,
+        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}")
+    .CreateLogger();
+
+try
+{
+    Log.Information("Starting Stock Analyzer API");
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Use Serilog for logging
+builder.Host.UseSerilog();
+
+// Add services to the container
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+// Configure CORS for frontend - restrict to known origins
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend", policy =>
+    {
+        policy.WithOrigins(
+                "https://psfordtaurus.com",
+                "https://www.psfordtaurus.com",
+                "http://localhost:5000",
+                "https://localhost:5001")
+              .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+              .WithHeaders("Content-Type", "Authorization", "Accept");
+    });
+});
+
+// Register services
+builder.Services.AddSingleton<StockDataService>();
+builder.Services.AddSingleton(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var apiKey = config["Finnhub:ApiKey"] ?? Environment.GetEnvironmentVariable("FINNHUB_API_KEY") ?? "";
+    return new NewsService(apiKey);
+});
+builder.Services.AddSingleton(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var apiToken = config["Marketaux:ApiToken"] ?? Environment.GetEnvironmentVariable("MARKETAUX_API_TOKEN") ?? "";
+    return new MarketauxService(apiToken);
+});
+builder.Services.AddSingleton<HeadlineRelevanceService>();
+builder.Services.AddSingleton(sp =>
+{
+    var finnhubService = sp.GetRequiredService<NewsService>();
+    var marketauxService = sp.GetRequiredService<MarketauxService>();
+    var relevanceService = sp.GetRequiredService<HeadlineRelevanceService>();
+    return new AggregatedNewsService(finnhubService, marketauxService, relevanceService);
+});
+builder.Services.AddSingleton(sp =>
+{
+    var newsService = sp.GetRequiredService<NewsService>();
+    return new AnalysisService(newsService);
+});
+
+// Register watchlist services - use SQL if connection string present, otherwise JSON file
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+if (!string.IsNullOrEmpty(connectionString))
+{
+    // Azure SQL / SQL Server mode
+    builder.Services.AddDbContext<StockAnalyzerDbContext>(options =>
+        options.UseSqlServer(connectionString));
+    builder.Services.AddScoped<IWatchlistRepository, SqlWatchlistRepository>();
+    builder.Services.AddScoped<WatchlistService>();
+    Log.Information("Using SQL database for watchlist storage");
+}
+else
+{
+    // Local JSON file mode (development/fallback)
+    builder.Services.AddSingleton<IWatchlistRepository>(sp =>
+    {
+        var config = sp.GetRequiredService<IConfiguration>();
+        var storagePath = config["Watchlist:StoragePath"] ?? "data/watchlists.json";
+        var logger = sp.GetRequiredService<ILogger<JsonWatchlistRepository>>();
+        return new JsonWatchlistRepository(storagePath, logger);
+    });
+    builder.Services.AddSingleton<WatchlistService>();
+    Log.Information("Using JSON file for watchlist storage");
+}
+
+// Register image processing services
+builder.Services.AddSingleton(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var modelPath = config["ImageProcessing:ModelPath"] ?? "MLModels/yolov8n.onnx";
+    var targetWidth = config.GetValue<int>("ImageProcessing:TargetWidth", 320);
+    var targetHeight = config.GetValue<int>("ImageProcessing:TargetHeight", 150);
+    return new ImageProcessingService(modelPath, targetWidth, targetHeight);
+});
+builder.Services.AddSingleton(sp =>
+{
+    var processor = sp.GetRequiredService<ImageProcessingService>();
+    var logger = sp.GetRequiredService<ILogger<ImageCacheService>>();
+    var config = sp.GetRequiredService<IConfiguration>();
+    var cacheSize = config.GetValue<int>("ImageProcessing:CacheSize", 50);
+    var refillThreshold = config.GetValue<int>("ImageProcessing:RefillThreshold", 10);
+    return new ImageCacheService(processor, logger, cacheSize, refillThreshold);
+});
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ImageCacheService>());
+
+// Add health checks
+builder.Services.AddHealthChecks()
+    .AddCheck("self", () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy("API is running"))
+    .AddUrlGroup(new Uri("https://finnhub.io"), name: "finnhub-api", tags: new[] { "external" })
+    .AddUrlGroup(new Uri("https://query1.finance.yahoo.com"), name: "yahoo-finance", tags: new[] { "external" });
+
+// Serve static files from wwwroot
+
+var app = builder.Build();
+
+// Apply database migrations automatically in production (Azure)
+if (!string.IsNullOrEmpty(connectionString))
+{
+    var runMigrations = builder.Configuration["RUN_MIGRATIONS"] ?? "false";
+    if (runMigrations.Equals("true", StringComparison.OrdinalIgnoreCase) || app.Environment.IsProduction())
+    {
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<StockAnalyzerDbContext>();
+        Log.Information("Applying database migrations...");
+        db.Database.Migrate();
+        Log.Information("Database migrations applied successfully");
+    }
+}
+
+// Configure the HTTP request pipeline
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+app.UseCors("AllowFrontend");
+
+// Security headers middleware
+app.Use(async (context, next) =>
+{
+    // HSTS - force HTTPS for 1 year (only in production)
+    if (!app.Environment.IsDevelopment())
+    {
+        context.Response.Headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+    }
+    // Anti-clickjacking
+    context.Response.Headers["X-Frame-Options"] = "DENY";
+    // Prevent MIME type sniffing
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    // XSS protection (legacy browsers)
+    context.Response.Headers["X-XSS-Protection"] = "1; mode=block";
+    // Referrer policy
+    context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    // Permissions policy
+    context.Response.Headers["Permissions-Policy"] = "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()";
+    // Content Security Policy
+    // - Tailwind CSS now built locally (no CDN needed, no 'unsafe-inline' for styles)
+    // - Plotly.js requires 'unsafe-eval' and 'unsafe-inline' for chart rendering
+    // - marked.js from jsdelivr for markdown rendering in docs
+    context.Response.Headers["Content-Security-Policy"] =
+        "default-src 'self'; " +
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.plot.ly https://cdn.jsdelivr.net; " +
+        "style-src 'self' 'unsafe-inline'; " +
+        "img-src 'self' data: blob:; " +
+        "font-src 'self' https:; " +
+        "connect-src 'self'";
+
+    await next();
+});
+
+app.UseDefaultFiles();
+
+// Configure static files with custom MIME types for .mmd (Mermaid) files
+var contentTypeProvider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
+contentTypeProvider.Mappings[".mmd"] = "text/plain";
+app.UseStaticFiles(new StaticFileOptions
+{
+    ContentTypeProvider = contentTypeProvider
+});
+
+// API Endpoints
+
+// Ticker validation helper - allows 1-10 alphanumeric chars plus dots, dashes, carets (e.g., BRK.B, BRK-B, ^GSPC)
+static bool IsValidTicker(string? ticker) =>
+    !string.IsNullOrWhiteSpace(ticker) &&
+    ticker.Length <= 10 &&
+    System.Text.RegularExpressions.Regex.IsMatch(ticker, @"^[A-Za-z0-9\.\-\^]+$");
+
+static IResult InvalidTickerResult() =>
+    Results.BadRequest(new { error = "Invalid ticker symbol. Use 1-10 alphanumeric characters, dots, dashes, or carets." });
+
+// GET /api/stock/{ticker} - Get stock information with company profile and identifiers
+app.MapGet("/api/stock/{ticker}", async (string ticker, StockDataService stockService, NewsService newsService) =>
+{
+    if (!IsValidTicker(ticker))
+        return InvalidTickerResult();
+
+    var info = await stockService.GetStockInfoAsync(ticker);
+    if (info == null)
+        return Results.NotFound(new { error = "Stock not found", symbol = ticker });
+
+    // Fetch company profile from Finnhub (includes ISIN, CUSIP, company name)
+    var profile = await newsService.GetCompanyProfileAsync(ticker);
+
+    // Try to get SEDOL from OpenFIGI if we have an ISIN
+    string? sedol = null;
+    if (!string.IsNullOrEmpty(profile?.Isin))
+    {
+        sedol = await newsService.GetSedolFromIsinAsync(profile.Isin);
+    }
+
+    // Merge profile data with stock info
+    var enrichedInfo = info with
+    {
+        LongName = profile?.Name ?? info.LongName,
+        ShortName = profile?.Name ?? info.ShortName,
+        Exchange = profile?.Exchange ?? info.Exchange,
+        Industry = profile?.Industry ?? info.Industry,
+        Country = profile?.Country ?? info.Country,
+        Website = profile?.WebUrl ?? info.Website,
+        Isin = profile?.Isin,
+        Cusip = profile?.Cusip,
+        Sedol = sedol
+    };
+
+    return Results.Ok(enrichedInfo);
+})
+.WithName("GetStockInfo")
+.WithOpenApi()
+.Produces<StockAnalyzer.Core.Models.StockInfo>(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status404NotFound);
+
+// GET /api/stock/{ticker}/history - Get historical data
+app.MapGet("/api/stock/{ticker}/history", async (
+    string ticker,
+    string? period,
+    StockDataService stockService) =>
+{
+    if (!IsValidTicker(ticker))
+        return InvalidTickerResult();
+
+    var data = await stockService.GetHistoricalDataAsync(ticker, period ?? "1y");
+    return data != null
+        ? Results.Ok(data)
+        : Results.NotFound(new { error = "Historical data not found", symbol = ticker });
+})
+.WithName("GetStockHistory")
+.WithOpenApi()
+.Produces<StockAnalyzer.Core.Models.HistoricalDataResult>(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status404NotFound);
+
+// GET /api/stock/{ticker}/news - Get company news
+app.MapGet("/api/stock/{ticker}/news", async (
+    string ticker,
+    int? days,
+    NewsService newsService) =>
+{
+    if (!IsValidTicker(ticker))
+        return InvalidTickerResult();
+
+    var fromDate = DateTime.Now.AddDays(-(days ?? 30));
+    var result = await newsService.GetCompanyNewsAsync(ticker, fromDate);
+    return Results.Ok(result);
+})
+.WithName("GetStockNews")
+.WithOpenApi()
+.Produces<StockAnalyzer.Core.Models.NewsResult>(StatusCodes.Status200OK);
+
+// GET /api/stock/{ticker}/significant - Get significant price moves
+app.MapGet("/api/stock/{ticker}/significant", async (
+    string ticker,
+    decimal? threshold,
+    StockDataService stockService,
+    AnalysisService analysisService) =>
+{
+    if (!IsValidTicker(ticker))
+        return InvalidTickerResult();
+
+    var history = await stockService.GetHistoricalDataAsync(ticker, "1y");
+    if (history == null)
+        return Results.NotFound(new { error = "Historical data not found", symbol = ticker });
+
+    var moves = await analysisService.DetectSignificantMovesAsync(
+        ticker,
+        history.Data,
+        threshold ?? 3.0m,
+        includeNews: true);
+
+    return Results.Ok(moves);
+})
+.WithName("GetSignificantMoves")
+.WithOpenApi()
+.Produces<StockAnalyzer.Core.Models.SignificantMovesResult>(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status404NotFound);
+
+// GET /api/stock/{ticker}/analysis - Get performance metrics, moving averages, and technical indicators
+app.MapGet("/api/stock/{ticker}/analysis", async (
+    string ticker,
+    string? period,
+    StockDataService stockService,
+    AnalysisService analysisService) =>
+{
+    if (!IsValidTicker(ticker))
+        return InvalidTickerResult();
+
+    var history = await stockService.GetHistoricalDataAsync(ticker, period ?? "1y");
+    if (history == null)
+        return Results.NotFound(new { error = "Historical data not found", symbol = ticker });
+
+    var movingAverages = analysisService.CalculateMovingAverages(history.Data);
+    var performance = analysisService.CalculatePerformance(history.Data);
+    var rsi = analysisService.CalculateRsi(history.Data);
+    var macd = analysisService.CalculateMacd(history.Data);
+    var bollingerBands = analysisService.CalculateBollingerBands(history.Data);
+
+    return Results.Ok(new
+    {
+        symbol = ticker.ToUpper(),
+        period = period ?? "1y",
+        performance,
+        movingAverages,
+        rsi,
+        macd,
+        bollingerBands
+    });
+})
+.WithName("GetStockAnalysis")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status404NotFound);
+
+// GET /api/search - Search for tickers by symbol or company name
+app.MapGet("/api/search", async (string q, StockDataService stockService) =>
+{
+    if (string.IsNullOrWhiteSpace(q))
+        return Results.BadRequest(new { error = "Query parameter 'q' is required" });
+
+    var results = await stockService.SearchAsync(q);
+    return Results.Ok(new
+    {
+        query = q,
+        results = results.Select(r => new
+        {
+            symbol = r.Symbol,
+            shortName = r.ShortName,
+            longName = r.LongName,
+            exchange = r.Exchange,
+            type = r.Type,
+            displayName = r.DisplayName
+        })
+    });
+})
+.WithName("SearchTickers")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest);
+
+// GET /api/trending - Get trending stocks
+app.MapGet("/api/trending", async (int? count, StockDataService stockService) =>
+{
+    var trending = await stockService.GetTrendingStocksAsync(count ?? 10);
+    return Results.Ok(new
+    {
+        count = trending.Count,
+        stocks = trending.Select(t => new { symbol = t.Symbol, name = t.Name })
+    });
+})
+.WithName("GetTrendingStocks")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK);
+
+// Image API endpoints
+
+// GET /api/images/cat - Get a processed cat image
+app.MapGet("/api/images/cat", (ImageCacheService cache) =>
+{
+    var image = cache.GetCatImage();
+    return image != null
+        ? Results.File(image, "image/jpeg")
+        : Results.NotFound(new { error = "No cat images available. Cache may be warming up." });
+})
+.WithName("GetCatImage")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK, contentType: "image/jpeg")
+.Produces(StatusCodes.Status404NotFound);
+
+// GET /api/images/dog - Get a processed dog image
+app.MapGet("/api/images/dog", (ImageCacheService cache) =>
+{
+    var image = cache.GetDogImage();
+    return image != null
+        ? Results.File(image, "image/jpeg")
+        : Results.NotFound(new { error = "No dog images available. Cache may be warming up." });
+})
+.WithName("GetDogImage")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK, contentType: "image/jpeg")
+.Produces(StatusCodes.Status404NotFound);
+
+// GET /api/images/status - Get cache status
+app.MapGet("/api/images/status", (ImageCacheService cache) =>
+{
+    var (cats, dogs) = cache.GetCacheStatus();
+    return Results.Ok(new
+    {
+        cats,
+        dogs,
+        timestamp = DateTime.UtcNow
+    });
+})
+.WithName("GetImageCacheStatus")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK);
+
+// Health check endpoints
+app.MapHealthChecks("/health", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    ResponseWriter = async (context, report) =>
+    {
+        context.Response.ContentType = "application/json";
+        var result = new
+        {
+            status = report.Status.ToString(),
+            timestamp = DateTime.UtcNow,
+            duration = report.TotalDuration.TotalMilliseconds,
+            checks = report.Entries.Select(e => new
+            {
+                name = e.Key,
+                status = e.Value.Status.ToString(),
+                duration = e.Value.Duration.TotalMilliseconds,
+                description = e.Value.Description,
+                exception = e.Value.Exception?.Message
+            })
+        };
+        await context.Response.WriteAsJsonAsync(result);
+    }
+});
+
+// Liveness probe (just checks if app is running)
+app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Name == "self"
+});
+
+// Readiness probe (checks all dependencies)
+app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("external")
+});
+
+// Watchlist API endpoints
+
+// GET /api/watchlists - List all watchlists
+app.MapGet("/api/watchlists", async (WatchlistService watchlistService) =>
+{
+    var watchlists = await watchlistService.GetAllAsync();
+    return Results.Ok(watchlists);
+})
+.WithName("GetWatchlists")
+.WithOpenApi()
+.Produces<List<StockAnalyzer.Core.Models.Watchlist>>(StatusCodes.Status200OK);
+
+// POST /api/watchlists - Create a new watchlist
+app.MapPost("/api/watchlists", async (StockAnalyzer.Core.Models.CreateWatchlistRequest request, WatchlistService watchlistService) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Name))
+        return Results.BadRequest(new { error = "Watchlist name is required" });
+
+    var watchlist = await watchlistService.CreateAsync(request.Name);
+    return Results.Created($"/api/watchlists/{watchlist.Id}", watchlist);
+})
+.WithName("CreateWatchlist")
+.WithOpenApi()
+.Produces<StockAnalyzer.Core.Models.Watchlist>(StatusCodes.Status201Created)
+.Produces(StatusCodes.Status400BadRequest);
+
+// GET /api/watchlists/{id} - Get a watchlist by ID
+app.MapGet("/api/watchlists/{id}", async (string id, WatchlistService watchlistService) =>
+{
+    var watchlist = await watchlistService.GetByIdAsync(id);
+    return watchlist != null
+        ? Results.Ok(watchlist)
+        : Results.NotFound(new { error = "Watchlist not found", id });
+})
+.WithName("GetWatchlist")
+.WithOpenApi()
+.Produces<StockAnalyzer.Core.Models.Watchlist>(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status404NotFound);
+
+// PUT /api/watchlists/{id} - Rename a watchlist
+app.MapPut("/api/watchlists/{id}", async (string id, StockAnalyzer.Core.Models.UpdateWatchlistRequest request, WatchlistService watchlistService) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Name))
+        return Results.BadRequest(new { error = "Watchlist name is required" });
+
+    var watchlist = await watchlistService.RenameAsync(id, request.Name);
+    return watchlist != null
+        ? Results.Ok(watchlist)
+        : Results.NotFound(new { error = "Watchlist not found", id });
+})
+.WithName("UpdateWatchlist")
+.WithOpenApi()
+.Produces<StockAnalyzer.Core.Models.Watchlist>(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status404NotFound);
+
+// DELETE /api/watchlists/{id} - Delete a watchlist
+app.MapDelete("/api/watchlists/{id}", async (string id, WatchlistService watchlistService) =>
+{
+    var deleted = await watchlistService.DeleteAsync(id);
+    return deleted
+        ? Results.NoContent()
+        : Results.NotFound(new { error = "Watchlist not found", id });
+})
+.WithName("DeleteWatchlist")
+.WithOpenApi()
+.Produces(StatusCodes.Status204NoContent)
+.Produces(StatusCodes.Status404NotFound);
+
+// POST /api/watchlists/{id}/tickers - Add a ticker to a watchlist
+app.MapPost("/api/watchlists/{id}/tickers", async (string id, StockAnalyzer.Core.Models.AddTickerRequest request, WatchlistService watchlistService) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Ticker))
+        return Results.BadRequest(new { error = "Ticker is required" });
+
+    var watchlist = await watchlistService.AddTickerAsync(id, request.Ticker);
+    return watchlist != null
+        ? Results.Ok(watchlist)
+        : Results.NotFound(new { error = "Watchlist not found", id });
+})
+.WithName("AddTickerToWatchlist")
+.WithOpenApi()
+.Produces<StockAnalyzer.Core.Models.Watchlist>(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status404NotFound);
+
+// DELETE /api/watchlists/{id}/tickers/{ticker} - Remove a ticker from a watchlist
+app.MapDelete("/api/watchlists/{id}/tickers/{ticker}", async (string id, string ticker, WatchlistService watchlistService) =>
+{
+    var watchlist = await watchlistService.RemoveTickerAsync(id, ticker);
+    return watchlist != null
+        ? Results.Ok(watchlist)
+        : Results.NotFound(new { error = "Watchlist not found", id });
+})
+.WithName("RemoveTickerFromWatchlist")
+.WithOpenApi()
+.Produces<StockAnalyzer.Core.Models.Watchlist>(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status404NotFound);
+
+// GET /api/watchlists/{id}/quotes - Get current quotes for all tickers in a watchlist
+app.MapGet("/api/watchlists/{id}/quotes", async (string id, WatchlistService watchlistService) =>
+{
+    var quotes = await watchlistService.GetQuotesAsync(id);
+    return quotes != null
+        ? Results.Ok(quotes)
+        : Results.NotFound(new { error = "Watchlist not found", id });
+})
+.WithName("GetWatchlistQuotes")
+.WithOpenApi()
+.Produces<WatchlistQuotes>(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status404NotFound);
+
+// PUT /api/watchlists/{id}/holdings - Update holdings for a watchlist
+app.MapPut("/api/watchlists/{id}/holdings", async (
+    string id,
+    UpdateHoldingsRequest request,
+    WatchlistService watchlistService) =>
+{
+    var validModes = new[] { "equal", "shares", "dollars" };
+    if (!validModes.Contains(request.WeightingMode.ToLower()))
+    {
+        return Results.BadRequest(new { error = "Invalid weighting mode. Must be: equal, shares, or dollars" });
+    }
+
+    try
+    {
+        var watchlist = await watchlistService.UpdateHoldingsAsync(id, request);
+        return watchlist != null
+            ? Results.Ok(watchlist)
+            : Results.NotFound(new { error = "Watchlist not found", id });
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+})
+.WithName("UpdateWatchlistHoldings")
+.WithOpenApi()
+.Produces<StockAnalyzer.Core.Models.Watchlist>(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status404NotFound);
+
+// GET /api/watchlists/{id}/combined - Get combined portfolio performance
+app.MapGet("/api/watchlists/{id}/combined", async (
+    string id,
+    string? period,
+    string? benchmark,
+    WatchlistService watchlistService) =>
+{
+    var result = await watchlistService.GetCombinedPortfolioAsync(
+        id,
+        period ?? "1y",
+        benchmark);
+
+    return result != null
+        ? Results.Ok(result)
+        : Results.NotFound(new { error = "Watchlist not found or no data available", id });
+})
+.WithName("GetCombinedPortfolio")
+.WithOpenApi()
+.Produces<CombinedPortfolioResult>(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status404NotFound);
+
+// GET /api/news/market - Get general market news
+app.MapGet("/api/news/market", async (string? category, NewsService newsService) =>
+{
+    var result = await newsService.GetMarketNewsAsync(category ?? "general");
+    return Results.Ok(result);
+})
+.WithName("GetMarketNews")
+.WithOpenApi()
+.Produces<NewsResult>(StatusCodes.Status200OK);
+
+// GET /api/stock/{ticker}/news/aggregated - Get aggregated news from multiple sources with relevance scoring
+app.MapGet("/api/stock/{ticker}/news/aggregated", async (
+    string ticker,
+    int? days,
+    int? limit,
+    AggregatedNewsService aggregatedNewsService) =>
+{
+    if (!IsValidTicker(ticker))
+        return InvalidTickerResult();
+
+    var result = await aggregatedNewsService.GetAggregatedNewsAsync(
+        ticker,
+        days ?? 7,
+        limit ?? 20);
+    return Results.Ok(result);
+})
+.WithName("GetAggregatedNews")
+.WithOpenApi()
+.Produces<AggregatedNewsResult>(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest);
+
+// GET /api/news/market/aggregated - Get aggregated market news from multiple sources
+app.MapGet("/api/news/market/aggregated", async (int? limit, AggregatedNewsService aggregatedNewsService) =>
+{
+    var result = await aggregatedNewsService.GetAggregatedMarketNewsAsync(limit ?? 20);
+    return Results.Ok(result);
+})
+.WithName("GetAggregatedMarketNews")
+.WithOpenApi()
+.Produces<AggregatedNewsResult>(StatusCodes.Status200OK);
+
+// Add request logging
+app.UseSerilogRequestLogging(options =>
+{
+    options.MessageTemplate = "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000}ms";
+});
+
+Log.Information("Stock Analyzer API started successfully");
+
+app.Run();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Application terminated unexpectedly");
+}
+finally
+{
+    Log.CloseAndFlush();
+}

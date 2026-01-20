@@ -1,0 +1,72 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!-- Updated: 2026-01-19 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AspNetCore.HealthChecks.Uris" Version="9.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.23" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.23">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.23" />
+    <PackageReference Include="SecurityCodeScan.VS2019" Version="5.6.7">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="9.0.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Roslynator.Analyzers" Version="4.15.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.9.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\StockAnalyzer.Core\StockAnalyzer.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Copy ML models to output directory -->
+  <ItemGroup>
+    <None Include="MLModels\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Copy documentation files to wwwroot/docs/ during build -->
+  <Target Name="CopyDocumentation" BeforeTargets="Build">
+    <Message Text="Copying documentation files to wwwroot/docs/..." Importance="high" />
+    <MakeDir Directories="$(ProjectDir)wwwroot\docs" />
+    <!-- CLAUDE.md is optional - may not exist in Docker build context -->
+    <Copy SourceFiles="$(ProjectDir)..\..\..\CLAUDE.md" DestinationFiles="$(ProjectDir)wwwroot\docs\CLAUDE.md" SkipUnchangedFiles="true" Condition="Exists('$(ProjectDir)..\..\..\CLAUDE.md')" />
+    <Copy SourceFiles="$(ProjectDir)..\..\docs\FUNCTIONAL_SPEC.md" DestinationFiles="$(ProjectDir)wwwroot\docs\FUNCTIONAL_SPEC.md" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ProjectDir)..\..\docs\TECHNICAL_SPEC.md" DestinationFiles="$(ProjectDir)wwwroot\docs\TECHNICAL_SPEC.md" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ProjectDir)..\..\docs\SECURITY_OVERVIEW.md" DestinationFiles="$(ProjectDir)wwwroot\docs\SECURITY_OVERVIEW.md" SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- Ensure diagrams directory exists during build -->
+  <!-- To auto-regenerate project-structure.mmd, see TECHNICAL_SPEC.md for mermaid-graph command -->
+  <Target Name="EnsureDiagramsDirectory" BeforeTargets="Build" DependsOnTargets="CopyDocumentation">
+    <MakeDir Directories="$(ProjectDir)wwwroot\docs\diagrams" />
+  </Target>
+
+  <!-- Build Tailwind CSS before build (if node_modules exists and node is available) -->
+  <!-- On Windows, uses Node.js from Program Files. For CI/Docker, node must be in PATH. -->
+  <Target Name="BuildTailwindCSS" BeforeTargets="Build" Condition="Exists('$(ProjectDir)node_modules')">
+    <Message Text="Building Tailwind CSS..." Importance="high" />
+    <MakeDir Directories="$(ProjectDir)wwwroot\css" />
+    <Exec Command="&quot;$(ProgramFiles)\nodejs\node.exe&quot; node_modules/tailwindcss/lib/cli.js -i src/input.css -o wwwroot/css/styles.css --minify"
+          WorkingDirectory="$(ProjectDir)"
+          Condition="Exists('$(ProgramFiles)\nodejs\node.exe')" />
+    <Exec Command="node node_modules/tailwindcss/lib/cli.js -i src/input.css -o wwwroot/css/styles.css --minify"
+          WorkingDirectory="$(ProjectDir)"
+          Condition="!Exists('$(ProgramFiles)\nodejs\node.exe')" />
+  </Target>
+
+</Project>

@@ -1,0 +1,35 @@
+# .NET Build outputs
+bin/
+obj/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+
+# VS Code
+.vscode/
+
+# IDE files
+.idea/
+*.swp
+
+# NuGet
+*.nupkg
+packages/
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Node (for Tailwind CSS build)
+node_modules/
+
+# Development secrets (use user-secrets or env vars instead)
+appsettings.Development.json

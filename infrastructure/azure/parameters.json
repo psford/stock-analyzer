@@ -1,0 +1,37 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environment": {
+      "value": "prod"
+    },
+    "location": {
+      "value": "eastus"
+    },
+    "sqlAdminUsername": {
+      "value": "sqladmin"
+    },
+    "sqlAdminPassword": {
+      "metadata": {
+        "description": "Reference to Key Vault secret - not an actual secret value"
+      },
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/<subscription-id>/resourceGroups/<rg-name>/providers/Microsoft.KeyVault/vaults/<vault-name>"
+        },
+        "secretName": "sql-admin-password"
+      }
+    },
+    "finnhubApiKey": {
+      "metadata": {
+        "description": "Reference to Key Vault secret - not an actual secret value"
+      },
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/<subscription-id>/resourceGroups/<rg-name>/providers/Microsoft.KeyVault/vaults/<vault-name>"
+        },
+        "secretName": "finnhub-api-key"
+      }
+    }
+  }
+}

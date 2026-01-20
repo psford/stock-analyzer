@@ -1,0 +1,35 @@
+%% MANUAL - Update when image processing changes
+graph LR
+    subgraph Background["Background Service"]
+        ICS["ImageCacheService<br/><small>100 cats, 100 dogs<br/>Refill at 30</small>"]
+    end
+
+    subgraph Processing["Image Processing"]
+        Fetch["Fetch Random Image"]
+        ML["YOLOv8 Detection<br/><small>50% confidence threshold</small>"]
+        QC{"Quality Check<br/><small>≥20% image area?</small>"}
+        Crop["Smart Crop<br/><small>320×320 square</small>"]
+        Cache["Add to Cache"]
+        Reject["Reject Image"]
+    end
+
+    subgraph Sources["Image Sources"]
+        Cat["cataas.com/cat"]
+        Dog["dog.ceo/api"]
+    end
+
+    ICS --> Fetch
+    Fetch --> Cat
+    Fetch --> Dog
+    Cat --> ML
+    Dog --> ML
+    ML --> QC
+    QC -->|Pass| Crop
+    QC -->|Fail| Reject
+    Reject --> Fetch
+    Crop --> Cache
+    Cache --> ICS
+
+    style Background fill:#8B5CF6,color:#fff
+    style Processing fill:#10B981,color:#fff
+    style Sources fill:#F59E0B,color:#fff

@@ -1,0 +1,47 @@
+%% MANUAL - Update when services change
+graph TB
+    subgraph API["API Layer (Program.cs)"]
+        Endpoints["Minimal API Endpoints"]
+    end
+
+    subgraph Services["Core Services"]
+        SDS["StockDataService<br/><small>Yahoo Finance Integration</small>"]
+        NS["NewsService<br/><small>Finnhub API</small>"]
+        MXS["MarketauxService<br/><small>Marketaux API</small>"]
+        ANS["AggregatedNewsService<br/><small>Multi-source Aggregation</small>"]
+        HRS["HeadlineRelevanceService<br/><small>ML Scoring</small>"]
+        AS["AnalysisService<br/><small>Technical Analysis</small>"]
+        WS["WatchlistService<br/><small>Portfolio Management</small>"]
+        IPS["ImageProcessingService<br/><small>YOLOv8 ML Model</small>"]
+        ICS["ImageCacheService<br/><small>Background Caching</small>"]
+    end
+
+    subgraph External["External APIs"]
+        YF["Yahoo Finance"]
+        FH["Finnhub"]
+        MX["Marketaux"]
+        CATAAS["cataas.com"]
+        DOGCEO["dog.ceo"]
+    end
+
+    Endpoints --> SDS
+    Endpoints --> ANS
+    Endpoints --> AS
+    Endpoints --> WS
+    Endpoints --> ICS
+
+    SDS --> YF
+    NS --> FH
+    MXS --> MX
+    ANS --> NS
+    ANS --> MXS
+    ANS --> HRS
+    AS --> NS
+    WS --> SDS
+    ICS --> IPS
+    IPS --> CATAAS
+    IPS --> DOGCEO
+
+    style API fill:#3B82F6,color:#fff
+    style Services fill:#10B981,color:#fff
+    style External fill:#F59E0B,color:#fff
