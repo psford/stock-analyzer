@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About Us - Stock Analyzer</title>
+    <!-- Favicons -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <!-- Tailwind CSS - built locally from src/input.css -->
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="min-h-full bg-gray-50 dark:bg-gray-900 transition-colors">
+    <div class="min-h-full flex flex-col">
+        <!-- Header -->
+        <header class="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 transition-colors">
+            <div class="max-w-4xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <svg class="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">About Us</h1>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <a href="/" class="text-sm text-primary hover:text-blue-600 dark:hover:text-blue-400 flex items-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                            </svg>
+                            Back to App
+                        </a>
+                        <!-- Dark mode toggle -->
+                        <button id="dark-mode-toggle" class="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors" title="Toggle dark mode">
+                            <!-- Sun icon (shown in dark mode) -->
+                            <svg id="sun-icon" class="w-5 h-5 text-yellow-500 hidden" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"></path>
+                            </svg>
+                            <!-- Moon icon (shown in light mode) -->
+                            <svg id="moon-icon" class="w-5 h-5 text-gray-600" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="flex-1">
+            <div class="max-w-4xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+
+                <!-- What We Do -->
+                <section class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-6">
+                    <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">What We Do</h2>
+                    <p class="text-gray-700 dark:text-gray-300 mb-4">
+                        Stock Analyzer is a free, open-source tool for exploring stock market data. We provide interactive charts,
+                        technical indicators, news integration, and portfolio tracking - all without ads, tracking, or data harvesting.
+                    </p>
+                    <p class="text-gray-700 dark:text-gray-300">
+                        Built with .NET 8 and modern web technologies, this project demonstrates that useful financial tools
+                        can be created without compromising user privacy or selling attention to advertisers.
+                    </p>
+                </section>
+
+                <!-- Our Principles -->
+                <section class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-6">
+                    <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">Our Principles</h2>
+
+                    <div class="space-y-6">
+                        <!-- No Ad Tech -->
+                        <div class="flex items-start gap-4">
+                            <div class="flex-shrink-0 w-10 h-10 bg-red-100 dark:bg-red-900 rounded-lg flex items-center justify-center">
+                                <svg class="w-5 h-5 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 class="font-medium text-gray-900 dark:text-white">No Advertising Technology</h3>
+                                <p class="text-gray-600 dark:text-gray-400 text-sm mt-1">
+                                    We will never integrate advertising networks, ad tech SDKs, or any form of commercial advertising.
+                                    Your attention is not for sale.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- No Tracking -->
+                        <div class="flex items-start gap-4">
+                            <div class="flex-shrink-0 w-10 h-10 bg-green-100 dark:bg-green-900 rounded-lg flex items-center justify-center">
+                                <svg class="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 class="font-medium text-gray-900 dark:text-white">No Tracking Pixels or Analytics</h3>
+                                <p class="text-gray-600 dark:text-gray-400 text-sm mt-1">
+                                    No Google Analytics, no Facebook Pixel, no third-party tracking scripts. We don't monitor your
+                                    behavior to build advertising profiles.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- No Data Sharing -->
+                        <div class="flex items-start gap-4">
+                            <div class="flex-shrink-0 w-10 h-10 bg-blue-100 dark:bg-blue-900 rounded-lg flex items-center justify-center">
+                                <svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 class="font-medium text-gray-900 dark:text-white">No Data Sharing with Social Platforms</h3>
+                                <p class="text-gray-600 dark:text-gray-400 text-sm mt-1">
+                                    We do not share any data with X (formerly Twitter), Meta (Facebook/Instagram), or any other social
+                                    media platform. Your usage data stays with you.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Open Source -->
+                        <div class="flex items-start gap-4">
+                            <div class="flex-shrink-0 w-10 h-10 bg-purple-100 dark:bg-purple-900 rounded-lg flex items-center justify-center">
+                                <svg class="w-5 h-5 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 class="font-medium text-gray-900 dark:text-white">Open Source</h3>
+                                <p class="text-gray-600 dark:text-gray-400 text-sm mt-1">
+                                    The complete source code is available on GitHub. You can verify our claims, learn from the code,
+                                    or host your own instance.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Who Built This -->
+                <section class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-6">
+                    <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">Who Built This</h2>
+                    <p class="text-gray-700 dark:text-gray-300 mb-4">
+                        Stock Analyzer was created by <strong>Patrick Ford</strong> and <strong>Claude</strong>, an AI assistant by Anthropic.
+                    </p>
+                    <p class="text-gray-700 dark:text-gray-300 mb-4">
+                        Patrick brings over 20 years of experience spanning both business and technology roles at a major asset management
+                        firm with hundreds of billions in assets under management. He currently works on core accounting and trading
+                        workflows. His background includes business analysis and hands-on work with Python, Matlab, Oracle databases,
+                        and now .NET - giving him a practitioner's perspective on what tools actually help people understand markets.
+                        He is also generally considered to be extremely good looking and smart. Other people's dogs and cats
+                        have been known to follow him home, clearly hoping to be adopted.
+                    </p>
+                    <p class="text-gray-700 dark:text-gray-300">
+                        This project is an exploration of human-AI collaboration in software development, built entirely through
+                        conversational programming. Every line of code, every design decision, and every deployment was accomplished
+                        through natural language interaction.
+                    </p>
+                </section>
+
+                <!-- Data Sources -->
+                <section class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+                    <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">Data Sources</h2>
+                    <p class="text-gray-700 dark:text-gray-300 mb-4">
+                        Stock data and company information is provided by:
+                    </p>
+                    <ul class="list-disc list-inside text-gray-700 dark:text-gray-300 space-y-2">
+                        <li><strong>Yahoo Finance</strong> - Historical price data, quotes, and company profiles</li>
+                        <li><strong>Finnhub</strong> - News headlines and company identifiers</li>
+                        <li><strong>Marketaux</strong> - Additional news coverage</li>
+                        <li><strong>OpenFIGI</strong> - ISIN, CUSIP, and SEDOL identifiers</li>
+                    </ul>
+                    <p class="text-gray-600 dark:text-gray-400 text-sm mt-4">
+                        This data is used solely to provide financial information to users and is never monetized or shared with third parties.
+                    </p>
+                </section>
+
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 mt-auto">
+            <div class="max-w-4xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
+                <p class="text-sm text-gray-500 dark:text-gray-400 text-center">
+                    Stock Analyzer &copy; 2026 | By Patrick Ford and Claude
+                </p>
+                <p class="text-sm text-gray-500 dark:text-gray-400 text-center mt-2">
+                    <a href="/" class="text-primary hover:text-blue-600 dark:hover:text-blue-400 hover:underline">
+                        Back to App
+                    </a>
+                    <span class="mx-2">|</span>
+                    <a href="/docs.html" class="text-primary hover:text-blue-600 dark:hover:text-blue-400 hover:underline">
+                        Documentation
+                    </a>
+                    <span class="mx-2">|</span>
+                    <a href="https://github.com/psford/claudeProjects" target="_blank" class="text-primary hover:text-blue-600 dark:hover:text-blue-400 hover:underline">
+                        GitHub
+                    </a>
+                </p>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        // Dark mode toggle
+        const darkModeToggle = document.getElementById('dark-mode-toggle');
+        const sunIcon = document.getElementById('sun-icon');
+        const moonIcon = document.getElementById('moon-icon');
+
+        // Check localStorage or system preference
+        const savedDarkMode = localStorage.getItem('darkMode');
+        if (savedDarkMode === 'true' ||
+            (savedDarkMode === null && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+            sunIcon.classList.remove('hidden');
+            moonIcon.classList.add('hidden');
+        }
+
+        darkModeToggle.addEventListener('click', () => {
+            document.documentElement.classList.toggle('dark');
+            const isDark = document.documentElement.classList.contains('dark');
+            localStorage.setItem('darkMode', isDark);
+            sunIcon.classList.toggle('hidden', !isDark);
+            moonIcon.classList.toggle('hidden', isDark);
+        });
+    </script>
+</body>
+</html>
