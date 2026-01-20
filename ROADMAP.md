@@ -19,7 +19,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 | Chart markers | Triangle markers for significant price moves | 01/16/2026 |
 | Wikipedia-style popups | Hover popups with news headlines and thumbnails | 01/16/2026 |
 | Configurable threshold | Slider to adjust significant move threshold (3-10%) | 01/16/2026 |
-| Technical indicators | RSI and MACD with toggle checkboxes | 01/17/2026 |
+| Technical indicators | RSI, MACD, and Bollinger Bands with toggle checkboxes | 01/17/2026 |
 | Stock comparison | Normalized % change comparison with benchmark buttons | 01/17/2026 |
 | Dark mode | Full dark mode support with localStorage persistence | 01/16/2026 |
 | Watchlist | Multiple watchlists with ticker management, JSON storage, multi-user ready | 01/17/2026 |
@@ -51,7 +51,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 | SAST scanning | SecurityCodeScan for C# code | 01/16/2026 |
 | DAST scanning | OWASP ZAP API scan | 01/16/2026 |
 | SRI for CDN | Subresource Integrity for Plotly.js | 01/16/2026 |
-| Unit tests | xUnit test suite (113+ tests) | 01/19/2026 |
+| Unit tests | xUnit test suite (150 tests) | 01/19/2026 |
 
 ### Combined Watchlist View
 
@@ -87,23 +87,18 @@ Planned features and improvements for the Stock Analyzer .NET application.
 
 | Feature | Description | Status |
 |---------|-------------|--------|
-| ~~Mobile responsiveness~~ | ~~Site looks rough on mobile - prioritize mobile-friendly layout~~ | **Completed** |
-| ~~App Service migration~~ | ~~Migrate from ACI to App Service B1~~ | **Completed** |
 | Fix AAPL news mismatch | News headlines can be misleading vs actual price movement | Planned |
-| Bollinger Bands | Add Bollinger Bands to technical indicators | Planned |
 | Stochastic Oscillator | Add Stochastic to technical indicators | Planned |
 
 ### Medium Priority
 
 | Feature | Description | Status |
 |---------|-------------|--------|
-| ~~CISO security document~~ | ~~Write security infrastructure doc for docs page (CISO-friendly)~~ | **Completed** |
 | Stats tab for docs | Add project statistics tab (LOC, classes, tests, etc.) | Planned |
 | Project summary doc | Brag doc with stats, best practices implemented, etc. | Planned |
 | Verify CodeQL enforcement | Ensure docs reflect what is actually enforced at build | Planned |
 | Dark mode code blocks | Fix gray highlights on code blocks in dark mode | Planned |
 | Container bundle audit | Review Dockerfile to exclude unused files (Jenkins, dev docs) from prod | Planned |
-| ~~Larger hover card images~~ | ~~Make cat/dog images square for better ML-cropped display~~ | **Completed** |
 | Comprehensive docs review | Review docs folder after App Service deploy to catch stale content | Planned |
 | Cold start optimization | Defer ImageCacheService prefill to reduce thread pool starvation | Planned |
 | Fallback image archive | Cache 100 pre-processed cat/dog images for when providers are down | Planned |
@@ -113,9 +108,6 @@ Planned features and improvements for the Stock Analyzer .NET application.
 | User stories | Review roadmap and propose user stories with acceptance criteria | Planned |
 | Earnings calendar | Show earnings dates on charts | Planned |
 | Export to Excel | Export analysis data to .xlsx format | Planned |
-| ~~News sentiment~~ | ~~Sentiment scoring for news articles~~ | **Completed** |
-| Multi-source news | Aggregated news from Finnhub + Marketaux APIs | **Completed** |
-| Headline relevance scoring | ML-based relevance scoring with weighted factors | **Completed** |
 
 ### Low Priority / Nice to Have
 
@@ -136,10 +128,8 @@ Planned features and improvements for the Stock Analyzer .NET application.
 | Staging environment | Azure App Service deployment slot or separate app for pre-prod testing | Planned |
 | VNet + Private Endpoint | Deploy App Service into VNet with SQL private endpoint for enhanced security | Planned |
 | Application Insights | Azure Application Insights for error tracking and APM | Planned |
-| ~~Azure Key Vault~~ | ~~Move secrets from env vars to Key Vault~~ | **Completed** |
 | Load testing | k6 or Locust performance benchmarks | Planned |
 | Log archiving | Auto-archive logs when size threshold exceeded | Planned |
-| ~~Docker containerization~~ | ~~Dockerfile + docker-compose for deployment~~ | **Completed** |
 
 ### Recently Completed (Infrastructure)
 
@@ -165,6 +155,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 
 | Date | Change |
 |------|--------|
+| 01/19/2026 | ROADMAP sync: Updated test count (150), moved Bollinger Bands to completed, cleaned up strikethrough items |
 | 01/19/2026 | Folder reorganization: moved stock_analyzer_dotnet → projects/stock-analyzer, project-specific workflows to project folder, added separate repos option to backlog |
 | 01/19/2026 | **v2.6** - Multi-source news (Finnhub + Marketaux), ML headline relevance scoring, Jaccard deduplication, image quality control (50% confidence, 20% min size), 52 new unit tests |
 | 01/19/2026 | **v2.5** - Security hardening (CORS, HSTS, input validation) |
