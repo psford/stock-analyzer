@@ -68,38 +68,41 @@
         <!-- Tab Navigation - sticky -->
         <div class="flex-shrink-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 z-10">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div class="flex items-center justify-between">
-                    <nav class="flex space-x-8" aria-label="Tabs">
-                        <button data-doc="explanation" class="tab-btn tab-active border-b-2 py-4 px-1 text-sm font-medium transition-colors">
-                            App Explanation
-                        </button>
-                        <button data-doc="claude" class="tab-btn border-b-2 border-transparent py-4 px-1 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 transition-colors">
-                            Project Guidelines
-                        </button>
-                        <button data-doc="functional" class="tab-btn border-b-2 border-transparent py-4 px-1 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 transition-colors">
-                            Functional Spec
-                        </button>
-                        <button data-doc="technical" class="tab-btn border-b-2 border-transparent py-4 px-1 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 transition-colors">
-                            Technical Spec
-                        </button>
-                        <button data-doc="architecture" class="tab-btn border-b-2 border-transparent py-4 px-1 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 transition-colors">
-                            Architecture
-                        </button>
-                        <button data-doc="security" class="tab-btn border-b-2 border-transparent py-4 px-1 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 transition-colors">
-                            Security
-                        </button>
-                    </nav>
-                    <!-- Search box -->
-                    <div class="relative">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0">
+                    <!-- Scrollable tab container on mobile -->
+                    <div class="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                        <nav class="flex space-x-4 sm:space-x-8 whitespace-nowrap" aria-label="Tabs">
+                            <button data-doc="explanation" class="tab-btn tab-active border-b-2 py-3 sm:py-4 px-1 text-sm font-medium transition-colors">
+                                App Explanation
+                            </button>
+                            <button data-doc="claude" class="tab-btn border-b-2 border-transparent py-3 sm:py-4 px-1 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 transition-colors">
+                                Project Guidelines
+                            </button>
+                            <button data-doc="functional" class="tab-btn border-b-2 border-transparent py-3 sm:py-4 px-1 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 transition-colors">
+                                Functional Spec
+                            </button>
+                            <button data-doc="technical" class="tab-btn border-b-2 border-transparent py-3 sm:py-4 px-1 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 transition-colors">
+                                Technical Spec
+                            </button>
+                            <button data-doc="architecture" class="tab-btn border-b-2 border-transparent py-3 sm:py-4 px-1 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 transition-colors">
+                                Architecture
+                            </button>
+                            <button data-doc="security" class="tab-btn border-b-2 border-transparent py-3 sm:py-4 px-1 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 transition-colors">
+                                Security
+                            </button>
+                        </nav>
+                    </div>
+                    <!-- Search box - full width on mobile, fixed width on desktop -->
+                    <div class="relative pb-2 sm:pb-0">
                         <div class="flex items-center">
                             <svg class="absolute left-3 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
                             </svg>
                             <input type="text" id="search-input" placeholder="Search docs..."
-                                   class="w-64 pl-10 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                                   class="w-full sm:w-64 pl-10 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
                         </div>
                         <!-- Search results dropdown -->
-                        <div id="search-results" class="hidden absolute right-0 mt-1 w-96 max-h-96 overflow-y-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50">
+                        <div id="search-results" class="hidden absolute right-0 mt-1 w-full sm:w-96 max-h-96 overflow-y-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50">
                             <!-- Results populated by JS -->
                         </div>
                     </div>
