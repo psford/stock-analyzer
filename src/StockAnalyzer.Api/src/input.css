@@ -295,3 +295,21 @@ html {
 .dark .search-no-results {
     color: #9ca3af;
 }
+
+/* Hide scrollbar utility - works cross-browser including iOS Safari */
+.hide-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+}
+.hide-scrollbar::-webkit-scrollbar {
+    display: none;  /* Chrome, Safari, Opera */
+}
+
+/* iOS Safari horizontal scroll fix */
+@supports (-webkit-touch-callout: none) {
+    /* iOS specific fixes */
+    .overflow-x-auto {
+        -webkit-overflow-scrolling: touch;
+        overflow-x: scroll;  /* Force scroll instead of auto for iOS */
+    }
+}
