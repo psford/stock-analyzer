@@ -772,7 +772,7 @@ const App = {
                 API.getHistory(ticker, this.currentPeriod),
                 API.getAnalysis(ticker, this.currentPeriod),
                 API.getSignificantMoves(ticker, this.currentThreshold),
-                API.getNews(ticker, 30)
+                API.getAggregatedNews(ticker, 30, 10)
             ]);
 
             this.historyData = history;
@@ -921,7 +921,7 @@ const App = {
     },
 
     /**
-     * Render news
+     * Render news from aggregated news API
      */
     renderNews(data) {
         if (!data || !data.articles || data.articles.length === 0) {
@@ -929,19 +929,35 @@ const App = {
             return;
         }
 
-        document.getElementById('news-list').innerHTML = data.articles.slice(0, 5).map(article => {
+        // Build source breakdown header if we have multiple sources
+        let sourceHeader = '';
+        if (data.sourceBreakdown && Object.keys(data.sourceBreakdown).length > 0) {
+            const sources = Object.entries(data.sourceBreakdown)
+                .map(([source, count]) => `${source}: ${count}`)
+                .join(', ');
+            sourceHeader = `<p class="text-xs text-gray-400 dark:text-gray-500 mb-3">Sources: ${sources}</p>`;
+        }
+
+        const articlesHtml = data.articles.slice(0, 5).map(article => {
             const date = new Date(article.publishedAt).toLocaleDateString();
+            // Show the API source (Finnhub, Marketaux) alongside the publisher
+            const apiSource = article.sourceApi ? `[${article.sourceApi}]` : '';
             return `
                 <div class="border-b border-gray-100 dark:border-gray-700 pb-4">
                     <a href="${article.url}" target="_blank" rel="noopener noreferrer"
                        class="text-primary hover:text-blue-700 dark:hover:text-blue-400 font-medium">
                         ${article.headline}
                     </a>
-                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">${article.source} • ${date}</p>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        ${article.source} • ${date}
+                        <span class="text-xs text-gray-400 dark:text-gray-500 ml-1">${apiSource}</span>
+                    </p>
                     ${article.summary ? `<p class="text-gray-600 dark:text-gray-300 mt-2 text-sm">${article.summary.substring(0, 150)}...</p>` : ''}
                 </div>
             `;
         }).join('');
+
+        document.getElementById('news-list').innerHTML = sourceHeader + articlesHtml;
     },
 
     /**
@@ -1174,6 +1190,12 @@ const App = {
         const cardWidth = 320;
         const padding = 15;
 
+        // Use visualViewport for accurate viewport dimensions
+        const viewportHeight = window.visualViewport?.height || window.innerHeight;
+
+        // Set max-height dynamically to ensure it fits in viewport
+        card.style.maxHeight = `${viewportHeight - 2 * padding}px`;
+
         // Show card off-screen first to measure actual height
         card.style.left = '-9999px';
         card.style.top = '-9999px';
@@ -1182,22 +1204,28 @@ const App = {
         // Use requestAnimationFrame to ensure DOM has updated
         requestAnimationFrame(() => {
             const cardHeight = card.offsetHeight;
+            // Use visualViewport for accurate viewport dimensions (accounts for browser chrome)
+            const viewportHeight = window.visualViewport?.height || window.innerHeight;
+            const viewportWidth = window.visualViewport?.width || window.innerWidth;
 
             let left = x + padding;
             let top = y - cardHeight / 2;
 
-            // Keep within viewport
-            if (left + cardWidth > window.innerWidth) {
+            // Keep within viewport - right edge
+            if (left + cardWidth > viewportWidth - padding) {
                 left = x - cardWidth - padding;
             }
+            // Left edge
             if (left < padding) {
                 left = padding;
             }
+            // Top edge
             if (top < padding) {
                 top = padding;
             }
-            if (top + cardHeight > window.innerHeight - padding) {
-                top = window.innerHeight - cardHeight - padding;
+            // Bottom edge - ensure card fits entirely in viewport
+            if (top + cardHeight > viewportHeight - padding) {
+                top = Math.max(padding, viewportHeight - cardHeight - padding);
             }
 
             card.style.left = `${left}px`;
