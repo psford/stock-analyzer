@@ -67,43 +67,59 @@
 
         <!-- Tab Navigation - sticky -->
         <div class="flex-shrink-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 z-10">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0">
-                    <!-- Scrollable tab container on mobile -->
-                    <div class="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-                        <nav class="flex space-x-4 sm:space-x-8 whitespace-nowrap" aria-label="Tabs">
-                            <button data-doc="explanation" class="tab-btn tab-active border-b-2 py-3 sm:py-4 px-1 text-sm font-medium transition-colors">
+            <!-- Search box row - constrained width -->
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 sm:hidden">
+                <div class="relative py-2">
+                    <div class="flex items-center">
+                        <svg class="absolute left-3 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                        </svg>
+                        <input type="text" id="search-input-mobile" placeholder="Search docs..."
+                               class="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                    </div>
+                    <!-- Search results dropdown (mobile) -->
+                    <div id="search-results-mobile" class="hidden absolute left-0 right-0 mt-1 max-h-96 overflow-y-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50">
+                        <!-- Results populated by JS -->
+                    </div>
+                </div>
+            </div>
+            <!-- Tab row - full width scroll on mobile -->
+            <div class="overflow-x-auto" style="-webkit-overflow-scrolling: touch;">
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div class="flex items-center justify-between">
+                        <nav class="flex space-x-4 sm:space-x-8 whitespace-nowrap min-w-max" aria-label="Tabs">
+                            <button data-doc="explanation" class="tab-btn tab-active border-b-2 py-3 sm:py-4 px-1 text-sm font-medium transition-colors flex-shrink-0">
                                 App Explanation
                             </button>
-                            <button data-doc="claude" class="tab-btn border-b-2 border-transparent py-3 sm:py-4 px-1 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 transition-colors">
+                            <button data-doc="claude" class="tab-btn border-b-2 border-transparent py-3 sm:py-4 px-1 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 transition-colors flex-shrink-0">
                                 Project Guidelines
                             </button>
-                            <button data-doc="functional" class="tab-btn border-b-2 border-transparent py-3 sm:py-4 px-1 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 transition-colors">
+                            <button data-doc="functional" class="tab-btn border-b-2 border-transparent py-3 sm:py-4 px-1 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 transition-colors flex-shrink-0">
                                 Functional Spec
                             </button>
-                            <button data-doc="technical" class="tab-btn border-b-2 border-transparent py-3 sm:py-4 px-1 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 transition-colors">
+                            <button data-doc="technical" class="tab-btn border-b-2 border-transparent py-3 sm:py-4 px-1 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 transition-colors flex-shrink-0">
                                 Technical Spec
                             </button>
-                            <button data-doc="architecture" class="tab-btn border-b-2 border-transparent py-3 sm:py-4 px-1 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 transition-colors">
+                            <button data-doc="architecture" class="tab-btn border-b-2 border-transparent py-3 sm:py-4 px-1 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 transition-colors flex-shrink-0">
                                 Architecture
                             </button>
-                            <button data-doc="security" class="tab-btn border-b-2 border-transparent py-3 sm:py-4 px-1 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 transition-colors">
+                            <button data-doc="security" class="tab-btn border-b-2 border-transparent py-3 sm:py-4 px-1 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 transition-colors flex-shrink-0">
                                 Security
                             </button>
                         </nav>
-                    </div>
-                    <!-- Search box - full width on mobile, fixed width on desktop -->
-                    <div class="relative pb-2 sm:pb-0">
-                        <div class="flex items-center">
-                            <svg class="absolute left-3 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                            </svg>
-                            <input type="text" id="search-input" placeholder="Search docs..."
-                                   class="w-full sm:w-64 pl-10 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
-                        </div>
-                        <!-- Search results dropdown -->
-                        <div id="search-results" class="hidden absolute right-0 mt-1 w-full sm:w-96 max-h-96 overflow-y-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50">
-                            <!-- Results populated by JS -->
+                        <!-- Search box - desktop only, inline with tabs -->
+                        <div class="relative hidden sm:block flex-shrink-0 ml-4">
+                            <div class="flex items-center">
+                                <svg class="absolute left-3 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                </svg>
+                                <input type="text" id="search-input" placeholder="Search docs..."
+                                       class="w-64 pl-10 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                            </div>
+                            <!-- Search results dropdown -->
+                            <div id="search-results" class="hidden absolute right-0 mt-1 w-96 max-h-96 overflow-y-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50">
+                                <!-- Results populated by JS -->
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -198,36 +214,48 @@
             },
 
             initSearch() {
+                // Desktop search
                 const searchInput = document.getElementById('search-input');
                 const searchResults = document.getElementById('search-results');
+                // Mobile search
+                const searchInputMobile = document.getElementById('search-input-mobile');
+                const searchResultsMobile = document.getElementById('search-results-mobile');
                 let debounceTimer;
 
-                searchInput.addEventListener('input', (e) => {
-                    clearTimeout(debounceTimer);
-                    debounceTimer = setTimeout(() => {
-                        this.handleSearch(e.target.value);
-                    }, 200);
-                });
+                const setupSearchInput = (input, results) => {
+                    if (!input || !results) return;
+
+                    input.addEventListener('input', (e) => {
+                        clearTimeout(debounceTimer);
+                        debounceTimer = setTimeout(() => {
+                            this.handleSearch(e.target.value, results);
+                        }, 200);
+                    });
+
+                    input.addEventListener('focus', () => {
+                        if (input.value.length >= 2) {
+                            this.handleSearch(input.value, results);
+                        }
+                    });
+
+                    input.addEventListener('keydown', (e) => {
+                        if (e.key === 'Escape') {
+                            results.classList.add('hidden');
+                            input.blur();
+                        }
+                    });
+                };
+
+                setupSearchInput(searchInput, searchResults);
+                setupSearchInput(searchInputMobile, searchResultsMobile);
 
                 // Close results when clicking outside
                 document.addEventListener('click', (e) => {
-                    if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+                    if (searchInput && searchResults && !searchInput.contains(e.target) && !searchResults.contains(e.target)) {
                         searchResults.classList.add('hidden');
                     }
-                });
-
-                // Show results when focusing on input with existing query
-                searchInput.addEventListener('focus', () => {
-                    if (searchInput.value.length >= 2) {
-                        this.handleSearch(searchInput.value);
-                    }
-                });
-
-                // Keyboard navigation
-                searchInput.addEventListener('keydown', (e) => {
-                    if (e.key === 'Escape') {
-                        searchResults.classList.add('hidden');
-                        searchInput.blur();
+                    if (searchInputMobile && searchResultsMobile && !searchInputMobile.contains(e.target) && !searchResultsMobile.contains(e.target)) {
+                        searchResultsMobile.classList.add('hidden');
                     }
                 });
             },
@@ -333,8 +361,8 @@
                 return sections;
             },
 
-            handleSearch(query) {
-                const searchResults = document.getElementById('search-results');
+            handleSearch(query, resultsContainer = null) {
+                const searchResults = resultsContainer || document.getElementById('search-results');
 
                 if (query.length < 2) {
                     searchResults.classList.add('hidden');
@@ -348,11 +376,11 @@
                 }
 
                 const results = this.fuse.search(query, { limit: 10 });
-                this.displaySearchResults(results, query);
+                this.displaySearchResults(results, query, searchResults);
             },
 
-            displaySearchResults(results, query) {
-                const searchResults = document.getElementById('search-results');
+            displaySearchResults(results, query, resultsContainer = null) {
+                const searchResults = resultsContainer || document.getElementById('search-results');
 
                 if (results.length === 0) {
                     searchResults.innerHTML = '<div class="search-no-results">No results found</div>';
@@ -404,11 +432,15 @@
 
             async navigateToResult(docKey, headingId) {
                 const searchResults = document.getElementById('search-results');
+                const searchResultsMobile = document.getElementById('search-results-mobile');
                 const searchInput = document.getElementById('search-input');
+                const searchInputMobile = document.getElementById('search-input-mobile');
 
-                // Hide search results
-                searchResults.classList.add('hidden');
-                searchInput.value = '';
+                // Hide search results (both desktop and mobile)
+                if (searchResults) searchResults.classList.add('hidden');
+                if (searchResultsMobile) searchResultsMobile.classList.add('hidden');
+                if (searchInput) searchInput.value = '';
+                if (searchInputMobile) searchInputMobile.value = '';
 
                 // Load the document if not current
                 if (this.currentDoc !== docKey) {
