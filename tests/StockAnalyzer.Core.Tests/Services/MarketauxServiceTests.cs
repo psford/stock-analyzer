@@ -12,6 +12,10 @@ public class MarketauxServiceTests
 {
     private const string TestApiToken = "test-api-token"; // pragma: allowlist secret
 
+    /// <summary>
+    /// Creates a mock HttpClient that returns predefined responses.
+    /// Uses a factory lambda to create fresh HttpResponseMessage instances to avoid CA2000 warnings.
+    /// </summary>
     private static HttpClient CreateMockHttpClient(HttpStatusCode statusCode, string content)
     {
         var mockHandler = new Mock<HttpMessageHandler>();
@@ -21,7 +25,7 @@ public class MarketauxServiceTests
                 "SendAsync",
                 ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
-            .ReturnsAsync(new HttpResponseMessage
+            .ReturnsAsync(() => new HttpResponseMessage
             {
                 StatusCode = statusCode,
                 Content = new StringContent(content)
@@ -67,7 +71,7 @@ public class MarketauxServiceTests
     {
         // Arrange
         var mockResponse = CreateMarketauxResponse(5, "AAPL");
-        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, mockResponse);
+        using var httpClient = CreateMockHttpClient(HttpStatusCode.OK, mockResponse);
         var sut = new MarketauxService(TestApiToken, httpClient);
 
         // Act
@@ -82,7 +86,7 @@ public class MarketauxServiceTests
     public async Task GetNewsAsync_WithEmptyApiToken_ReturnsEmptyList()
     {
         // Arrange
-        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, "{}");
+        using var httpClient = CreateMockHttpClient(HttpStatusCode.OK, "{}");
         var sut = new MarketauxService("", httpClient);
 
         // Act
@@ -96,7 +100,7 @@ public class MarketauxServiceTests
     public async Task GetNewsAsync_WithApiError_ReturnsEmptyList()
     {
         // Arrange
-        var httpClient = CreateMockHttpClient(HttpStatusCode.InternalServerError, "Server Error");
+        using var httpClient = CreateMockHttpClient(HttpStatusCode.InternalServerError, "Server Error");
         var sut = new MarketauxService(TestApiToken, httpClient);
 
         // Act
@@ -110,7 +114,7 @@ public class MarketauxServiceTests
     public async Task GetNewsAsync_WithEmptyDataResponse_ReturnsEmptyList()
     {
         // Arrange
-        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, "{\"data\": null}");
+        using var httpClient = CreateMockHttpClient(HttpStatusCode.OK, "{\"data\": null}");
         var sut = new MarketauxService(TestApiToken, httpClient);
 
         // Act
@@ -142,7 +146,7 @@ public class MarketauxServiceTests
             }]
         }";
 
-        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, singleArticleJson);
+        using var httpClient = CreateMockHttpClient(HttpStatusCode.OK, singleArticleJson);
         var sut = new MarketauxService(TestApiToken, httpClient);
 
         // Act
@@ -172,7 +176,7 @@ public class MarketauxServiceTests
             }]
         }";
 
-        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, jsonWithPositiveSentiment);
+        using var httpClient = CreateMockHttpClient(HttpStatusCode.OK, jsonWithPositiveSentiment);
         var sut = new MarketauxService(TestApiToken, httpClient);
 
         // Act
@@ -193,7 +197,7 @@ public class MarketauxServiceTests
             }]
         }";
 
-        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, jsonWithNegativeSentiment);
+        using var httpClient = CreateMockHttpClient(HttpStatusCode.OK, jsonWithNegativeSentiment);
         var sut = new MarketauxService(TestApiToken, httpClient);
 
         // Act
@@ -214,7 +218,7 @@ public class MarketauxServiceTests
             }]
         }";
 
-        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, jsonWithNeutralSentiment);
+        using var httpClient = CreateMockHttpClient(HttpStatusCode.OK, jsonWithNeutralSentiment);
         var sut = new MarketauxService(TestApiToken, httpClient);
 
         // Act
@@ -237,13 +241,13 @@ public class MarketauxServiceTests
                 ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
             .Callback<HttpRequestMessage, CancellationToken>((req, _) => capturedUrl = req.RequestUri?.ToString())
-            .ReturnsAsync(new HttpResponseMessage
+            .ReturnsAsync(() => new HttpResponseMessage
             {
                 StatusCode = HttpStatusCode.OK,
                 Content = new StringContent(CreateMarketauxResponse(5))
             });
 
-        var httpClient = new HttpClient(mockHandler.Object);
+        using var httpClient = new HttpClient(mockHandler.Object);
         var sut = new MarketauxService(TestApiToken, httpClient);
 
         // Act
@@ -266,13 +270,13 @@ public class MarketauxServiceTests
                 ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
             .Callback<HttpRequestMessage, CancellationToken>((req, _) => capturedUrl = req.RequestUri?.ToString())
-            .ReturnsAsync(new HttpResponseMessage
+            .ReturnsAsync(() => new HttpResponseMessage
             {
                 StatusCode = HttpStatusCode.OK,
                 Content = new StringContent(CreateMarketauxResponse(5))
             });
 
-        var httpClient = new HttpClient(mockHandler.Object);
+        using var httpClient = new HttpClient(mockHandler.Object);
         var sut = new MarketauxService(TestApiToken, httpClient);
 
         // Act
@@ -295,13 +299,13 @@ public class MarketauxServiceTests
                 ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
             .Callback<HttpRequestMessage, CancellationToken>((req, _) => capturedUrl = req.RequestUri?.ToString())
-            .ReturnsAsync(new HttpResponseMessage
+            .ReturnsAsync(() => new HttpResponseMessage
             {
                 StatusCode = HttpStatusCode.OK,
                 Content = new StringContent(CreateMarketauxResponse(1))
             });
 
-        var httpClient = new HttpClient(mockHandler.Object);
+        using var httpClient = new HttpClient(mockHandler.Object);
         var sut = new MarketauxService(TestApiToken, httpClient);
 
         // Act
@@ -320,7 +324,7 @@ public class MarketauxServiceTests
     {
         // Arrange
         var mockResponse = CreateMarketauxResponse(5);
-        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, mockResponse);
+        using var httpClient = CreateMockHttpClient(HttpStatusCode.OK, mockResponse);
         var sut = new MarketauxService(TestApiToken, httpClient);
 
         // Act
@@ -335,7 +339,7 @@ public class MarketauxServiceTests
     public async Task GetMarketNewsAsync_WithEmptyApiToken_ReturnsEmptyList()
     {
         // Arrange
-        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, "{}");
+        using var httpClient = CreateMockHttpClient(HttpStatusCode.OK, "{}");
         var sut = new MarketauxService("", httpClient);
 
         // Act
@@ -350,7 +354,7 @@ public class MarketauxServiceTests
     {
         // Arrange
         var mockResponse = CreateMarketauxResponse(1);
-        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, mockResponse);
+        using var httpClient = CreateMockHttpClient(HttpStatusCode.OK, mockResponse);
         var sut = new MarketauxService(TestApiToken, httpClient);
 
         // Act
@@ -365,7 +369,7 @@ public class MarketauxServiceTests
     {
         // Arrange
         var mockResponse = CreateMarketauxResponse(3);
-        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, mockResponse);
+        using var httpClient = CreateMockHttpClient(HttpStatusCode.OK, mockResponse);
         var sut = new MarketauxService(TestApiToken, httpClient);
 
         // Act
@@ -394,7 +398,7 @@ public class MarketauxServiceTests
     {
         // Arrange
         var mockResponse = CreateMarketauxResponse(1);
-        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, mockResponse);
+        using var httpClient = CreateMockHttpClient(HttpStatusCode.OK, mockResponse);
 
         // Act
         var sut = new MarketauxService(TestApiToken, httpClient);

@@ -40,7 +40,7 @@ public class ImageProcessingService : IDisposable
         _targetHeight = targetHeight;
 
         // Load ONNX model
-        var sessionOptions = new SessionOptions();
+        using var sessionOptions = new SessionOptions();
         sessionOptions.GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL;
         _session = new InferenceSession(modelPath, sessionOptions);
     }

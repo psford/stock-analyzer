@@ -12,6 +12,11 @@ public class NewsServiceTests
 {
     private const string TestApiKey = "test-api-key"; // pragma: allowlist secret
 
+    /// <summary>
+    /// Creates a mock HttpClient that returns predefined responses.
+    /// The HttpClient caller is responsible for disposal (via using statement).
+    /// The HttpResponseMessage is created fresh for each SendAsync call to avoid CA2000 warnings.
+    /// </summary>
     private static HttpClient CreateMockHttpClient(HttpStatusCode statusCode, string content)
     {
         var mockHandler = new Mock<HttpMessageHandler>();
@@ -21,7 +26,7 @@ public class NewsServiceTests
                 "SendAsync",
                 ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
-            .ReturnsAsync(new HttpResponseMessage
+            .ReturnsAsync(() => new HttpResponseMessage
             {
                 StatusCode = statusCode,
                 Content = new StringContent(content)
@@ -55,7 +60,7 @@ public class NewsServiceTests
     {
         // Arrange
         var mockResponse = CreateFinnhubNewsResponse(5);
-        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, mockResponse);
+        using var httpClient = CreateMockHttpClient(HttpStatusCode.OK, mockResponse);
         var sut = new NewsService(TestApiKey, httpClient);
 
         // Act
@@ -73,7 +78,7 @@ public class NewsServiceTests
     {
         // Arrange
         var mockResponse = CreateFinnhubNewsResponse(3);
-        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, mockResponse);
+        using var httpClient = CreateMockHttpClient(HttpStatusCode.OK, mockResponse);
         var sut = new NewsService(TestApiKey, httpClient);
 
         var fromDate = new DateTime(2026, 1, 1);
@@ -92,7 +97,7 @@ public class NewsServiceTests
     public async Task GetCompanyNewsAsync_WithApiError_ReturnsEmptyResult()
     {
         // Arrange
-        var httpClient = CreateMockHttpClient(HttpStatusCode.InternalServerError, "Server Error");
+        using var httpClient = CreateMockHttpClient(HttpStatusCode.InternalServerError, "Server Error");
         var sut = new NewsService(TestApiKey, httpClient);
 
         // Act
@@ -108,7 +113,7 @@ public class NewsServiceTests
     public async Task GetCompanyNewsAsync_WithEmptyResponse_ReturnsEmptyList()
     {
         // Arrange
-        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, "[]");
+        using var httpClient = CreateMockHttpClient(HttpStatusCode.OK, "[]");
         var sut = new NewsService(TestApiKey, httpClient);
 
         // Act
@@ -137,7 +142,7 @@ public class NewsServiceTests
             ""url"": ""https://example.com/article""
         }}]";
 
-        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, singleNewsJson);
+        using var httpClient = CreateMockHttpClient(HttpStatusCode.OK, singleNewsJson);
         var sut = new NewsService(TestApiKey, httpClient);
 
         // Act
@@ -160,7 +165,7 @@ public class NewsServiceTests
     {
         // Arrange
         var mockResponse = CreateFinnhubNewsResponse(5);
-        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, mockResponse);
+        using var httpClient = CreateMockHttpClient(HttpStatusCode.OK, mockResponse);
         var sut = new NewsService(TestApiKey, httpClient);
 
         // Act
@@ -179,7 +184,7 @@ public class NewsServiceTests
     {
         // Arrange
         var mockResponse = CreateFinnhubNewsResponse(10);
-        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, mockResponse);
+        using var httpClient = CreateMockHttpClient(HttpStatusCode.OK, mockResponse);
         var sut = new NewsService(TestApiKey, httpClient);
 
         // Act
@@ -194,7 +199,7 @@ public class NewsServiceTests
     public async Task GetNewsForDateAsync_WithNoNews_ReturnsEmptyList()
     {
         // Arrange
-        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, "[]");
+        using var httpClient = CreateMockHttpClient(HttpStatusCode.OK, "[]");
         var sut = new NewsService(TestApiKey, httpClient);
 
         // Act
@@ -223,7 +228,7 @@ public class NewsServiceTests
     {
         // Arrange
         var mockResponse = CreateFinnhubNewsResponse(1);
-        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, mockResponse);
+        using var httpClient = CreateMockHttpClient(HttpStatusCode.OK, mockResponse);
 
         // Act
         var sut = new NewsService(TestApiKey, httpClient);
