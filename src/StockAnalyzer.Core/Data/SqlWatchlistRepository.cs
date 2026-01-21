@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using StockAnalyzer.Core.Data.Entities;
+using StockAnalyzer.Core.Helpers;
 using StockAnalyzer.Core.Models;
 using StockAnalyzer.Core.Services;
 
@@ -79,7 +80,7 @@ public class SqlWatchlistRepository : IWatchlistRepository
         _context.Watchlists.Add(entity);
         await _context.SaveChangesAsync();
 
-        _logger.LogInformation("Created watchlist: {Id} - {Name}", entity.Id, entity.Name);
+        _logger.LogInformation("Created watchlist: {Id} - {Name}", LogSanitizer.Sanitize(entity.Id), LogSanitizer.Sanitize(entity.Name));
 
         return MapToModel(entity);
     }
@@ -144,7 +145,7 @@ public class SqlWatchlistRepository : IWatchlistRepository
         _context.Watchlists.Remove(entity);
         await _context.SaveChangesAsync();
 
-        _logger.LogInformation("Deleted watchlist: {Id}", id);
+        _logger.LogInformation("Deleted watchlist: {Id}", LogSanitizer.Sanitize(id));
 
         return true;
     }
@@ -179,7 +180,7 @@ public class SqlWatchlistRepository : IWatchlistRepository
 
         await _context.SaveChangesAsync();
 
-        _logger.LogInformation("Added ticker {Ticker} to watchlist {Id}", normalizedTicker, id);
+        _logger.LogInformation("Added ticker {Ticker} to watchlist {Id}", LogSanitizer.Sanitize(normalizedTicker), LogSanitizer.Sanitize(id));
 
         return MapToModel(entity);
     }
@@ -213,7 +214,7 @@ public class SqlWatchlistRepository : IWatchlistRepository
             await _context.SaveChangesAsync();
         }
 
-        _logger.LogInformation("Removed ticker {Ticker} from watchlist {Id}", normalizedTicker, id);
+        _logger.LogInformation("Removed ticker {Ticker} from watchlist {Id}", LogSanitizer.Sanitize(normalizedTicker), LogSanitizer.Sanitize(id));
 
         return MapToModel(entity);
     }
