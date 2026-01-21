@@ -32,6 +32,7 @@ builder.Host.UseSerilog();
 // Add services to the container
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddMemoryCache();
 
 // Configure CORS for frontend - restrict to known origins
 builder.Services.AddCors(options =>
@@ -48,8 +49,37 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Register services
+// Register stock data providers (multi-provider with fallback)
+// Priority: TwelveData (1) → FMP (2) → Yahoo (3)
+builder.Services.AddSingleton<IStockDataProvider>(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var logger = sp.GetRequiredService<ILogger<TwelveDataService>>();
+    var apiKey = config["StockDataProviders:TwelveData:ApiKey"]
+              ?? Environment.GetEnvironmentVariable("TWELVEDATA_API_KEY")
+              ?? "";
+    return new TwelveDataService(apiKey, logger);
+});
+builder.Services.AddSingleton<IStockDataProvider>(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var logger = sp.GetRequiredService<ILogger<FmpService>>();
+    var apiKey = config["StockDataProviders:FMP:ApiKey"]
+              ?? Environment.GetEnvironmentVariable("FMP_API_KEY")
+              ?? "";
+    return new FmpService(apiKey, logger);
+});
+builder.Services.AddSingleton<IStockDataProvider>(sp =>
+{
+    var logger = sp.GetRequiredService<ILogger<YahooFinanceService>>();
+    return new YahooFinanceService(logger);
+});
+builder.Services.AddSingleton<AggregatedStockDataService>();
+
+// Keep StockDataService for backward compatibility (deprecated, use AggregatedStockDataService)
 builder.Services.AddSingleton<StockDataService>();
+
+// Register news services
 builder.Services.AddSingleton(sp =>
 {
     var config = sp.GetRequiredService<IConfiguration>();
@@ -125,6 +155,8 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<ImageCacheService>
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy("API is running"))
     .AddUrlGroup(new Uri("https://finnhub.io"), name: "finnhub-api", tags: new[] { "external" })
+    .AddUrlGroup(new Uri("https://api.twelvedata.com"), name: "twelvedata-api", tags: new[] { "external" })
+    .AddUrlGroup(new Uri("https://financialmodelingprep.com"), name: "fmp-api", tags: new[] { "external" })
     .AddUrlGroup(new Uri("https://query1.finance.yahoo.com"), name: "yahoo-finance", tags: new[] { "external" });
 
 // Serve static files from wwwroot
@@ -209,7 +241,7 @@ static IResult InvalidTickerResult() =>
     Results.BadRequest(new { error = "Invalid ticker symbol. Use 1-10 alphanumeric characters, dots, dashes, or carets." });
 
 // GET /api/stock/{ticker} - Get stock information with company profile and identifiers
-app.MapGet("/api/stock/{ticker}", async (string ticker, StockDataService stockService, NewsService newsService) =>
+app.MapGet("/api/stock/{ticker}", async (string ticker, AggregatedStockDataService stockService, NewsService newsService) =>
 {
     if (!IsValidTicker(ticker))
         return InvalidTickerResult();
@@ -253,7 +285,7 @@ app.MapGet("/api/stock/{ticker}", async (string ticker, StockDataService stockSe
 app.MapGet("/api/stock/{ticker}/history", async (
     string ticker,
     string? period,
-    StockDataService stockService) =>
+    AggregatedStockDataService stockService) =>
 {
     if (!IsValidTicker(ticker))
         return InvalidTickerResult();
@@ -289,7 +321,7 @@ app.MapGet("/api/stock/{ticker}/news", async (
 app.MapGet("/api/stock/{ticker}/significant", async (
     string ticker,
     decimal? threshold,
-    StockDataService stockService,
+    AggregatedStockDataService stockService,
     AnalysisService analysisService) =>
 {
     if (!IsValidTicker(ticker))
@@ -316,7 +348,7 @@ app.MapGet("/api/stock/{ticker}/significant", async (
 app.MapGet("/api/stock/{ticker}/analysis", async (
     string ticker,
     string? period,
-    StockDataService stockService,
+    AggregatedStockDataService stockService,
     AnalysisService analysisService) =>
 {
     if (!IsValidTicker(ticker))
@@ -349,7 +381,7 @@ app.MapGet("/api/stock/{ticker}/analysis", async (
 .Produces(StatusCodes.Status404NotFound);
 
 // GET /api/search - Search for tickers by symbol or company name
-app.MapGet("/api/search", async (string q, StockDataService stockService) =>
+app.MapGet("/api/search", async (string q, AggregatedStockDataService stockService) =>
 {
     if (string.IsNullOrWhiteSpace(q))
         return Results.BadRequest(new { error = "Query parameter 'q' is required" });
@@ -375,7 +407,7 @@ app.MapGet("/api/search", async (string q, StockDataService stockService) =>
 .Produces(StatusCodes.Status400BadRequest);
 
 // GET /api/trending - Get trending stocks
-app.MapGet("/api/trending", async (int? count, StockDataService stockService) =>
+app.MapGet("/api/trending", async (int? count, AggregatedStockDataService stockService) =>
 {
     var trending = await stockService.GetTrendingStocksAsync(count ?? 10);
     return Results.Ok(new
