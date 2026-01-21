@@ -1172,26 +1172,37 @@ const App = {
         const x = event.clientX || event.pageX;
         const y = event.clientY || event.pageY;
         const cardWidth = 320;
-        const cardHeight = 280;
         const padding = 15;
 
-        let left = x + padding;
-        let top = y - cardHeight / 2;
-
-        // Keep within viewport
-        if (left + cardWidth > window.innerWidth) {
-            left = x - cardWidth - padding;
-        }
-        if (top < padding) {
-            top = padding;
-        }
-        if (top + cardHeight > window.innerHeight) {
-            top = window.innerHeight - cardHeight - padding;
-        }
-
-        card.style.left = `${left}px`;
-        card.style.top = `${top}px`;
+        // Show card off-screen first to measure actual height
+        card.style.left = '-9999px';
+        card.style.top = '-9999px';
         card.classList.remove('hidden');
+
+        // Use requestAnimationFrame to ensure DOM has updated
+        requestAnimationFrame(() => {
+            const cardHeight = card.offsetHeight;
+
+            let left = x + padding;
+            let top = y - cardHeight / 2;
+
+            // Keep within viewport
+            if (left + cardWidth > window.innerWidth) {
+                left = x - cardWidth - padding;
+            }
+            if (left < padding) {
+                left = padding;
+            }
+            if (top < padding) {
+                top = padding;
+            }
+            if (top + cardHeight > window.innerHeight - padding) {
+                top = window.innerHeight - cardHeight - padding;
+            }
+
+            card.style.left = `${left}px`;
+            card.style.top = `${top}px`;
+        });
     },
 
     /**
