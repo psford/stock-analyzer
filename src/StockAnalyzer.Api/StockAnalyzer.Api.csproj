@@ -39,22 +39,8 @@
     <None Include="MLModels\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <!-- Copy documentation files to wwwroot/docs/ during build -->
-  <Target Name="CopyDocumentation" BeforeTargets="Build">
-    <Message Text="Copying documentation files to wwwroot/docs/..." Importance="high" />
-    <MakeDir Directories="$(ProjectDir)wwwroot\docs" />
-    <!-- CLAUDE.md is optional - may not exist in Docker build context -->
-    <Copy SourceFiles="$(ProjectDir)..\..\..\CLAUDE.md" DestinationFiles="$(ProjectDir)wwwroot\docs\CLAUDE.md" SkipUnchangedFiles="true" Condition="Exists('$(ProjectDir)..\..\..\CLAUDE.md')" />
-    <Copy SourceFiles="$(ProjectDir)..\..\docs\FUNCTIONAL_SPEC.md" DestinationFiles="$(ProjectDir)wwwroot\docs\FUNCTIONAL_SPEC.md" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="$(ProjectDir)..\..\docs\TECHNICAL_SPEC.md" DestinationFiles="$(ProjectDir)wwwroot\docs\TECHNICAL_SPEC.md" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="$(ProjectDir)..\..\docs\SECURITY_OVERVIEW.md" DestinationFiles="$(ProjectDir)wwwroot\docs\SECURITY_OVERVIEW.md" SkipUnchangedFiles="true" />
-  </Target>
-
-  <!-- Ensure diagrams directory exists during build -->
-  <!-- To auto-regenerate project-structure.mmd, see TECHNICAL_SPEC.md for mermaid-graph command -->
-  <Target Name="EnsureDiagramsDirectory" BeforeTargets="Build" DependsOnTargets="CopyDocumentation">
-    <MakeDir Directories="$(ProjectDir)wwwroot\docs\diagrams" />
-  </Target>
+  <!-- Documentation is now served from GitHub Pages (https://psford.github.io/claudeProjects/) -->
+  <!-- No longer need to copy docs during build - they're fetched client-side -->
 
   <!-- Build Tailwind CSS before build (if node_modules exists and node is available) -->
   <!-- On Windows, uses Node.js from Program Files. For CI/Docker, node must be in PATH. -->

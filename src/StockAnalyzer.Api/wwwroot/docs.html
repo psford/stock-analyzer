@@ -197,13 +197,15 @@
     <script>
         const Docs = {
             currentDoc: 'explanation',
+            // Docs are served from GitHub Pages for instant updates without container rebuild
+            docsBaseUrl: 'https://psford.github.io/claudeProjects/',
             docs: {
-                explanation: { title: 'App Explanation', file: '/docs/APP_EXPLANATION.md' },
-                claude: { title: 'Project Guidelines', file: '/docs/CLAUDE.md' },
-                functional: { title: 'Functional Spec', file: '/docs/FUNCTIONAL_SPEC.md' },
-                technical: { title: 'Technical Spec', file: '/docs/TECHNICAL_SPEC.md' },
+                explanation: { title: 'App Explanation', file: 'APP_EXPLANATION.md' },
+                claude: { title: 'Project Guidelines', file: 'claude_disp.md' },
+                functional: { title: 'Functional Spec', file: 'FUNCTIONAL_SPEC.md' },
+                technical: { title: 'Technical Spec', file: 'TECHNICAL_SPEC.md' },
                 architecture: { title: 'Architecture', type: 'architecture' },
-                security: { title: 'Security', file: '/docs/SECURITY_OVERVIEW.md' }
+                security: { title: 'Security', file: 'SECURITY_OVERVIEW.md' }
             },
             cache: {},
             fuse: null,
@@ -277,7 +279,7 @@
                     // Fetch if not cached
                     if (!this.cache[docKey]) {
                         try {
-                            const response = await fetch(doc.file);
+                            const response = await fetch(this.docsBaseUrl + doc.file);
                             if (response.ok) {
                                 this.cache[docKey] = await response.text();
                             }
@@ -674,7 +676,7 @@
                 try {
                     // Fetch and cache if needed
                     if (!this.cache[docKey]) {
-                        const response = await fetch(doc.file);
+                        const response = await fetch(this.docsBaseUrl + doc.file);
                         if (!response.ok) throw new Error('Failed to load document');
                         this.cache[docKey] = await response.text();
                     }
@@ -701,15 +703,15 @@
                 }
             },
 
-            // Diagram definitions - loaded from external .mmd files
+            // Diagram definitions - loaded from external .mmd files (served from GitHub Pages)
             diagrams: [
-                { id: 'project-structure', title: 'Project Structure', desc: 'The solution contains three projects with their dependencies:', file: '/docs/diagrams/project-structure.mmd', auto: true },
-                { id: 'service-architecture', title: 'Service Architecture', desc: 'The backend services and their responsibilities:', file: '/docs/diagrams/service-architecture.mmd', auto: false },
-                { id: 'data-flow', title: 'Data Flow', desc: 'How data flows through the application when a user searches for a stock:', file: '/docs/diagrams/data-flow.mmd', auto: false },
-                { id: 'domain-models', title: 'Domain Models', desc: 'Core data models used throughout the application:', file: '/docs/diagrams/domain-models.mmd', auto: false },
-                { id: 'image-pipeline', title: 'Image Processing Pipeline', desc: 'The ML-based image processing for cat/dog images:', file: '/docs/diagrams/image-pipeline.mmd', auto: false },
-                { id: 'frontend-architecture', title: 'Frontend Architecture', desc: 'Client-side JavaScript modules and their interactions:', file: '/docs/diagrams/frontend-architecture.mmd', auto: false },
-                { id: 'api-endpoints', title: 'API Endpoints', desc: 'Complete list of REST API endpoints:', file: '/docs/diagrams/api-endpoints.mmd', auto: false }
+                { id: 'project-structure', title: 'Project Structure', desc: 'The solution contains three projects with their dependencies:', file: 'diagrams/project-structure.mmd', auto: true },
+                { id: 'service-architecture', title: 'Service Architecture', desc: 'The backend services and their responsibilities:', file: 'diagrams/service-architecture.mmd', auto: false },
+                { id: 'data-flow', title: 'Data Flow', desc: 'How data flows through the application when a user searches for a stock:', file: 'diagrams/data-flow.mmd', auto: false },
+                { id: 'domain-models', title: 'Domain Models', desc: 'Core data models used throughout the application:', file: 'diagrams/domain-models.mmd', auto: false },
+                { id: 'image-pipeline', title: 'Image Processing Pipeline', desc: 'The ML-based image processing for cat/dog images:', file: 'diagrams/image-pipeline.mmd', auto: false },
+                { id: 'frontend-architecture', title: 'Frontend Architecture', desc: 'Client-side JavaScript modules and their interactions:', file: 'diagrams/frontend-architecture.mmd', auto: false },
+                { id: 'api-endpoints', title: 'API Endpoints', desc: 'Complete list of REST API endpoints:', file: 'diagrams/api-endpoints.mmd', auto: false }
             ],
 
             async loadArchitecture() {
@@ -736,10 +738,10 @@
                 });
 
                 try {
-                    // Fetch all diagram files in parallel
+                    // Fetch all diagram files in parallel from GitHub Pages
                     const diagramContents = await Promise.all(
                         this.diagrams.map(async (diagram) => {
-                            const response = await fetch(diagram.file);
+                            const response = await fetch(this.docsBaseUrl + diagram.file);
                             if (!response.ok) throw new Error(`Failed to load ${diagram.file}`);
                             const mmdContent = await response.text();
                             // Strip comment lines (lines starting with %%)
