@@ -307,6 +307,12 @@ public class AggregatedNewsServiceTests
 
     #region Helper Methods
 
+    /// <summary>
+    /// Creates test services with mocked HTTP clients.
+    /// CA2000 is suppressed because HttpClient uses mocked handlers with no real resources to dispose.
+    /// The mock handler pattern doesn't require disposal in unit tests.
+    /// </summary>
+#pragma warning disable CA2000 // HttpClient uses mocked handler - no real resources to dispose
     private (AggregatedNewsService, NewsService, MarketauxService) CreateService(
         string finnhubResponse,
         string marketauxResponse)
@@ -325,6 +331,7 @@ public class AggregatedNewsServiceTests
 
         return (aggregatedService, newsService, marketauxService);
     }
+#pragma warning restore CA2000
 
     /// <summary>
     /// Creates a mock HttpClient that returns predefined responses.
