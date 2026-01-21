@@ -1,8 +1,8 @@
 # Security Overview
 
 **Document Classification:** Internal
-**Last Updated:** 2026-01-19
-**Version:** 1.1
+**Last Updated:** 2026-01-21
+**Version:** 1.2
 
 This document provides an executive summary of security controls implemented in the Stock Analyzer application, intended for security leadership and compliance review.
 
@@ -149,7 +149,18 @@ feature/X → PR to develop → (approval) → PR to master → Production
 |-------|------------|
 | **Edge (Cloudflare)** | TLS 1.2+ encryption, automatic certificate renewal |
 | **Origin (Azure)** | Proxied through Cloudflare, no direct exposure |
+| **Custom Domains** | Azure-managed SSL certificates (auto-renewing) |
 | **Database** | Azure Services firewall rule, no public endpoint |
+
+**Custom Domain Configuration:**
+
+| Domain | SSL Certificate | Issuer |
+|--------|-----------------|--------|
+| psfordtaurus.com | Cloudflare (via proxy) | Cloudflare |
+| psfordtest.com | Azure Managed Certificate | GeoTrust |
+| www.psfordtest.com | Azure Managed Certificate | GeoTrust |
+
+Azure managed certificates auto-renew approximately 30 days before expiration. No manual certificate management required.
 
 #### 3.3 Application Security Headers
 
@@ -274,5 +285,6 @@ For security concerns, contact the repository owner through GitHub.
 
 | Date | Version | Change |
 |------|---------|--------|
+| 2026-01-21 | 1.2 | Added custom domain configuration (psfordtest.com) with Azure managed SSL |
 | 2026-01-19 | 1.1 | Updated for App Service migration, Azure Key Vault implementation |
 | 2026-01-18 | 1.0 | Initial document |
