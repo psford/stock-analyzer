@@ -214,7 +214,7 @@ app.Use(async (context, next) =>
         "style-src 'self' 'unsafe-inline'; " +
         "img-src 'self' data: blob:; " +
         "font-src 'self' https:; " +
-        "connect-src 'self'";
+        "connect-src 'self' https://psford.github.io";
 
     await next();
 });
