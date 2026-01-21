@@ -1,6 +1,6 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.5
+**Version:** 2.6
 **Last Updated:** 2026-01-19
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
@@ -78,10 +78,12 @@ This specification covers:
 │  │ Models:                    Services:                           │ │
 │  │ - StockInfo               - StockDataService (Yahoo Finance)   │ │
 │  │ - OhlcvData               - NewsService (Finnhub)              │ │
-│  │ - HistoricalDataResult    - AnalysisService (MAs, Volatility)  │ │
-│  │ - NewsItem/NewsResult     - ImageProcessingService (ML/ONNX)   │ │
-│  │ - SignificantMove         - ImageCacheService (Background)     │ │
-│  │ - SearchResult                                                 │ │
+│  │ - HistoricalDataResult    - MarketauxService (Marketaux)       │ │
+│  │ - NewsItem/NewsResult     - AggregatedNewsService (Multi-src)  │ │
+│  │ - SignificantMove         - HeadlineRelevanceService (ML)      │ │
+│  │ - SearchResult            - AnalysisService (MAs, Volatility)  │ │
+│  │                           - ImageProcessingService (ML/ONNX)   │ │
+│  │                           - ImageCacheService (Background)     │ │
 │  └────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────┘
                                     │
@@ -516,7 +518,74 @@ GET https://finnhub.io/api/v1/news?category={category}&token={api_key}
 ```
 Returns general market news. Categories: `general`, `forex`, `crypto`, `merger`.
 
-### 5.3 AnalysisService
+### 5.3 MarketauxService
+
+**File:** `StockAnalyzer.Core/Services/MarketauxService.cs`
+
+Alternative news source to complement Finnhub, providing redundancy and additional coverage.
+
+| Method | Description |
+|--------|-------------|
+| `GetNewsAsync(symbol, publishedAfter, limit)` | Fetch stock-specific news from Marketaux |
+| `GetMarketNewsAsync(limit)` | Fetch general market news |
+
+**Marketaux News Endpoint:**
+```
+GET https://api.marketaux.com/v1/news/all?symbols={symbol}&filter_entities=true&published_after={date}&language=en&api_token={token}
+```
+
+**Rate Limits (Free Tier):**
+- 100 requests/day
+- Max 50 articles per request
+
+**Response includes:**
+- Article title, description, URL, image
+- Entity-level sentiment scores (-1 to +1)
+- Entity matching with symbol relevance
+
+### 5.4 HeadlineRelevanceService
+
+**File:** `StockAnalyzer.Core/Services/HeadlineRelevanceService.cs`
+
+Scores news headlines for relevance to a given stock symbol using multiple factors.
+
+| Method | Description |
+|--------|-------------|
+| `ScoreRelevance(article, symbol, companyName)` | Calculate 0-1 relevance score |
+| `AggregateNews(articles, symbol, companyName, maxResults)` | Score, deduplicate, and rank articles |
+
+**Scoring Weights:**
+| Factor | Weight | Description |
+|--------|--------|-------------|
+| Ticker Mention | 35% | Ticker symbol appears in headline/summary |
+| Company Name | 25% | Company name appears in text |
+| Recency | 20% | Exponential decay (24hr half-life) |
+| Sentiment Data | 10% | Having sentiment indicates better coverage |
+| Source Quality | 10% | Premium sources (Reuters, Bloomberg, CNBC, etc.) |
+
+**Deduplication:**
+Uses Jaccard similarity (>70% threshold) on normalized headlines to remove duplicate stories across sources.
+
+### 5.5 AggregatedNewsService
+
+**File:** `StockAnalyzer.Core/Services/AggregatedNewsService.cs`
+
+Combines news from multiple sources (Finnhub, Marketaux) and applies relevance scoring.
+
+| Method | Description |
+|--------|-------------|
+| `GetAggregatedNewsAsync(symbol, days, maxResults)` | Fetch and aggregate stock news from all sources |
+| `GetAggregatedMarketNewsAsync(maxResults)` | Fetch and aggregate market news from all sources |
+
+**Response Model (`AggregatedNewsResult`):**
+- `Symbol` - Ticker symbol
+- `CompanyName` - Resolved company name
+- `Articles` - Scored and deduplicated news items
+- `TotalFetched` - Total articles before deduplication
+- `SourceBreakdown` - Count per source API
+- `AverageRelevanceScore` - Mean relevance score
+
+### 5.6 AnalysisService
 
 **File:** `StockAnalyzer.Core/Services/AnalysisService.cs`
 
@@ -562,7 +631,7 @@ Multiplier = 2 / (period + 1)
 EMA = (Current Price - Previous EMA) × Multiplier + Previous EMA
 ```
 
-### 5.4 ImageProcessingService
+### 5.7 ImageProcessingService
 
 **File:** `StockAnalyzer.Core/Services/ImageProcessingService.cs`
 
@@ -570,18 +639,25 @@ EMA = (Current Price - Previous EMA) × Multiplier + Previous EMA
 |--------|-------------|
 | `GetProcessedCatImageAsync()` | Fetch, detect, crop, and return cat image |
 | `GetProcessedDogImageAsync()` | Fetch, detect, crop, and return dog image |
-| `ProcessImage(imageData, classId)` | Run YOLO detection and crop |
+| `ProcessImage(imageData, classId)` | Run YOLO detection and crop (returns null if no valid detection) |
 | `DetectAnimal(image, classId)` | Find animal bounding box via ONNX inference |
-| `CropToTarget(image, detection)` | Crop 320×150 centered on detection |
+| `CropToTarget(image, detection)` | Crop 320×320 (square) centered on detection |
 
 **ML Model:**
 - **Model:** YOLOv8n (nano) exported to ONNX
 - **Input:** 640×640 RGB image, normalized to 0-1
 - **Output:** (1, 84, 8400) tensor - 4 bbox coords + 80 COCO class probabilities
 - **Classes:** Cat=15, Dog=16 (COCO class indices)
-- **Threshold:** 0.25 confidence for detection
+- **Confidence Threshold:** 0.50 (high threshold ensures clear animal faces)
+- **Minimum Detection Size:** 20% of image area (ensures animal is prominent)
 
-### 5.5 ImageCacheService
+**Quality Control:**
+Images are rejected (returns null) if:
+- No detection found above confidence threshold
+- Detection bounding box is less than 20% of image area
+- This ensures only images with clearly visible animal faces are used
+
+### 5.8 ImageCacheService
 
 **File:** `StockAnalyzer.Core/Services/ImageCacheService.cs`
 
@@ -595,8 +671,8 @@ Implements `BackgroundService` for continuous cache maintenance.
 | `ExecuteAsync(token)` | Background loop monitoring cache levels |
 
 **Cache Configuration:**
-- **Cache Size:** 50 images per type (configurable)
-- **Refill Threshold:** 10 images (triggers background refill)
+- **Cache Size:** 100 images per type (configurable)
+- **Refill Threshold:** 30 images (triggers background refill)
 - **Storage:** `ConcurrentQueue<byte[]>` for thread-safe access
 - **Refill Delay:** 500ms between cache checks
 
@@ -1097,13 +1173,17 @@ tests/
 └── StockAnalyzer.Core.Tests/
     ├── StockAnalyzer.Core.Tests.csproj
     ├── Services/
-    │   ├── AnalysisServiceTests.cs      # 14 tests
-    │   ├── NewsServiceTests.cs          # 11 tests
-    │   └── StockDataServiceTests.cs     # 15 tests (3 skipped integration)
+    │   ├── AggregatedNewsServiceTests.cs    # 13 tests - Multi-source aggregation
+    │   ├── AnalysisServiceTests.cs          # 14 tests - Technical indicators
+    │   ├── HeadlineRelevanceServiceTests.cs # 18 tests - ML scoring logic
+    │   ├── MarketauxServiceTests.cs         # 18 tests - Marketaux API
+    │   ├── NewsServiceTests.cs              # 11 tests - Finnhub API
+    │   ├── StockDataServiceTests.cs         # 15 tests (3 skipped integration)
+    │   └── WatchlistServiceTests.cs         # Portfolio tests
     ├── Models/
-    │   └── ModelCalculationTests.cs     # 27 tests
+    │   └── ModelCalculationTests.cs         # 27 tests
     └── TestHelpers/
-        └── TestDataFactory.cs           # Test data generators
+        └── TestDataFactory.cs               # Test data generators
 ```
 
 ### 8.2 Test Dependencies
@@ -1121,11 +1201,14 @@ tests/
 
 | Category | Tests | Description |
 |----------|-------|-------------|
-| AnalysisService | 27 | Moving averages, significant moves, performance, RSI, MACD calculations |
+| AggregatedNewsService | 13 | Multi-source news aggregation, deduplication, scoring |
+| AnalysisService | 14 | Moving averages, significant moves, performance, RSI, MACD calculations |
+| HeadlineRelevanceService | 18 | Relevance scoring, ticker detection, deduplication |
+| MarketauxService | 18 | HTTP mocking, sentiment mapping, API token handling |
 | NewsService | 11 | HTTP mocking, date range handling, JSON parsing |
 | StockDataService | 12 | Query validation, period mapping, dividend yield fix |
 | Model Calculations | 27 | Calculated properties on record types |
-| **Total** | **77** | Plus 3 skipped integration tests |
+| **Total** | **113+** | Plus 3 skipped integration tests |
 
 ### 8.4 Running Tests
 
@@ -1863,6 +1946,8 @@ const [stockInfo, history, analysis, significantMoves, news] = await Promise.all
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.6 | 2026-01-19 | **Multi-Source News Aggregation + ML Scoring:** MarketauxService (alternative news source), HeadlineRelevanceService (weighted relevance scoring: ticker 35%, company name 25%, recency 20%, sentiment 10%, source quality 10%), AggregatedNewsService (combines sources with Jaccard deduplication), NewsItem model extended (RelevanceScore, SourceApi fields), new aggregated news endpoints, ImageProcessingService quality control (0.50 confidence threshold, 20% minimum detection size, reject images without valid detection), image cache increased to 100/30, 52 new unit tests |
+| 2.5 | 2026-01-19 | **Security Hardening:** CORS restricted to known origins, HSTS header, ticker input validation (regex pattern), removed unused DirectoryBrowser |
 | 2.4 | 2026-01-19 | **App Service Migration + Key Vault:** Migrated from ACI to App Service B1 for zero-downtime deploys, Azure Key Vault for secrets management, manual workflow_dispatch for production deploys, GitHub repo made public for CodeQL, GitHub link added to footer |
 | 2.3 | 2026-01-18 | **Privacy-First Watchlists + Frontend Testing:** LocalStorage watchlist storage (storage.js) for privacy-first client-side persistence, export/import JSON functionality, Jest unit tests for portfolio aggregation functions (25 tests), CI/CD pipeline updated with frontend-tests job (Node.js 20.x), Escape key handler for modal dismissal, API data format fix (data vs prices array handling) |
 | 2.2 | 2026-01-18 | **GitHub Pages Docs:** docs.psfordtaurus.com for documentation hosting, docs-deploy.yml workflow for auto-sync, "Latest Docs" link in app header, docs update without Docker rebuild |
@@ -1877,7 +1962,6 @@ const [stockInfo, history, analysis, significantMoves, news] = await Promise.all
 | 1.13 | 2026-01-17 | CI/CD pipelines: GitHub Actions workflow (.github/workflows/dotnet-ci.yml), Jenkins pipeline (Jenkinsfile), Section 9.4 documentation |
 | 1.12 | 2026-01-17 | Bollinger Bands: BollingerData model, CalculateBollingerBands method (20-period SMA, 2 std dev), overlaid on price chart with shaded fill |
 | 1.11 | 2026-01-17 | Documentation search: Fuse.js fuzzy search across all documents (threshold 0.4), search results dropdown with highlighting, keyboard navigation. Scroll spy: TOC highlighting tracks current section using scroll events with requestAnimationFrame throttling |
-| 2.5 | 2026-01-19 | Security hardening: CORS restricted to known origins, HSTS header, ticker input validation (regex pattern), removed unused DirectoryBrowser |
 | 1.10 | 2026-01-17 | Architecture visualization: Mermaid.js diagrams loaded from external .mmd files (hybrid auto/manual approach), MIME type config for .mmd files, MSBuild target for diagrams directory |
 | 1.9 | 2026-01-17 | Documentation page: docs.html with tabbed markdown viewer, marked.js integration, TOC sidebar |
 | 1.8 | 2026-01-17 | Stock comparison: normalizeToPercentChange helper, comparison mode in charts.js, benchmark buttons, indicator disable logic |

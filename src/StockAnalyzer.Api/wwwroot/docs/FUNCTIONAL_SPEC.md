@@ -1,7 +1,7 @@
 # Functional Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.1
-**Last Updated:** 2026-01-18
+**Version:** 2.2
+**Last Updated:** 2026-01-19
 **Author:** Claude (AI Assistant)
 **Status:** Production
 **Audience:** Business Users, Product Owners, QA Testers
@@ -644,7 +644,32 @@ The Stock Analyzer Dashboard allows users to:
 | Popup Thumbnails | Radio | Cats, Dogs | Cats |
 | Analyze | Button | Click to load data | - |
 
-### 4.3 Color Scheme
+### 4.3 Mobile Responsiveness (FR-016)
+
+The dashboard is fully responsive and adapts to mobile devices.
+
+| ID | Requirement |
+|----|-------------|
+| FR-016.1 | The system must display a hamburger menu button on screens smaller than 1024px |
+| FR-016.2 | The system must hide the watchlist sidebar by default on mobile |
+| FR-016.3 | Tapping the hamburger menu must slide the watchlist sidebar in from the right |
+| FR-016.4 | A dark overlay must appear behind the sidebar when open on mobile |
+| FR-016.5 | Tapping the overlay or pressing Escape must close the sidebar |
+| FR-016.6 | The "Powered by" text must be hidden on small screens to save space |
+| FR-016.7 | Search controls must stack vertically on mobile |
+| FR-016.8 | Charts must scale to fit the viewport width |
+
+**User Story:** *As a mobile user, I want to access my watchlists without the sidebar taking up screen space, so I can focus on the charts and data.*
+
+**Mobile Breakpoints:**
+
+| Breakpoint | Width | Behavior |
+|------------|-------|----------|
+| Small (sm) | 640px+ | Search controls side-by-side |
+| Large (lg) | 1024px+ | Watchlist sidebar always visible |
+| Below lg | <1024px | Sidebar hidden, hamburger menu shown |
+
+### 4.4 Color Scheme
 
 | Element | Color | Hex Code |
 |---------|-------|----------|
@@ -818,7 +843,7 @@ The Stock Analyzer Dashboard allows users to:
 | Constraint | Description | Impact |
 |------------|-------------|--------|
 | News rate limit | 60 news requests per minute (Finnhub free tier) | Heavy use may cause news delays |
-| Browser-based | Requires modern browser with JavaScript | No mobile app version |
+| Browser-based | Requires modern browser with JavaScript | Responsive web app, no native mobile app |
 | Single user (current) | No authentication; multi-user architecture ready | Add auth layer for team use |
 
 ---
@@ -827,6 +852,7 @@ The Stock Analyzer Dashboard allows users to:
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
+| 2.2 | 2026-01-19 | Added Mobile Responsiveness (FR-016): Hamburger menu for sidebar toggle, slide-in watchlist panel on mobile, responsive breakpoints, touch-friendly overlay dismiss | Claude |
 | 2.1 | 2026-01-18 | Privacy-first localStorage watchlists (FR-014.10-18): Removed server storage, added export/import JSON, storage usage display. No PII collected. | Claude |
 | 2.0 | 2026-01-17 | Added Combined Watchlist View (FR-015): Aggregated portfolio performance, three weighting modes, benchmark comparison, holdings editor with add/remove tickers, significant move markers with toggle, market news | Claude |
 | 1.9 | 2026-01-17 | Added Watchlist Management (FR-014): Create/rename/delete watchlists, add/remove tickers, sidebar UI, JSON persistence, multi-user ready | Claude |
