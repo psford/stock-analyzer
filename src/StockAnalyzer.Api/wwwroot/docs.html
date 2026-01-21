@@ -85,7 +85,7 @@
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="flex items-center justify-between">
                     <!-- Mobile/Tablet: Scrollable tabs container (scrolls below 1100px) -->
-                    <div class="overflow-x-auto -mx-4 px-4 docs:mx-0 docs:px-0 docs:overflow-visible" style="-webkit-overflow-scrolling: touch;">
+                    <div class="overflow-x-auto -mx-4 px-4 docs:mx-0 docs:px-0 docs:overflow-visible hide-scrollbar" style="-webkit-overflow-scrolling: touch;">
                         <nav class="flex space-x-4 sm:space-x-8" aria-label="Tabs">
                             <button data-doc="explanation" class="tab-btn tab-active border-b-2 py-3 sm:py-4 px-1 text-sm font-medium transition-colors whitespace-nowrap">
                                 App Explanation
@@ -183,6 +183,14 @@
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
+        }
+        /* Hide scrollbar on tab navigation while preserving scroll functionality */
+        .hide-scrollbar {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;  /* Chrome, Safari, Opera */
         }
     </style>
 
