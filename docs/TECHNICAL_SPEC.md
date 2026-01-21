@@ -1,7 +1,7 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.6
-**Last Updated:** 2026-01-19
+**Version:** 2.7
+**Last Updated:** 2026-01-20
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
 
@@ -76,12 +76,15 @@ This specification covers:
 │                    StockAnalyzer.Core Library                        │
 │  ┌────────────────────────────────────────────────────────────────┐ │
 │  │ Models:                    Services:                           │ │
-│  │ - StockInfo               - StockDataService (Yahoo Finance)   │ │
-│  │ - OhlcvData               - NewsService (Finnhub)              │ │
-│  │ - HistoricalDataResult    - MarketauxService (Marketaux)       │ │
-│  │ - NewsItem/NewsResult     - AggregatedNewsService (Multi-src)  │ │
-│  │ - SignificantMove         - HeadlineRelevanceService (ML)      │ │
-│  │ - SearchResult            - AnalysisService (MAs, Volatility)  │ │
+│  │ - StockInfo               - AggregatedStockDataService (Multi) │ │
+│  │ - OhlcvData               - TwelveDataService (Primary)        │ │
+│  │ - HistoricalDataResult    - FmpService (Secondary)             │ │
+│  │ - NewsItem/NewsResult     - YahooFinanceService (Fallback)     │ │
+│  │ - SignificantMove         - NewsService (Finnhub)              │ │
+│  │ - SearchResult            - MarketauxService (Marketaux)       │ │
+│  │                           - AggregatedNewsService (Multi-src)  │ │
+│  │                           - HeadlineRelevanceService (ML)      │ │
+│  │                           - AnalysisService (MAs, Volatility)  │ │
 │  │                           - ImageProcessingService (ML/ONNX)   │ │
 │  │                           - ImageCacheService (Background)     │ │
 │  └────────────────────────────────────────────────────────────────┘ │
@@ -156,15 +159,49 @@ This specification covers:
 |-------|------------|---------------|
 | Runtime | .NET | 8.0 LTS |
 | Web Framework | ASP.NET Core Minimal APIs | Built-in |
-| Stock Data | OoplesFinance.YahooFinanceAPI | NuGet 1.7.1 |
-| Ticker Search | Yahoo Finance Search API | Direct HttpClient |
+| Stock Data (Primary) | Twelve Data REST API | 8 calls/min, 800/day free |
+| Stock Data (Secondary) | Financial Modeling Prep API | 250 calls/day free |
+| Stock Data (Fallback) | OoplesFinance.YahooFinanceAPI | NuGet 1.7.1 |
 | News Data | Finnhub REST API | Custom HttpClient |
+| News Data (Alt) | Marketaux REST API | 100 calls/day free |
 | ML Runtime | Microsoft.ML.OnnxRuntime | NuGet 1.17.0 |
 | Image Processing | SixLabors.ImageSharp | NuGet 3.1.7 |
 | Object Detection | YOLOv8n ONNX | ~12MB model |
 | Charting | Plotly.js | 2.27.0 (CDN) |
-| CSS Framework | Tailwind CSS | CDN |
+| CSS Framework | Tailwind CSS | Built locally |
 | Serialization | System.Text.Json | Built-in |
+
+### 2.4 Stock Data Provider Architecture
+
+The application uses a multi-provider architecture with cascading fallback for stock data:
+
+```
+AggregatedStockDataService (orchestrator)
+    ├── TwelveDataService    (Priority 1 - 8/min, 800/day)
+    ├── FmpService           (Priority 2 - 250/day, ~87 symbols)
+    └── YahooFinanceService  (Priority 3 - fallback, full coverage)
+```
+
+**Strategy:** Providers are tried in priority order. First successful response wins.
+
+**Caching:** In-memory cache with TTLs:
+- Quotes: 5 minutes
+- Historical data: 1 hour
+- Search results: 24 hours
+
+**Rate Limiting:** Each provider tracks its own rate limits. When limits are approached, requests automatically fall through to the next provider.
+
+**Configuration:**
+```json
+{
+  "StockDataProviders": {
+    "TwelveData": { "ApiKey": "" },
+    "FMP": { "ApiKey": "" }
+  }
+}
+```
+
+Environment variables: `TWELVEDATA_API_KEY`, `FMP_API_KEY`
 
 ---
 

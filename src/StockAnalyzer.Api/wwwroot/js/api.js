@@ -57,7 +57,7 @@ const API = {
     },
 
     /**
-     * Get company news
+     * Get company news (basic, single source)
      * @param {string} ticker - Stock ticker symbol
      * @param {number} days - Number of days of news to fetch
      */
@@ -65,6 +65,20 @@ const API = {
         const response = await fetch(`${this.baseUrl}/stock/${ticker}/news?days=${days}`);
         if (!response.ok) {
             throw new Error('Failed to fetch news');
+        }
+        return response.json();
+    },
+
+    /**
+     * Get aggregated company news from multiple sources
+     * @param {string} ticker - Stock ticker symbol
+     * @param {number} days - Number of days of news to fetch
+     * @param {number} limit - Maximum number of articles to return
+     */
+    async getAggregatedNews(ticker, days = 30, limit = 10) {
+        const response = await fetch(`${this.baseUrl}/stock/${ticker}/news/aggregated?days=${days}&limit=${limit}`);
+        if (!response.ok) {
+            throw new Error('Failed to fetch aggregated news');
         }
         return response.json();
     },

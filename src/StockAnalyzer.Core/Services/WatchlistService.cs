@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using StockAnalyzer.Core.Helpers;
 using StockAnalyzer.Core.Models;
 
 namespace StockAnalyzer.Core.Services;
@@ -226,7 +227,7 @@ public class WatchlistService
 
         if (validHistories.Count == 0)
         {
-            _logger.LogWarning("No valid historical data found for watchlist {WatchlistId}", id);
+            _logger.LogWarning("No valid historical data found for watchlist {WatchlistId}", LogSanitizer.Sanitize(id));
             return null;
         }
 
@@ -565,7 +566,7 @@ public class WatchlistService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to fetch benchmark data for {Ticker}", benchmarkTicker);
+            _logger.LogWarning(ex, "Failed to fetch benchmark data for {Ticker}", LogSanitizer.Sanitize(benchmarkTicker));
             return null;
         }
     }

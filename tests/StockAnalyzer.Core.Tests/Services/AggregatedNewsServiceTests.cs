@@ -326,6 +326,10 @@ public class AggregatedNewsServiceTests
         return (aggregatedService, newsService, marketauxService);
     }
 
+    /// <summary>
+    /// Creates a mock HttpClient that returns predefined responses.
+    /// Uses a factory lambda to create fresh HttpResponseMessage instances to avoid CA2000 warnings.
+    /// </summary>
     private static HttpClient CreateMockHttpClient(string content)
     {
         var mockHandler = new Mock<HttpMessageHandler>();
@@ -335,7 +339,7 @@ public class AggregatedNewsServiceTests
                 "SendAsync",
                 ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
-            .ReturnsAsync(new HttpResponseMessage
+            .ReturnsAsync(() => new HttpResponseMessage
             {
                 StatusCode = HttpStatusCode.OK,
                 Content = new StringContent(content)

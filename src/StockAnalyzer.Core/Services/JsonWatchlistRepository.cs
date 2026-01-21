@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using StockAnalyzer.Core.Helpers;
 using StockAnalyzer.Core.Models;
 
 namespace StockAnalyzer.Core.Services;
@@ -96,7 +97,7 @@ public class JsonWatchlistRepository : IWatchlistRepository
             };
 
             await SaveStorageAsync(storage);
-            _logger.LogInformation("Created watchlist: {Id} - {Name}", newWatchlist.Id, newWatchlist.Name);
+            _logger.LogInformation("Created watchlist: {Id} - {Name}", LogSanitizer.Sanitize(newWatchlist.Id), LogSanitizer.Sanitize(newWatchlist.Name));
 
             return newWatchlist;
         }
@@ -160,7 +161,7 @@ public class JsonWatchlistRepository : IWatchlistRepository
             };
 
             await SaveStorageAsync(storage);
-            _logger.LogInformation("Deleted watchlist: {Id}", id);
+            _logger.LogInformation("Deleted watchlist: {Id}", LogSanitizer.Sanitize(id));
 
             return true;
         }
@@ -206,7 +207,7 @@ public class JsonWatchlistRepository : IWatchlistRepository
             storage.Watchlists[index] = updatedWatchlist;
             await SaveStorageAsync(storage);
 
-            _logger.LogInformation("Added ticker {Ticker} to watchlist {Id}", normalizedTicker, id);
+            _logger.LogInformation("Added ticker {Ticker} to watchlist {Id}", LogSanitizer.Sanitize(normalizedTicker), LogSanitizer.Sanitize(id));
 
             return updatedWatchlist;
         }
@@ -248,7 +249,7 @@ public class JsonWatchlistRepository : IWatchlistRepository
             storage.Watchlists[index] = updatedWatchlist;
             await SaveStorageAsync(storage);
 
-            _logger.LogInformation("Removed ticker {Ticker} from watchlist {Id}", normalizedTicker, id);
+            _logger.LogInformation("Removed ticker {Ticker} from watchlist {Id}", LogSanitizer.Sanitize(normalizedTicker), LogSanitizer.Sanitize(id));
 
             return updatedWatchlist;
         }

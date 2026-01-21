@@ -193,7 +193,7 @@ public class NewsService
 
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openfigi.com/v3/mapping")
+            using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openfigi.com/v3/mapping")
             {
                 Content = JsonContent.Create(new[]
                 {
@@ -202,7 +202,7 @@ public class NewsService
             };
             request.Headers.Add("X-OPENFIGI-APIKEY", ""); // Empty string for anonymous access (limited rate)
 
-            var response = await _httpClient.SendAsync(request);
+            using var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
                 return null;
 
