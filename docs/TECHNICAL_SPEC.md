@@ -800,15 +800,32 @@ wwwroot/
 
 ### 6.1.1 Documentation Page (docs.html)
 
-The documentation page provides four tabs:
+The documentation page provides six tabs:
+- **App Explanation** - Overview of the application
 - **Project Guidelines** - CLAUDE.md with project rules and best practices
 - **Functional Spec** - User-facing feature documentation
 - **Technical Spec** - Developer documentation
 - **Architecture** - Interactive Mermaid.js diagrams loaded from .mmd files
+- **Security** - Security overview document
+
+**Documentation Source: GitHub Pages**
+
+Documentation is served from GitHub Pages at `https://psford.github.io/claudeProjects/`. The app's `docs.html` fetches markdown files client-side via CORS, allowing documentation updates without container rebuilds.
+
+| Document | GitHub Pages URL |
+|----------|------------------|
+| App Explanation | `https://psford.github.io/claudeProjects/APP_EXPLANATION.md` |
+| Project Guidelines | `https://psford.github.io/claudeProjects/claude_disp.md` |
+| Functional Spec | `https://psford.github.io/claudeProjects/FUNCTIONAL_SPEC.md` |
+| Technical Spec | `https://psford.github.io/claudeProjects/TECHNICAL_SPEC.md` |
+| Security Overview | `https://psford.github.io/claudeProjects/SECURITY_OVERVIEW.md` |
+| Diagrams | `https://psford.github.io/claudeProjects/diagrams/*.mmd` |
+
+**To update production docs:** Push changes to the `/docs` folder on main branch. GitHub Pages deploys automatically.
 
 ### 6.1.2 Architecture Diagrams (Hybrid Approach)
 
-Diagrams are stored as separate `.mmd` files in `wwwroot/docs/diagrams/` for maintainability:
+Diagrams are stored as separate `.mmd` files in the GitHub Pages `/docs/diagrams/` folder:
 
 | File | Type | Description |
 |------|------|-------------|
@@ -821,15 +838,15 @@ Diagrams are stored as separate `.mmd` files in `wwwroot/docs/diagrams/` for mai
 | `api-endpoints.mmd` | MANUAL | REST API endpoint reference |
 
 **Updating diagrams:**
-1. Edit the corresponding `.mmd` file in `wwwroot/docs/diagrams/`
+1. Edit the corresponding `.mmd` file in `/docs/diagrams/` (GitHub Pages source)
 2. Mermaid syntax documentation: https://mermaid.js.org/
-3. Changes are live-reloaded (no build required for static files)
+3. Push to main branch - GitHub Pages deploys automatically
 
 **Auto-generation (optional):**
 To regenerate `project-structure.mmd` from the solution:
 ```bash
 dotnet tool install -g mermaid-graph
-dotnet mermaid-graph --sln . --output src/StockAnalyzer.Api/wwwroot/docs/diagrams/project-structure.mmd --direction TD
+dotnet mermaid-graph --sln . --output docs/diagrams/project-structure.mmd --direction TD
 ```
 
 **MIME type configuration:**
@@ -1983,6 +2000,7 @@ const [stockInfo, history, analysis, significantMoves, news] = await Promise.all
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.7 | 2026-01-21 | **GitHub Pages Documentation Refactor:** Documentation now served from GitHub Pages (psford.github.io/claudeProjects/) instead of bundled in container. Enables doc updates without container rebuild. Removed wwwroot/docs folder and MSBuild copy targets. docs.html fetches markdown client-side via CORS. Custom domain SSL (psfordtest.com) with Azure managed certificates. |
 | 2.6 | 2026-01-19 | **Multi-Source News Aggregation + ML Scoring:** MarketauxService (alternative news source), HeadlineRelevanceService (weighted relevance scoring: ticker 35%, company name 25%, recency 20%, sentiment 10%, source quality 10%), AggregatedNewsService (combines sources with Jaccard deduplication), NewsItem model extended (RelevanceScore, SourceApi fields), new aggregated news endpoints, ImageProcessingService quality control (0.50 confidence threshold, 20% minimum detection size, reject images without valid detection), image cache increased to 100/30, 52 new unit tests |
 | 2.5 | 2026-01-19 | **Security Hardening:** CORS restricted to known origins, HSTS header, ticker input validation (regex pattern), removed unused DirectoryBrowser |
 | 2.4 | 2026-01-19 | **App Service Migration + Key Vault:** Migrated from ACI to App Service B1 for zero-downtime deploys, Azure Key Vault for secrets management, manual workflow_dispatch for production deploys, GitHub repo made public for CodeQL, GitHub link added to footer |
