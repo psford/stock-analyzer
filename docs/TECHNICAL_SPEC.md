@@ -1909,6 +1909,33 @@ Ticker symbols are validated before processing to prevent injection attacks:
 - Examples: `AAPL`, `BRK.B`, `^GSPC`
 - Invalid inputs return 400 Bad Request
 
+### 12.3.2 Log Injection Prevention
+
+All user input (ticker symbols, search queries) is sanitized before logging to prevent log forging attacks:
+
+```csharp
+// StockAnalyzer.Core/Helpers/LogSanitizer.cs
+public static string Sanitize(string? value)
+{
+    // Replaces control characters (newlines, tabs, etc.) with underscores
+    // Prevents attackers from injecting fake log entries
+}
+
+// Usage in services:
+_logger.LogDebug("Cache hit for {Symbol}", LogSanitizer.Sanitize(symbol));
+```
+
+**Protection against:**
+- Log forging (injecting fake log entries via newlines)
+- Log tampering (confusing log analysis tools)
+- CRLF injection in log files
+
+**Services protected:**
+- `AggregatedStockDataService` - symbol and query logging
+- `TwelveDataService` - symbol and query logging
+- `FmpService` - symbol and query logging
+- `YahooFinanceService` - symbol and query logging
+
 ### 12.4 Content Security Policy
 
 The application uses CSP headers to restrict resource loading. Since images are now
@@ -2000,6 +2027,7 @@ const [stockInfo, history, analysis, significantMoves, news] = await Promise.all
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.8 | 2026-01-21 | **Log Injection Prevention:** Added LogSanitizer utility to sanitize user input (ticker symbols, search queries) before logging. Prevents log forging attacks via control character injection. Applied to AggregatedStockDataService, TwelveDataService, FmpService, and YahooFinanceService. Resolves 21 CodeQL security alerts. |
 | 2.7 | 2026-01-21 | **GitHub Pages Documentation Refactor:** Documentation now served from GitHub Pages (psford.github.io/claudeProjects/) instead of bundled in container. Enables doc updates without container rebuild. Removed wwwroot/docs folder and MSBuild copy targets. docs.html fetches markdown client-side via CORS. Custom domain SSL (psfordtest.com) with Azure managed certificates. |
 | 2.6 | 2026-01-19 | **Multi-Source News Aggregation + ML Scoring:** MarketauxService (alternative news source), HeadlineRelevanceService (weighted relevance scoring: ticker 35%, company name 25%, recency 20%, sentiment 10%, source quality 10%), AggregatedNewsService (combines sources with Jaccard deduplication), NewsItem model extended (RelevanceScore, SourceApi fields), new aggregated news endpoints, ImageProcessingService quality control (0.50 confidence threshold, 20% minimum detection size, reject images without valid detection), image cache increased to 100/30, 52 new unit tests |
 | 2.5 | 2026-01-19 | **Security Hardening:** CORS restricted to known origins, HSTS header, ticker input validation (regex pattern), removed unused DirectoryBrowser |

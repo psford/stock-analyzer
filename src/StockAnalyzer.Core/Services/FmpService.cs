@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
+using StockAnalyzer.Core.Helpers;
 using StockAnalyzer.Core.Models;
 
 namespace StockAnalyzer.Core.Services;
@@ -54,7 +55,7 @@ public class FmpService : IStockDataProvider
             var quote = response?.FirstOrDefault();
             if (quote == null || string.IsNullOrEmpty(quote.Symbol))
             {
-                _logger?.LogDebug("FMP returned no data for {Symbol}", symbol);
+                _logger?.LogDebug("FMP returned no data for {Symbol}", LogSanitizer.Sanitize(symbol));
                 return null;
             }
 
@@ -62,7 +63,7 @@ public class FmpService : IStockDataProvider
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "FMP failed for {Symbol}", symbol);
+            _logger?.LogWarning(ex, "FMP failed for {Symbol}", LogSanitizer.Sanitize(symbol));
             return null;
         }
     }
@@ -87,7 +88,7 @@ public class FmpService : IStockDataProvider
 
             if (response?.Historical == null || response.Historical.Count == 0)
             {
-                _logger?.LogDebug("FMP returned no historical data for {Symbol}", symbol);
+                _logger?.LogDebug("FMP returned no historical data for {Symbol}", LogSanitizer.Sanitize(symbol));
                 return null;
             }
 
@@ -95,7 +96,7 @@ public class FmpService : IStockDataProvider
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "FMP historical failed for {Symbol}", symbol);
+            _logger?.LogWarning(ex, "FMP historical failed for {Symbol}", LogSanitizer.Sanitize(symbol));
             return null;
         }
     }
@@ -128,7 +129,7 @@ public class FmpService : IStockDataProvider
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "FMP search failed for {Query}", query);
+            _logger?.LogWarning(ex, "FMP search failed for {Query}", LogSanitizer.Sanitize(query));
             return new List<SearchResult>();
         }
     }

@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
+using StockAnalyzer.Core.Helpers;
 using StockAnalyzer.Core.Models;
 
 namespace StockAnalyzer.Core.Services;
@@ -58,7 +59,7 @@ public class TwelveDataService : IStockDataProvider
 
             if (response == null || response.Status == "error" || string.IsNullOrEmpty(response.Symbol))
             {
-                _logger?.LogDebug("TwelveData returned no data for {Symbol}", symbol);
+                _logger?.LogDebug("TwelveData returned no data for {Symbol}", LogSanitizer.Sanitize(symbol));
                 return null;
             }
 
@@ -66,7 +67,7 @@ public class TwelveDataService : IStockDataProvider
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "TwelveData failed for {Symbol}", symbol);
+            _logger?.LogWarning(ex, "TwelveData failed for {Symbol}", LogSanitizer.Sanitize(symbol));
             return null;
         }
     }
@@ -91,7 +92,7 @@ public class TwelveDataService : IStockDataProvider
 
             if (response == null || response.Status == "error" || response.Values == null || response.Values.Count == 0)
             {
-                _logger?.LogDebug("TwelveData returned no historical data for {Symbol}", symbol);
+                _logger?.LogDebug("TwelveData returned no historical data for {Symbol}", LogSanitizer.Sanitize(symbol));
                 return null;
             }
 
@@ -99,7 +100,7 @@ public class TwelveDataService : IStockDataProvider
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "TwelveData historical failed for {Symbol}", symbol);
+            _logger?.LogWarning(ex, "TwelveData historical failed for {Symbol}", LogSanitizer.Sanitize(symbol));
             return null;
         }
     }
@@ -133,7 +134,7 @@ public class TwelveDataService : IStockDataProvider
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "TwelveData search failed for {Query}", query);
+            _logger?.LogWarning(ex, "TwelveData search failed for {Query}", LogSanitizer.Sanitize(query));
             return new List<SearchResult>();
         }
     }

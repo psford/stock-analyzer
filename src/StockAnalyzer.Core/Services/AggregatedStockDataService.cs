@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using StockAnalyzer.Core.Helpers;
 using StockAnalyzer.Core.Models;
 
 namespace StockAnalyzer.Core.Services;
@@ -48,24 +49,24 @@ public class AggregatedStockDataService
 
         if (_cache.TryGetValue(cacheKey, out StockInfo? cached))
         {
-            _logger?.LogDebug("Cache hit for {Symbol}", symbol);
+            _logger?.LogDebug("Cache hit for {Symbol}", LogSanitizer.Sanitize(symbol));
             return cached;
         }
 
         foreach (var provider in _providers.Where(p => p.IsAvailable))
         {
-            _logger?.LogDebug("Trying {Provider} for {Symbol}", provider.ProviderName, symbol);
+            _logger?.LogDebug("Trying {Provider} for {Symbol}", provider.ProviderName, LogSanitizer.Sanitize(symbol));
 
             var result = await provider.GetStockInfoAsync(symbol);
             if (result != null)
             {
-                _logger?.LogInformation("Got {Symbol} from {Provider}", symbol, provider.ProviderName);
+                _logger?.LogInformation("Got {Symbol} from {Provider}", LogSanitizer.Sanitize(symbol), provider.ProviderName);
                 _cache.Set(cacheKey, result, QuoteCacheDuration);
                 return result;
             }
         }
 
-        _logger?.LogWarning("All providers failed for {Symbol}", symbol);
+        _logger?.LogWarning("All providers failed for {Symbol}", LogSanitizer.Sanitize(symbol));
         return null;
     }
 
@@ -78,26 +79,26 @@ public class AggregatedStockDataService
 
         if (_cache.TryGetValue(cacheKey, out HistoricalDataResult? cached))
         {
-            _logger?.LogDebug("Cache hit for {Symbol} history", symbol);
+            _logger?.LogDebug("Cache hit for {Symbol} history", LogSanitizer.Sanitize(symbol));
             return cached;
         }
 
         foreach (var provider in _providers.Where(p => p.IsAvailable))
         {
-            _logger?.LogDebug("Trying {Provider} for {Symbol} history", provider.ProviderName, symbol);
+            _logger?.LogDebug("Trying {Provider} for {Symbol} history", provider.ProviderName, LogSanitizer.Sanitize(symbol));
 
             var result = await provider.GetHistoricalDataAsync(symbol, period);
             if (result != null && result.Data.Count > 0)
             {
                 _logger?.LogInformation(
                     "Got history for {Symbol} from {Provider} ({Count} points)",
-                    symbol, provider.ProviderName, result.Data.Count);
+                    LogSanitizer.Sanitize(symbol), provider.ProviderName, result.Data.Count);
                 _cache.Set(cacheKey, result, HistoryCacheDuration);
                 return result;
             }
         }
 
-        _logger?.LogWarning("All providers failed for {Symbol} history", symbol);
+        _logger?.LogWarning("All providers failed for {Symbol} history", LogSanitizer.Sanitize(symbol));
         return null;
     }
 
@@ -113,7 +114,7 @@ public class AggregatedStockDataService
 
         if (_cache.TryGetValue(cacheKey, out List<SearchResult>? cached))
         {
-            _logger?.LogDebug("Cache hit for search '{Query}'", query);
+            _logger?.LogDebug("Cache hit for search '{Query}'", LogSanitizer.Sanitize(query));
             return cached!;
         }
 
@@ -207,7 +208,7 @@ public class AggregatedStockDataService
             _cache.Remove($"history:{upperSymbol}:{period}");
         }
 
-        _logger?.LogDebug("Cache invalidated for {Symbol}", symbol);
+        _logger?.LogDebug("Cache invalidated for {Symbol}", LogSanitizer.Sanitize(symbol));
     }
 }
 
