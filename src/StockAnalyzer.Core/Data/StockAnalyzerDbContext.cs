@@ -18,6 +18,7 @@ public class StockAnalyzerDbContext : DbContext
     public DbSet<WatchlistTickerEntity> WatchlistTickers => Set<WatchlistTickerEntity>();
     public DbSet<TickerHoldingEntity> TickerHoldings => Set<TickerHoldingEntity>();
     public DbSet<SymbolEntity> Symbols => Set<SymbolEntity>();
+    public DbSet<CachedImageEntity> CachedImages => Set<CachedImageEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -92,6 +93,20 @@ public class StockAnalyzerDbContext : DbContext
             entity.HasIndex(e => e.Description).HasDatabaseName("IX_Symbols_Description");
             entity.HasIndex(e => e.Type).HasDatabaseName("IX_Symbols_Type");
             entity.HasIndex(e => new { e.Country, e.IsActive }).HasDatabaseName("IX_Symbols_Country_Active");
+        });
+
+        // CachedImage configuration (for persistent image cache)
+        modelBuilder.Entity<CachedImageEntity>(entity =>
+        {
+            entity.ToTable("CachedImages");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).UseIdentityColumn();
+            entity.Property(e => e.ImageType).HasMaxLength(10).IsRequired();
+            entity.Property(e => e.ImageData).IsRequired();  // VARBINARY(MAX)
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+            // Index for efficient type filtering
+            entity.HasIndex(e => e.ImageType).HasDatabaseName("IX_CachedImages_ImageType");
         });
     }
 }

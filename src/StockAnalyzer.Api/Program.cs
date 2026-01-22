@@ -130,7 +130,17 @@ if (!string.IsNullOrEmpty(connectionString))
     builder.Services.AddScoped<ISymbolRepository, SqlSymbolRepository>();
     builder.Services.AddSingleton<SymbolRefreshService>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<SymbolRefreshService>());
-    Log.Information("Using SQL database for watchlist storage and symbol search");
+
+    // Cached image repository for persistent image storage
+    builder.Services.AddScoped<ICachedImageRepository>(sp =>
+    {
+        var context = sp.GetRequiredService<StockAnalyzerDbContext>();
+        var logger = sp.GetRequiredService<ILogger<SqlCachedImageRepository>>();
+        var config = sp.GetRequiredService<IConfiguration>();
+        var cacheSize = config.GetValue<int>("ImageProcessing:CacheSize", 1000);
+        return new SqlCachedImageRepository(context, logger, cacheSize);
+    });
+    Log.Information("Using SQL database for watchlist storage, symbol search, and image cache");
 }
 else
 {
@@ -158,11 +168,12 @@ builder.Services.AddSingleton(sp =>
 builder.Services.AddSingleton(sp =>
 {
     var processor = sp.GetRequiredService<ImageProcessingService>();
+    var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
     var logger = sp.GetRequiredService<ILogger<ImageCacheService>>();
     var config = sp.GetRequiredService<IConfiguration>();
-    var cacheSize = config.GetValue<int>("ImageProcessing:CacheSize", 50);
-    var refillThreshold = config.GetValue<int>("ImageProcessing:RefillThreshold", 10);
-    return new ImageCacheService(processor, logger, cacheSize, refillThreshold);
+    var cacheSize = config.GetValue<int>("ImageProcessing:CacheSize", 1000);
+    var refillThreshold = config.GetValue<int>("ImageProcessing:RefillThreshold", 100);
+    return new ImageCacheService(processor, scopeFactory, logger, cacheSize, refillThreshold);
 });
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ImageCacheService>());
 
@@ -442,9 +453,9 @@ app.MapGet("/api/trending", async (int? count, AggregatedStockDataService stockS
 // Image API endpoints
 
 // GET /api/images/cat - Get a processed cat image
-app.MapGet("/api/images/cat", (ImageCacheService cache) =>
+app.MapGet("/api/images/cat", async (ImageCacheService cache) =>
 {
-    var image = cache.GetCatImage();
+    var image = await cache.GetCatImageAsync();
     return image != null
         ? Results.File(image, "image/jpeg")
         : Results.NotFound(new { error = "No cat images available. Cache may be warming up." });
@@ -455,9 +466,9 @@ app.MapGet("/api/images/cat", (ImageCacheService cache) =>
 .Produces(StatusCodes.Status404NotFound);
 
 // GET /api/images/dog - Get a processed dog image
-app.MapGet("/api/images/dog", (ImageCacheService cache) =>
+app.MapGet("/api/images/dog", async (ImageCacheService cache) =>
 {
-    var image = cache.GetDogImage();
+    var image = await cache.GetDogImageAsync();
     return image != null
         ? Results.File(image, "image/jpeg")
         : Results.NotFound(new { error = "No dog images available. Cache may be warming up." });
@@ -467,14 +478,15 @@ app.MapGet("/api/images/dog", (ImageCacheService cache) =>
 .Produces(StatusCodes.Status200OK, contentType: "image/jpeg")
 .Produces(StatusCodes.Status404NotFound);
 
-// GET /api/images/status - Get cache status
-app.MapGet("/api/images/status", (ImageCacheService cache) =>
+// GET /api/images/status - Get cache status (includes maxSize for UI progress bars)
+app.MapGet("/api/images/status", async (ImageCacheService cache) =>
 {
-    var (cats, dogs) = cache.GetCacheStatus();
+    var (cats, dogs, maxSize) = await cache.GetCacheStatusAsync();
     return Results.Ok(new
     {
         cats,
         dogs,
+        maxSize,
         timestamp = DateTime.UtcNow
     });
 })

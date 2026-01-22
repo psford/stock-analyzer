@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -6,14 +6,13 @@ namespace StockAnalyzer.Core.Services;
 
 /// <summary>
 /// Background service that maintains a cache of processed cat and dog images.
-/// Automatically refills the cache when it drops below the threshold.
+/// Uses database persistence via ICachedImageRepository for cross-restart durability.
 /// </summary>
 public class ImageCacheService : BackgroundService
 {
     private readonly ImageProcessingService _processor;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<ImageCacheService> _logger;
-    private readonly ConcurrentQueue<byte[]> _catCache = new();
-    private readonly ConcurrentQueue<byte[]> _dogCache = new();
 
     private readonly int _cacheSize;
     private readonly int _refillThreshold;
@@ -21,11 +20,13 @@ public class ImageCacheService : BackgroundService
 
     public ImageCacheService(
         ImageProcessingService processor,
+        IServiceScopeFactory scopeFactory,
         ILogger<ImageCacheService> logger,
-        int cacheSize = 50,
-        int refillThreshold = 10)
+        int cacheSize = 1000,
+        int refillThreshold = 100)
     {
         _processor = processor;
+        _scopeFactory = scopeFactory;
         _logger = logger;
         _cacheSize = cacheSize;
         _refillThreshold = refillThreshold;
@@ -33,30 +34,55 @@ public class ImageCacheService : BackgroundService
 
     /// <summary>
     /// Get a processed cat image from the cache.
-    /// Returns null if cache is empty.
+    /// Returns a random image, or null if cache is empty.
     /// </summary>
-    public byte[]? GetCatImage()
+    public async Task<byte[]?> GetCatImageAsync()
     {
-        _catCache.TryDequeue(out var image);
-        return image;
+        using var scope = _scopeFactory.CreateScope();
+        var repo = scope.ServiceProvider.GetRequiredService<ICachedImageRepository>();
+        return await repo.GetRandomImageAsync("cat");
     }
 
     /// <summary>
     /// Get a processed dog image from the cache.
-    /// Returns null if cache is empty.
+    /// Returns a random image, or null if cache is empty.
     /// </summary>
-    public byte[]? GetDogImage()
+    public async Task<byte[]?> GetDogImageAsync()
     {
-        _dogCache.TryDequeue(out var image);
-        return image;
+        using var scope = _scopeFactory.CreateScope();
+        var repo = scope.ServiceProvider.GetRequiredService<ICachedImageRepository>();
+        return await repo.GetRandomImageAsync("dog");
     }
+
+    /// <summary>
+    /// Synchronous wrapper for backward compatibility.
+    /// Prefer async methods for new code.
+    /// </summary>
+    public byte[]? GetCatImage() => GetCatImageAsync().GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Synchronous wrapper for backward compatibility.
+    /// Prefer async methods for new code.
+    /// </summary>
+    public byte[]? GetDogImage() => GetDogImageAsync().GetAwaiter().GetResult();
 
     /// <summary>
     /// Get current cache status for monitoring.
     /// </summary>
-    public (int cats, int dogs) GetCacheStatus()
+    public async Task<(int cats, int dogs, int maxSize)> GetCacheStatusAsync()
     {
-        return (_catCache.Count, _dogCache.Count);
+        using var scope = _scopeFactory.CreateScope();
+        var repo = scope.ServiceProvider.GetRequiredService<ICachedImageRepository>();
+        var counts = await repo.GetAllCountsAsync();
+        return (counts["cat"], counts["dog"], _cacheSize);
+    }
+
+    /// <summary>
+    /// Synchronous wrapper for backward compatibility with status endpoint.
+    /// </summary>
+    public (int cats, int dogs, int maxSize) GetCacheStatus()
+    {
+        return GetCacheStatusAsync().GetAwaiter().GetResult();
     }
 
     /// <summary>
@@ -64,7 +90,8 @@ public class ImageCacheService : BackgroundService
     /// </summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("ImageCacheService starting. Target cache size: {Size}, refill threshold: {Threshold}",
+        _logger.LogInformation(
+            "ImageCacheService starting. Target cache size: {Size}, refill threshold: {Threshold}",
             _cacheSize, _refillThreshold);
 
         // Delay startup to allow app to become responsive first
@@ -72,23 +99,27 @@ public class ImageCacheService : BackgroundService
         _logger.LogInformation("Deferring image cache fill for 10 seconds to allow app startup...");
         await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
 
-        // Initial fill (non-blocking - uses gradual fill instead of batch)
-        _logger.LogInformation("Starting gradual image cache fill...");
+        // Check existing cache and log status (persisted from previous run)
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var repo = scope.ServiceProvider.GetRequiredService<ICachedImageRepository>();
+            var counts = await repo.GetAllCountsAsync();
+            _logger.LogInformation(
+                "Existing cache: {Cats} cats, {Dogs} dogs (persisted from previous run)",
+                counts["cat"], counts["dog"]);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not read existing cache status");
+        }
 
         // Continuous monitoring and refill
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                var (cats, dogs) = GetCacheStatus();
-
-                // Refill if below target cache size (not just threshold)
-                // This ensures gradual fill on startup when cache is empty
-                if (cats < _cacheSize || dogs < _cacheSize)
-                {
-                    await RefillCacheAsync(stoppingToken);
-                }
-
+                await RefillIfNeededAsync(stoppingToken);
                 await Task.Delay(_refillDelay, stoppingToken);
             }
             catch (OperationCanceledException)
@@ -106,98 +137,72 @@ public class ImageCacheService : BackgroundService
     }
 
     /// <summary>
-    /// Initial cache fill on startup.
+    /// Refill cache when below target size.
     /// </summary>
-    private async Task FillCacheAsync(CancellationToken cancellationToken)
+    private async Task RefillIfNeededAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Filling image cache...");
-
-        var catTasks = Enumerable.Range(0, _cacheSize)
-            .Select(_ => ProcessAndCacheCatAsync(cancellationToken));
-
-        var dogTasks = Enumerable.Range(0, _cacheSize)
-            .Select(_ => ProcessAndCacheDogAsync(cancellationToken));
-
-        // Process in batches to avoid overwhelming the APIs
-        var allTasks = catTasks.Concat(dogTasks).ToList();
-
-        // Process in batches of 10
-        const int batchSize = 10;
-        for (int i = 0; i < allTasks.Count; i += batchSize)
+        Dictionary<string, int> counts;
+        using (var scope = _scopeFactory.CreateScope())
         {
-            if (cancellationToken.IsCancellationRequested)
-                break;
-
-            var batch = allTasks.Skip(i).Take(batchSize);
-            await Task.WhenAll(batch);
-
-            // Small delay between batches to be nice to the APIs
-            await Task.Delay(100, cancellationToken);
+            var repo = scope.ServiceProvider.GetRequiredService<ICachedImageRepository>();
+            counts = await repo.GetAllCountsAsync();
         }
 
-        var (cats, dogs) = GetCacheStatus();
-        _logger.LogInformation("Image cache filled. Cats: {Cats}, Dogs: {Dogs}", cats, dogs);
-    }
-
-    /// <summary>
-    /// Refill cache when below threshold.
-    /// </summary>
-    private async Task RefillCacheAsync(CancellationToken cancellationToken)
-    {
         var tasks = new List<Task>();
 
-        int catsNeeded = _cacheSize - _catCache.Count;
-        int dogsNeeded = _cacheSize - _dogCache.Count;
+        int catsNeeded = _cacheSize - counts["cat"];
+        int dogsNeeded = _cacheSize - counts["dog"];
 
+        // Process up to 5 at a time to avoid overwhelming external APIs
         if (catsNeeded > 0)
         {
             _logger.LogDebug("Refilling {Count} cat images", catsNeeded);
             tasks.AddRange(Enumerable.Range(0, Math.Min(catsNeeded, 5))
-                .Select(_ => ProcessAndCacheCatAsync(cancellationToken)));
+                .Select(_ => ProcessAndCacheImageAsync("cat", cancellationToken)));
         }
 
         if (dogsNeeded > 0)
         {
             _logger.LogDebug("Refilling {Count} dog images", dogsNeeded);
             tasks.AddRange(Enumerable.Range(0, Math.Min(dogsNeeded, 5))
-                .Select(_ => ProcessAndCacheDogAsync(cancellationToken)));
+                .Select(_ => ProcessAndCacheImageAsync("dog", cancellationToken)));
         }
 
         if (tasks.Count > 0)
         {
             await Task.WhenAll(tasks);
         }
+
+        // Trim if over limit (safety valve)
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var repo = scope.ServiceProvider.GetRequiredService<ICachedImageRepository>();
+            await repo.TrimOldestAsync("cat", _cacheSize);
+            await repo.TrimOldestAsync("dog", _cacheSize);
+        }
     }
 
-    private async Task ProcessAndCacheCatAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Process a single image and add to the database cache.
+    /// </summary>
+    private async Task ProcessAndCacheImageAsync(string imageType, CancellationToken cancellationToken)
     {
         try
         {
-            var image = await _processor.GetProcessedCatImageAsync(cancellationToken);
+            byte[]? image = imageType == "cat"
+                ? await _processor.GetProcessedCatImageAsync(cancellationToken)
+                : await _processor.GetProcessedDogImageAsync(cancellationToken);
+
             if (image != null)
             {
-                _catCache.Enqueue(image);
+                using var scope = _scopeFactory.CreateScope();
+                var repo = scope.ServiceProvider.GetRequiredService<ICachedImageRepository>();
+                await repo.AddImageAsync(imageType, image);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Failed to process cat image");
-        }
-    }
-
-    private async Task ProcessAndCacheDogAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            var image = await _processor.GetProcessedDogImageAsync(cancellationToken);
-            if (image != null)
-            {
-                _dogCache.Enqueue(image);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Failed to process dog image");
+            _logger.LogDebug(ex, "Failed to process {Type} image", imageType);
         }
     }
 }
