@@ -59,11 +59,11 @@
             <!-- Search Section -->
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-6">
                 <div class="flex flex-col sm:flex-row gap-4">
-                    <div class="flex-1">
+                    <div class="flex-1 min-w-0 flex flex-col">
                         <label for="ticker-input" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                             Search by Ticker or Company Name
                         </label>
-                        <div class="relative">
+                        <div class="relative mt-auto">
                             <input type="text" id="ticker-input"
                                 class="block w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
                                 placeholder="Search: AAPL, Apple, Microsoft..."
@@ -78,11 +78,11 @@
                         </div>
                     </div>
                     <!-- Compare To Search Box -->
-                    <div class="flex-1">
+                    <div class="flex-1 min-w-0 flex flex-col">
                         <label for="compare-input" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                             Compare to (Optional)
                         </label>
-                        <div class="relative">
+                        <div class="relative mt-auto">
                             <input type="text" id="compare-input"
                                 class="block w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
                                 placeholder="Add comparison stock..."
@@ -96,12 +96,12 @@
                             </div>
                         </div>
                     </div>
-                    <div class="sm:w-48">
+                    <div class="flex-1 min-w-0 flex flex-col">
                         <label for="period-select" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                             Time Period
                         </label>
                         <select id="period-select"
-                            class="block w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-primary">
+                            class="block w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-primary mt-auto">
                             <option value="ytd">YTD</option>
                             <option value="1mo">1 Month</option>
                             <option value="3mo">3 Months</option>
@@ -112,19 +112,19 @@
                             <option value="10y">10 Years</option>
                         </select>
                     </div>
-                    <div class="sm:w-48">
+                    <div class="flex-1 min-w-0 flex flex-col">
                         <label for="chart-type" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                             Chart Type
                         </label>
                         <select id="chart-type"
-                            class="block w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-primary">
+                            class="block w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-primary mt-auto">
                             <option value="line">Line</option>
                             <option value="candlestick">Candlestick</option>
                         </select>
                     </div>
-                    <div class="sm:self-end">
+                    <div class="flex flex-col">
                         <button id="search-btn"
-                            class="w-full sm:w-auto px-6 py-2 bg-primary text-white font-medium rounded-lg hover:bg-blue-600 focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors">
+                            class="w-full sm:w-auto px-6 py-2 bg-primary text-white font-medium rounded-lg hover:bg-blue-600 focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors mt-auto">
                             Analyze
                         </button>
                     </div>
