@@ -88,6 +88,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 
 | Feature | Description | Status |
 |---------|-------------|--------|
+| Staging environment | Azure staging slot for pre-production testing (separate DB, same infra) | Planned |
 | Fix AAPL news mismatch | News headlines can be misleading vs actual price movement | Planned |
 | Stochastic Oscillator | Add Stochastic to technical indicators | Planned |
 | Brinson attribution analysis | Major feature for mutual fund performance evaluation | Planned |
