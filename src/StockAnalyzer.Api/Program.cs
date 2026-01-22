@@ -167,12 +167,13 @@ builder.Services.AddSingleton(sp =>
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ImageCacheService>());
 
 // Add health checks
+// External API checks report Degraded (not Unhealthy) when unavailable - app can still function with fallback providers
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy("API is running"))
-    .AddUrlGroup(new Uri("https://finnhub.io"), name: "finnhub-api", tags: new[] { "external" })
-    .AddUrlGroup(new Uri("https://api.twelvedata.com"), name: "twelvedata-api", tags: new[] { "external" })
-    .AddUrlGroup(new Uri("https://financialmodelingprep.com"), name: "fmp-api", tags: new[] { "external" })
-    .AddUrlGroup(new Uri("https://query1.finance.yahoo.com"), name: "yahoo-finance", tags: new[] { "external" });
+    .AddUrlGroup(new Uri("https://finnhub.io"), name: "finnhub-api", tags: new[] { "external" }, failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded)
+    .AddUrlGroup(new Uri("https://api.twelvedata.com"), name: "twelvedata-api", tags: new[] { "external" }, failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded)
+    .AddUrlGroup(new Uri("https://financialmodelingprep.com"), name: "fmp-api", tags: new[] { "external" }, failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded)
+    .AddUrlGroup(new Uri("https://query1.finance.yahoo.com"), name: "yahoo-finance", tags: new[] { "external" }, failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded);
 
 // Serve static files from wwwroot
 
