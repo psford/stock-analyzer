@@ -29,15 +29,14 @@ public class SqlCachedImageRepository : ICachedImageRepository
     /// <inheritdoc />
     public async Task<byte[]?> GetRandomImageAsync(string imageType)
     {
-        // Use SQL Server's NEWID() for random ordering - efficient for this table size
-        // Only selects the ImageData column to minimize data transfer
-        var image = await _context.CachedImages
-            .Where(i => i.ImageType == imageType)
-            .OrderBy(i => EF.Functions.Random())  // Translates to ORDER BY NEWID()
-            .Select(i => i.ImageData)
+        // Use raw SQL to guarantee NEWID() is executed fresh each time
+        // EF.Functions.Random() gets compiled once and cached, returning same result
+        var entity = await _context.CachedImages
+            .FromSqlRaw("SELECT TOP 1 * FROM CachedImages WHERE ImageType = {0} ORDER BY NEWID()", imageType)
+            .AsNoTracking()
             .FirstOrDefaultAsync();
 
-        return image;
+        return entity?.ImageData;
     }
 
     /// <inheritdoc />
