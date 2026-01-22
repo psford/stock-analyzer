@@ -64,31 +64,50 @@
             </div>
 
             <!-- Health Checks Grid -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-                <div id="check-self" class="health-card p-6 rounded-xl bg-white dark:bg-gray-800 shadow border border-gray-200 dark:border-gray-700">
-                    <div class="flex items-center justify-between mb-4">
-                        <h3 class="font-semibold text-gray-900 dark:text-white">API Server</h3>
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">External Services</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-8">
+                <div id="check-self" class="health-card p-4 rounded-xl bg-white dark:bg-gray-800 shadow border border-gray-200 dark:border-gray-700">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="font-semibold text-gray-900 dark:text-white text-sm">API Server</h3>
                         <div class="status-dot w-3 h-3 rounded-full bg-gray-300"></div>
                     </div>
-                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">Core application health</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">Core application</p>
                     <p class="duration text-xs text-gray-400">--</p>
                 </div>
 
-                <div id="check-finnhub" class="health-card p-6 rounded-xl bg-white dark:bg-gray-800 shadow border border-gray-200 dark:border-gray-700">
-                    <div class="flex items-center justify-between mb-4">
-                        <h3 class="font-semibold text-gray-900 dark:text-white">Finnhub API</h3>
+                <div id="check-finnhub" class="health-card p-4 rounded-xl bg-white dark:bg-gray-800 shadow border border-gray-200 dark:border-gray-700">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="font-semibold text-gray-900 dark:text-white text-sm">Finnhub</h3>
                         <div class="status-dot w-3 h-3 rounded-full bg-gray-300"></div>
                     </div>
-                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">News and company data</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">News, symbols</p>
                     <p class="duration text-xs text-gray-400">--</p>
                 </div>
 
-                <div id="check-yahoo" class="health-card p-6 rounded-xl bg-white dark:bg-gray-800 shadow border border-gray-200 dark:border-gray-700">
-                    <div class="flex items-center justify-between mb-4">
-                        <h3 class="font-semibold text-gray-900 dark:text-white">Yahoo Finance</h3>
+                <div id="check-twelvedata" class="health-card p-4 rounded-xl bg-white dark:bg-gray-800 shadow border border-gray-200 dark:border-gray-700">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="font-semibold text-gray-900 dark:text-white text-sm">TwelveData</h3>
                         <div class="status-dot w-3 h-3 rounded-full bg-gray-300"></div>
                     </div>
-                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">Stock price data</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">Stock prices</p>
+                    <p class="duration text-xs text-gray-400">--</p>
+                </div>
+
+                <div id="check-fmp" class="health-card p-4 rounded-xl bg-white dark:bg-gray-800 shadow border border-gray-200 dark:border-gray-700">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="font-semibold text-gray-900 dark:text-white text-sm">FMP</h3>
+                        <div class="status-dot w-3 h-3 rounded-full bg-gray-300"></div>
+                    </div>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">Stock prices</p>
+                    <p class="duration text-xs text-gray-400">--</p>
+                </div>
+
+                <div id="check-yahoo" class="health-card p-4 rounded-xl bg-white dark:bg-gray-800 shadow border border-gray-200 dark:border-gray-700">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="font-semibold text-gray-900 dark:text-white text-sm">Yahoo Finance</h3>
+                        <div class="status-dot w-3 h-3 rounded-full bg-gray-300"></div>
+                    </div>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">Stock prices</p>
                     <p class="duration text-xs text-gray-400">--</p>
                 </div>
             </div>
@@ -208,10 +227,12 @@
                 statusDesc.textContent = `${data.checks.filter(c => c.status === 'Healthy').length}/${data.checks.length} services healthy`;
                 responseTime.textContent = duration.toFixed(0) + 'ms';
 
-                // Individual checks
+                // Individual checks - map all 5 health checks to their UI cards
                 const checkMap = {
                     'self': 'check-self',
                     'finnhub-api': 'check-finnhub',
+                    'twelvedata-api': 'check-twelvedata',
+                    'fmp-api': 'check-fmp',
                     'yahoo-finance': 'check-yahoo'
                 };
 
@@ -287,10 +308,14 @@
                 const response = await fetch('/api/images/status');
                 const data = await response.json();
 
-                document.getElementById('cat-count').textContent = data.cats + '/50';
-                document.getElementById('dog-count').textContent = data.dogs + '/50';
-                document.getElementById('cat-bar').style.width = (data.cats / 50 * 100) + '%';
-                document.getElementById('dog-bar').style.width = (data.dogs / 50 * 100) + '%';
+                // Use dynamic maxSize from API (defaults to 1000 if not present)
+                const max = data.maxSize || 1000;
+
+                document.getElementById('cat-count').textContent = data.cats + '/' + max;
+                document.getElementById('dog-count').textContent = data.dogs + '/' + max;
+                // Cap width at 100% to prevent overflow
+                document.getElementById('cat-bar').style.width = Math.min(data.cats / max * 100, 100) + '%';
+                document.getElementById('dog-bar').style.width = Math.min(data.dogs / max * 100, 100) + '%';
             } catch (error) {
                 console.error('Image cache check failed:', error);
             }
