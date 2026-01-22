@@ -24,6 +24,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 | Dark mode | Full dark mode support with localStorage persistence | 01/16/2026 |
 | Watchlist | Multiple watchlists with ticker management, JSON storage, multi-user ready | 01/17/2026 |
 | Fast ticker search | Local symbol database (~30K US symbols) with sub-10ms search latency | 01/21/2026 |
+| Client-side instant search | Symbol data loaded to browser for sub-millisecond search, 5s server fallback | 01/22/2026 |
 
 ### Image System
 
@@ -34,6 +35,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 | ML image processing | YOLOv8n ONNX for intelligent animal face cropping | 01/16/2026 |
 | Image quality control | 50% confidence threshold, 20% min detection size, image rejection | 01/19/2026 |
 | Larger image cache | 100 images per type, refill at 30 threshold | 01/19/2026 |
+| Persistent image cache | Database-backed cache (1000 images per type) survives restarts | 01/22/2026 |
 
 ### Documentation
 
@@ -161,6 +163,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 
 | Date | Change |
 |------|--------|
+| 01/22/2026 | **v2.12** - Client-side instant search: ~30K symbols (315KB gzipped) loaded to browser at page load, sub-millisecond search latency, 5-second debounced server fallback for unknown symbols, symbolSearch.js module |
 | 01/21/2026 | **v2.10** - Local symbol database for fast ticker search: ~30K US symbols cached in Azure SQL, sub-10ms search latency, daily Finnhub sync, 18 new unit tests |
 | 01/21/2026 | Cold start optimization: deferred ImageCacheService prefill, fixed chart markers to match selected time period |
 | 01/19/2026 | ROADMAP sync: Updated test count (150), moved Bollinger Bands to completed, cleaned up strikethrough items |

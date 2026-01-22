@@ -1,6 +1,6 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.11
+**Version:** 2.12
 **Last Updated:** 2026-01-22
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
@@ -67,7 +67,7 @@ This specification covers:
 │  │ wwwroot/       │  │ Minimal APIs   │  │ Static Files           │ │
 │  │ - index.html   │  │ - /api/stock/* │  │ - Tailwind CSS CDN     │ │
 │  │ - js/*.js      │  │ - /api/search  │  │ - Plotly.js CDN        │ │
-│  │               │  │ - /api/trending│  │                        │ │
+│  │ - data/symbols │  │ - /api/trending│  │ - symbols.txt (30K)    │ │
 │  └────────────────┘  └────────────────┘  └────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────┘
                                     │
@@ -985,6 +985,25 @@ const API = {
 - Export watchlists to JSON file
 - Import watchlists from JSON file
 - Storage usage tracking
+
+**symbolSearch.js** - Client-side instant search (v2.12+):
+```javascript
+const SymbolSearch = {
+    symbols: [],        // Array of {symbol, description}
+    symbolMap: {},      // O(1) exact match lookup
+    isLoaded: false,
+
+    async load() { ... },     // Fetch /data/symbols.txt at page load
+    search(query, limit) { ... },  // Instant prefix + description search
+    exists(symbol) { ... },   // Check if symbol exists
+    get(symbol) { ... }       // Get symbol info by exact match
+};
+```
+- Loads ~30K symbols (~315KB gzipped) at page load
+- Sub-millisecond search latency (no network calls)
+- Ranking: exact match > prefix match > description contains
+- Offline-capable once loaded
+- 5-second debounced server fallback for unknown symbols
 
 **watchlist.js** - Watchlist sidebar and combined view:
 - Watchlist CRUD operations
@@ -2138,6 +2157,7 @@ const [stockInfo, history, analysis, significantMoves, news] = await Promise.all
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.12 | 2026-01-22 | **Client-Side Instant Search:** Symbol data loaded to browser at page load for sub-millisecond search. New symbolSearch.js module fetches /data/symbols.txt (~857KB, ~315KB gzipped) containing ~30K US symbols in pipe-delimited format. SymbolCache.GenerateClientFile() generates static file at startup and after daily Finnhub refresh. Search ranking: exact match > prefix match > description contains. 5-second debounced server fallback for unknown symbols. API.search() uses client-side first, api.js searchServerFallback() method for fallback. Offline-capable once symbols loaded. |
 | 2.11 | 2026-01-22 | **Full-Text Search for Fast Symbol Lookup:** Added SQL Server Full-Text Search to achieve sub-10ms search latency on 30K+ symbols. EF Core migration creates FULLTEXT CATALOG and INDEX on Description column. SqlSymbolRepository uses CONTAINS() predicate for production (SQL Server), with automatic fallback to LINQ for testing (InMemory) or SQL Server Express without FTS installed. Provider detection via `IsSqlServer()`, error handling for FTS unavailability (SQL Error 7601/7609). |
 | 2.10 | 2026-01-22 | **Persistent Image Cache:** Database-backed image cache replaces in-memory ConcurrentQueue for persistence across restarts. CachedImageEntity model with EF Core migration, ICachedImageRepository interface with SqlCachedImageRepository (random selection via `ORDER BY NEWID()`). ImageCacheService refactored to use IServiceScopeFactory for scoped DbContext access. Cache increased to 1000 images per type. Status page fixed: dynamic maxSize from API, added TwelveData/FMP health check cards. |
 | 2.9 | 2026-01-21 | **Local Symbol Database for Fast Search:** Sub-10ms ticker search via Azure SQL cache of ~10K US stock symbols. SymbolEntity model with EF Core migration, ISymbolRepository interface with SqlSymbolRepository implementation (multi-tier ranking: exact > prefix > contains), SymbolRefreshService BackgroundService (daily Finnhub sync at 2 AM UTC, auto-seed on startup if empty), AggregatedStockDataService now queries local DB first with API fallback. Admin endpoints: POST /api/admin/symbols/refresh, GET /api/admin/symbols/status. 18 new unit tests for repository. |
