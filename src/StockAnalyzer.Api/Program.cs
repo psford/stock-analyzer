@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using Serilog.Events;
 using StockAnalyzer.Core.Data;
@@ -74,7 +75,16 @@ builder.Services.AddSingleton<IStockDataProvider>(sp =>
     var logger = sp.GetRequiredService<ILogger<YahooFinanceService>>();
     return new YahooFinanceService(logger);
 });
-builder.Services.AddSingleton<AggregatedStockDataService>();
+// AggregatedStockDataService with optional symbol repository for local search
+// Uses IServiceScopeFactory to create scopes for the scoped ISymbolRepository
+builder.Services.AddSingleton<AggregatedStockDataService>(sp =>
+{
+    var providers = sp.GetServices<IStockDataProvider>();
+    var cache = sp.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>();
+    var logger = sp.GetRequiredService<ILogger<AggregatedStockDataService>>();
+    var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
+    return new AggregatedStockDataService(providers, cache, logger, scopeFactory);
+});
 
 // Keep StockDataService for backward compatibility (deprecated, use AggregatedStockDataService)
 builder.Services.AddSingleton<StockDataService>();
@@ -115,7 +125,12 @@ if (!string.IsNullOrEmpty(connectionString))
         options.UseSqlServer(connectionString));
     builder.Services.AddScoped<IWatchlistRepository, SqlWatchlistRepository>();
     builder.Services.AddScoped<WatchlistService>();
-    Log.Information("Using SQL database for watchlist storage");
+
+    // Symbol database for fast local search
+    builder.Services.AddScoped<ISymbolRepository, SqlSymbolRepository>();
+    builder.Services.AddSingleton<SymbolRefreshService>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<SymbolRefreshService>());
+    Log.Information("Using SQL database for watchlist storage and symbol search");
 }
 else
 {
@@ -463,6 +478,57 @@ app.MapGet("/api/images/status", (ImageCacheService cache) =>
     });
 })
 .WithName("GetImageCacheStatus")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK);
+
+// Admin endpoints for symbol database management
+
+// POST /api/admin/symbols/refresh - Manually trigger symbol refresh from Finnhub
+app.MapPost("/api/admin/symbols/refresh", async (SymbolRefreshService? refreshService) =>
+{
+    if (refreshService == null)
+        return Results.BadRequest(new { error = "Symbol refresh service not configured" });
+
+    try
+    {
+        var count = await refreshService.RefreshSymbolsAsync();
+        return Results.Ok(new { message = "Refresh complete", symbolsUpdated = count });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Manual symbol refresh failed");
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("RefreshSymbols")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status500InternalServerError);
+
+// GET /api/admin/symbols/status - Get symbol database status
+app.MapGet("/api/admin/symbols/status", async (IServiceProvider serviceProvider) =>
+{
+    using var scope = serviceProvider.CreateScope();
+    var repo = scope.ServiceProvider.GetService<ISymbolRepository>();
+    var refreshService = serviceProvider.GetService<SymbolRefreshService>();
+
+    if (repo == null)
+        return Results.Ok(new { enabled = false, message = "Symbol database not configured (no SQL connection)" });
+
+    var count = await repo.GetActiveCountAsync();
+    var lastRefresh = await repo.GetLastRefreshTimeAsync();
+    var (_, apiKeyConfigured) = refreshService?.GetStatus() ?? (DateTime.MinValue, false);
+
+    return Results.Ok(new
+    {
+        enabled = true,
+        activeSymbols = count,
+        lastRefresh,
+        finnhubApiKeyConfigured = apiKeyConfigured
+    });
+})
+.WithName("GetSymbolStatus")
 .WithOpenApi()
 .Produces(StatusCodes.Status200OK);
 

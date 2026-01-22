@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using StockAnalyzer.Core.Helpers;
 using StockAnalyzer.Core.Models;
@@ -13,12 +14,17 @@ namespace StockAnalyzer.Core.Services;
 /// 1. TwelveData (8/min, 800/day) - real-time quotes
 /// 2. FMP (250/day) - fundamentals, may have limited symbol coverage
 /// 3. Yahoo Finance (fallback) - full coverage but scraping-based
+///
+/// Search priority:
+/// 1. Local SQL database (sub-10ms) - cached symbols from Finnhub
+/// 2. API providers (fallback) - only if local DB empty/unavailable
 /// </summary>
 public class AggregatedStockDataService
 {
     private readonly IEnumerable<IStockDataProvider> _providers;
     private readonly IMemoryCache _cache;
     private readonly ILogger<AggregatedStockDataService>? _logger;
+    private readonly IServiceScopeFactory? _serviceScopeFactory;
 
     // Cache durations
     private static readonly TimeSpan QuoteCacheDuration = TimeSpan.FromMinutes(5);
@@ -28,16 +34,19 @@ public class AggregatedStockDataService
     public AggregatedStockDataService(
         IEnumerable<IStockDataProvider> providers,
         IMemoryCache cache,
-        ILogger<AggregatedStockDataService>? logger = null)
+        ILogger<AggregatedStockDataService>? logger = null,
+        IServiceScopeFactory? serviceScopeFactory = null)
     {
         // Order by priority (ascending - lower number = higher priority)
         _providers = providers.OrderBy(p => p.Priority).ToList();
         _cache = cache;
         _logger = logger;
+        _serviceScopeFactory = serviceScopeFactory;
 
         _logger?.LogInformation(
-            "AggregatedStockDataService initialized with providers: {Providers}",
-            string.Join(" → ", _providers.Select(p => $"{p.ProviderName}(p{p.Priority})")));
+            "AggregatedStockDataService initialized with providers: {Providers}, LocalDB: {LocalDb}",
+            string.Join(" → ", _providers.Select(p => $"{p.ProviderName}(p{p.Priority})")),
+            serviceScopeFactory != null ? "enabled" : "disabled");
     }
 
     /// <summary>
@@ -103,11 +112,12 @@ public class AggregatedStockDataService
     }
 
     /// <summary>
-    /// Search for symbols by name or ticker with cascading fallback.
+    /// Search for symbols by name or ticker.
+    /// Uses local database first (sub-10ms), falls back to API providers only if local DB unavailable.
     /// </summary>
     public async Task<List<SearchResult>> SearchAsync(string query)
     {
-        if (string.IsNullOrWhiteSpace(query) || query.Length < 2)
+        if (string.IsNullOrWhiteSpace(query) || query.Length < 1)
             return new List<SearchResult>();
 
         var cacheKey = $"search:{query.ToLower()}";
@@ -118,6 +128,41 @@ public class AggregatedStockDataService
             return cached!;
         }
 
+        // Try local database first (sub-10ms target)
+        if (_serviceScopeFactory != null)
+        {
+            try
+            {
+                using var scope = _serviceScopeFactory.CreateScope();
+                var symbolRepository = scope.ServiceProvider.GetService<ISymbolRepository>();
+
+                if (symbolRepository != null)
+                {
+                    var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+                    var localResults = await symbolRepository.SearchAsync(query, limit: 10);
+                    stopwatch.Stop();
+
+                    if (localResults.Count > 0)
+                    {
+                        _logger?.LogDebug(
+                            "Local DB search for '{Query}' returned {Count} results in {Elapsed}ms",
+                            LogSanitizer.Sanitize(query), localResults.Count, stopwatch.ElapsedMilliseconds);
+                        _cache.Set(cacheKey, localResults, SearchCacheDuration);
+                        return localResults;
+                    }
+
+                    _logger?.LogDebug("Local DB search for '{Query}' returned no results in {Elapsed}ms",
+                        LogSanitizer.Sanitize(query), stopwatch.ElapsedMilliseconds);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Local DB search failed for '{Query}', falling back to API providers",
+                    LogSanitizer.Sanitize(query));
+            }
+        }
+
+        // Fall back to API providers only if local DB unavailable or empty
         foreach (var provider in _providers.Where(p => p.IsAvailable))
         {
             var results = await provider.SearchAsync(query);
