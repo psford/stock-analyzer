@@ -158,28 +158,31 @@ const App = {
         this.imageCache.isRefilling[type] = true;
 
         try {
-            const endpoint = `/api/images/${type === 'dogs' ? 'dog' : 'cat'}`;
-            const fetches = [];
+            const baseEndpoint = `/api/images/${type === 'dogs' ? 'dog' : 'cat'}`;
 
-            for (let i = 0; i < count; i++) {
-                fetches.push(
-                    fetch(endpoint)
-                        .then(async (response) => {
-                            if (response.ok) {
-                                const blob = await response.blob();
-                                return URL.createObjectURL(blob);
-                            }
-                            return null;
-                        })
-                        .catch(() => null)
-                );
-            }
-
-            // Fetch in batches to avoid overwhelming the server
+            // Fetch in actual batches to avoid overwhelming the server
             const batchSize = 10;
-            for (let i = 0; i < fetches.length; i += batchSize) {
-                const batch = fetches.slice(i, i + batchSize);
-                const results = await Promise.all(batch);
+            for (let batch = 0; batch < count; batch += batchSize) {
+                const batchCount = Math.min(batchSize, count - batch);
+                const fetches = [];
+
+                for (let i = 0; i < batchCount; i++) {
+                    // Add cache-buster to prevent browser caching
+                    const endpoint = `${baseEndpoint}?_=${Date.now()}-${batch + i}`;
+                    fetches.push(
+                        fetch(endpoint, { cache: 'no-store' })
+                            .then(async (response) => {
+                                if (response.ok) {
+                                    const blob = await response.blob();
+                                    return URL.createObjectURL(blob);
+                                }
+                                return null;
+                            })
+                            .catch(() => null)
+                    );
+                }
+
+                const results = await Promise.all(fetches);
                 const validUrls = results.filter(url => url !== null);
                 this.imageCache[type].push(...validUrls);
             }
@@ -209,12 +212,15 @@ const App = {
      */
     getImageFromCache(type) {
         const cache = this.imageCache[type];
+        console.log(`getImageFromCache(${type}): cache has ${cache.length} images`);
         if (cache.length === 0) {
+            console.warn(`${type} cache EMPTY!`);
             return null;
         }
 
         // Take the first image and remove it from cache
         const url = cache.shift();
+        console.log(`Got image from ${type} cache, ${cache.length} remaining, url:`, url?.substring(0, 50));
 
         // Check if we need to refill
         if (cache.length < this.IMAGE_CACHE_THRESHOLD) {
@@ -1120,13 +1126,18 @@ const App = {
 
         // Get image URL from cache (instant, no fetch delay)
         const setAnimalImage = () => {
+            // Revoke previous blob URL to free memory
+            if (image.src && image.src.startsWith('blob:')) {
+                URL.revokeObjectURL(image.src);
+            }
+
             // Set up error handler
             image.onerror = () => {
                 image.classList.add('hidden');
                 placeholder.classList.remove('hidden');
             };
 
-            // Try to get image from cache
+            // Try to get image from cache (shift removes and returns, so each call gets a new image)
             const cachedUrl = this.getImageFromCache(this.currentAnimal);
 
             if (cachedUrl) {

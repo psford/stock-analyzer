@@ -453,8 +453,13 @@ app.MapGet("/api/trending", async (int? count, AggregatedStockDataService stockS
 // Image API endpoints
 
 // GET /api/images/cat - Get a processed cat image
-app.MapGet("/api/images/cat", async (ImageCacheService cache) =>
+app.MapGet("/api/images/cat", async (HttpContext context, ImageCacheService cache) =>
 {
+    // Prevent browser caching - each request should get a new random image
+    context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate, max-age=0";
+    context.Response.Headers.Pragma = "no-cache";
+    context.Response.Headers.Expires = "0";
+
     var image = await cache.GetCatImageAsync();
     return image != null
         ? Results.File(image, "image/jpeg")
@@ -466,8 +471,13 @@ app.MapGet("/api/images/cat", async (ImageCacheService cache) =>
 .Produces(StatusCodes.Status404NotFound);
 
 // GET /api/images/dog - Get a processed dog image
-app.MapGet("/api/images/dog", async (ImageCacheService cache) =>
+app.MapGet("/api/images/dog", async (HttpContext context, ImageCacheService cache) =>
 {
+    // Prevent browser caching - each request should get a new random image
+    context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate, max-age=0";
+    context.Response.Headers.Pragma = "no-cache";
+    context.Response.Headers.Expires = "0";
+
     var image = await cache.GetDogImageAsync();
     return image != null
         ? Results.File(image, "image/jpeg")
