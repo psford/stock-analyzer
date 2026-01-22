@@ -23,6 +23,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 | Stock comparison | Normalized % change comparison with benchmark buttons | 01/17/2026 |
 | Dark mode | Full dark mode support with localStorage persistence | 01/16/2026 |
 | Watchlist | Multiple watchlists with ticker management, JSON storage, multi-user ready | 01/17/2026 |
+| Fast ticker search | Local symbol database (~30K US symbols) with sub-10ms search latency | 01/21/2026 |
 
 ### Image System
 
@@ -51,7 +52,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 | SAST scanning | SecurityCodeScan for C# code | 01/16/2026 |
 | DAST scanning | OWASP ZAP API scan | 01/16/2026 |
 | SRI for CDN | Subresource Integrity for Plotly.js | 01/16/2026 |
-| Unit tests | xUnit test suite (150 tests) | 01/19/2026 |
+| Unit tests | xUnit test suite (165 tests) | 01/21/2026 |
 
 ### Combined Watchlist View
 
@@ -159,6 +160,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 
 | Date | Change |
 |------|--------|
+| 01/21/2026 | **v2.10** - Local symbol database for fast ticker search: ~30K US symbols cached in Azure SQL, sub-10ms search latency, daily Finnhub sync, 18 new unit tests |
 | 01/21/2026 | Cold start optimization: deferred ImageCacheService prefill, fixed chart markers to match selected time period |
 | 01/19/2026 | ROADMAP sync: Updated test count (150), moved Bollinger Bands to completed, cleaned up strikethrough items |
 | 01/19/2026 | Folder reorganization: moved stock_analyzer_dotnet → projects/stock-analyzer, project-specific workflows to project folder, added separate repos option to backlog |
