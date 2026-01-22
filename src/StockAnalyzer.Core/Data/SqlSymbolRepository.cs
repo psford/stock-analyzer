@@ -8,12 +8,14 @@ namespace StockAnalyzer.Core.Data;
 
 /// <summary>
 /// SQL Server implementation of ISymbolRepository.
-/// Optimized for sub-10ms search latency on ~10K symbols.
+/// Optimized for sub-10ms search latency on ~30K symbols using Full-Text Search.
+/// Falls back to LINQ for InMemory testing or SQL Server without FTS installed.
 /// </summary>
 public class SqlSymbolRepository : ISymbolRepository
 {
     private readonly StockAnalyzerDbContext _context;
     private readonly ILogger<SqlSymbolRepository> _logger;
+    private bool _fullTextSearchAvailable = true;
 
     public SqlSymbolRepository(StockAnalyzerDbContext context, ILogger<SqlSymbolRepository> logger)
     {
@@ -29,29 +31,69 @@ public class SqlSymbolRepository : ISymbolRepository
 
         var normalizedQuery = query.Trim().ToUpperInvariant();
 
-        // Multi-tier ranking query:
+        // Use provider-aware search: SQL Server uses Full-Text Search, InMemory uses LINQ
+        if (_context.Database.IsSqlServer() && _fullTextSearchAvailable)
+        {
+            try
+            {
+                return await SearchWithFullTextAsync(normalizedQuery, limit, includeInactive);
+            }
+            catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 7601 || ex.Number == 7609)
+            {
+                // 7601: Full-text search is not available
+                // 7609: Full-Text Search is not installed
+                _logger.LogWarning(ex, "Full-Text Search not available, falling back to LINQ search");
+                _fullTextSearchAvailable = false;
+                return await SearchWithLinqAsync(normalizedQuery, limit, includeInactive);
+            }
+        }
+        else
+        {
+            // Fallback for InMemory database (testing) or SQL Server without FTS
+            return await SearchWithLinqAsync(normalizedQuery, limit, includeInactive);
+        }
+    }
+
+    /// <summary>
+    /// SQL Server search using Full-Text Search for fast description matching.
+    /// Production path - achieves sub-10ms latency on 30K+ symbols.
+    /// </summary>
+    private async Task<List<SearchResult>> SearchWithFullTextAsync(string normalizedQuery, int limit, bool includeInactive)
+    {
+        // For CONTAINS Full-Text Search, quote the term and add wildcard for prefix matching
+        // Example: "APPLE*" matches "APPLE", "APPLE INC", etc.
+        var ftsQuery = $"\"{normalizedQuery}*\"";
+
+        // Use Full-Text Search with CONTAINS for fast description search
+        // Multi-tier ranking:
         // 1 = exact symbol match
         // 2 = symbol starts with query
-        // 3 = description starts with query
-        // 4 = description contains query
-        var results = await _context.Symbols
-            .Where(s => (includeInactive || s.IsActive) &&
-                        (s.Symbol.StartsWith(normalizedQuery) ||
-                         s.Description.ToUpper().Contains(normalizedQuery)))
-            .Select(s => new
-            {
-                s.Symbol,
-                s.DisplaySymbol,
-                s.Description,
-                s.Exchange,
-                s.Type,
-                Rank = s.Symbol == normalizedQuery ? 1 :
-                       s.Symbol.StartsWith(normalizedQuery) ? 2 :
-                       s.Description.ToUpper().StartsWith(normalizedQuery) ? 3 : 4
-            })
-            .OrderBy(r => r.Rank)
-            .ThenBy(r => r.Symbol)
-            .Take(limit)
+        // 3 = description contains query (via Full-Text index)
+        // Parameterized query to prevent SQL injection
+        var results = await _context.Database
+            .SqlQueryRaw<SymbolSearchResult>(
+                @"SELECT TOP (@limit)
+                    Symbol,
+                    Description,
+                    Exchange,
+                    Type,
+                    CASE
+                        WHEN Symbol = @query THEN 1
+                        WHEN Symbol LIKE @queryPrefix THEN 2
+                        ELSE 3
+                    END AS Rank
+                FROM Symbols
+                WHERE (@includeInactive = 1 OR IsActive = 1)
+                  AND (
+                      Symbol LIKE @queryPrefix
+                      OR CONTAINS(Description, @ftsQuery)
+                  )
+                ORDER BY Rank, Symbol",
+                new Microsoft.Data.SqlClient.SqlParameter("@limit", limit),
+                new Microsoft.Data.SqlClient.SqlParameter("@query", normalizedQuery),
+                new Microsoft.Data.SqlClient.SqlParameter("@queryPrefix", $"{normalizedQuery}%"),
+                new Microsoft.Data.SqlClient.SqlParameter("@ftsQuery", ftsQuery),
+                new Microsoft.Data.SqlClient.SqlParameter("@includeInactive", includeInactive ? 1 : 0))
             .ToListAsync();
 
         return results.Select(r => new SearchResult
@@ -62,6 +104,60 @@ public class SqlSymbolRepository : ISymbolRepository
             Exchange = r.Exchange,
             Type = r.Type
         }).ToList();
+    }
+
+    /// <summary>
+    /// LINQ-based search for InMemory database (testing).
+    /// Not as fast as Full-Text Search but works without SQL Server.
+    /// </summary>
+    private async Task<List<SearchResult>> SearchWithLinqAsync(string normalizedQuery, int limit, bool includeInactive)
+    {
+        var baseQuery = _context.Symbols.AsNoTracking();
+
+        if (!includeInactive)
+        {
+            baseQuery = baseQuery.Where(s => s.IsActive);
+        }
+
+        // Filter: symbol prefix OR description contains query
+        var filtered = baseQuery.Where(s =>
+            s.Symbol.StartsWith(normalizedQuery) ||
+            s.Description.ToUpper().Contains(normalizedQuery));
+
+        // Load to memory for ranking (acceptable for test data volumes)
+        var candidates = await filtered.ToListAsync();
+
+        // Rank and sort in memory
+        var ranked = candidates
+            .Select(s => new
+            {
+                Entity = s,
+                Rank = s.Symbol == normalizedQuery ? 1 :
+                       s.Symbol.StartsWith(normalizedQuery) ? 2 : 3
+            })
+            .OrderBy(x => x.Rank)
+            .ThenBy(x => x.Entity.Symbol)
+            .Take(limit)
+            .ToList();
+
+        return ranked.Select(r => new SearchResult
+        {
+            Symbol = r.Entity.Symbol,
+            ShortName = r.Entity.Description,
+            LongName = r.Entity.Description,
+            Exchange = r.Entity.Exchange,
+            Type = r.Entity.Type
+        }).ToList();
+    }
+
+    // Internal DTO for raw SQL query results
+    private class SymbolSearchResult
+    {
+        public string Symbol { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public string Exchange { get; set; } = string.Empty;
+        public string Type { get; set; } = string.Empty;
+        public int Rank { get; set; }
     }
 
     /// <inheritdoc />

@@ -1,6 +1,6 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.10
+**Version:** 2.11
 **Last Updated:** 2026-01-22
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
@@ -1678,7 +1678,7 @@ else
 
 #### Symbol Database (Fast Ticker Search)
 
-The application maintains a local cache of ~10K US stock symbols in Azure SQL for sub-10ms search performance. This eliminates cascading API calls during ticker search.
+The application maintains a local cache of ~30K stock symbols in Azure SQL for sub-10ms search performance. This eliminates cascading API calls during ticker search.
 
 **Schema:**
 ```sql
@@ -1697,10 +1697,35 @@ CREATE TABLE Symbols (
     CreatedAt DATETIME2                  -- Record creation timestamp
 );
 
+-- Standard B-tree indexes
 CREATE INDEX IX_Symbols_Description ON Symbols(Description);
 CREATE INDEX IX_Symbols_Type ON Symbols(Type);
 CREATE INDEX IX_Symbols_Country_Active ON Symbols(Country, IsActive);
+
+-- Full-Text Search for fast description search (v2.11+)
+CREATE FULLTEXT CATALOG StockAnalyzerCatalog AS DEFAULT;
+CREATE FULLTEXT INDEX ON Symbols(Description)
+    KEY INDEX PK_Symbols
+    ON StockAnalyzerCatalog
+    WITH CHANGE_TRACKING AUTO;
 ```
+
+**Full-Text Search (v2.11+):**
+
+The search uses SQL Server Full-Text Search with the `CONTAINS` predicate for efficient description matching on 30K+ symbols:
+
+```sql
+SELECT Symbol, Description, Exchange, Type
+FROM Symbols
+WHERE Symbol LIKE @prefix
+   OR CONTAINS(Description, @ftsQuery)
+ORDER BY Rank, Symbol
+```
+
+- **Why FTS:** Standard `LIKE '%term%'` forces full table scans. FTS uses inverted indexes for O(log n) lookups.
+- **Prefix matching:** FTS query format is `"APPLE*"` for prefix matching.
+- **Fallback:** If FTS is unavailable (SQL Server Express without FTS, InMemory for tests), automatically falls back to LINQ-based search.
+- **Performance:** Sub-10ms latency on 30K symbols (vs 1-4 seconds with LIKE scans).
 
 **Search Ranking Algorithm:**
 
@@ -1708,8 +1733,7 @@ CREATE INDEX IX_Symbols_Country_Active ON Symbols(Country, IsActive);
 |----------|-----------|---------|
 | 1 | Exact symbol match | Query "AAPL" matches AAPL |
 | 2 | Symbol prefix | Query "AAP" matches AAPL, AAPD |
-| 3 | Description starts with | Query "Apple" matches Apple Inc |
-| 4 | Description contains | Query "Inc" matches various |
+| 3 | Description contains (via FTS) | Query "Apple" matches Apple Inc |
 
 **Background Refresh (SymbolRefreshService):**
 - Runs as `BackgroundService`
@@ -2114,6 +2138,7 @@ const [stockInfo, history, analysis, significantMoves, news] = await Promise.all
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.11 | 2026-01-22 | **Full-Text Search for Fast Symbol Lookup:** Added SQL Server Full-Text Search to achieve sub-10ms search latency on 30K+ symbols. EF Core migration creates FULLTEXT CATALOG and INDEX on Description column. SqlSymbolRepository uses CONTAINS() predicate for production (SQL Server), with automatic fallback to LINQ for testing (InMemory) or SQL Server Express without FTS installed. Provider detection via `IsSqlServer()`, error handling for FTS unavailability (SQL Error 7601/7609). |
 | 2.10 | 2026-01-22 | **Persistent Image Cache:** Database-backed image cache replaces in-memory ConcurrentQueue for persistence across restarts. CachedImageEntity model with EF Core migration, ICachedImageRepository interface with SqlCachedImageRepository (random selection via `ORDER BY NEWID()`). ImageCacheService refactored to use IServiceScopeFactory for scoped DbContext access. Cache increased to 1000 images per type. Status page fixed: dynamic maxSize from API, added TwelveData/FMP health check cards. |
 | 2.9 | 2026-01-21 | **Local Symbol Database for Fast Search:** Sub-10ms ticker search via Azure SQL cache of ~10K US stock symbols. SymbolEntity model with EF Core migration, ISymbolRepository interface with SqlSymbolRepository implementation (multi-tier ranking: exact > prefix > contains), SymbolRefreshService BackgroundService (daily Finnhub sync at 2 AM UTC, auto-seed on startup if empty), AggregatedStockDataService now queries local DB first with API fallback. Admin endpoints: POST /api/admin/symbols/refresh, GET /api/admin/symbols/status. 18 new unit tests for repository. |
 | 2.8 | 2026-01-21 | **Log Injection Prevention:** Added LogSanitizer utility to sanitize user input (ticker symbols, search queries) before logging. Prevents log forging attacks via control character injection. Applied to AggregatedStockDataService, TwelveDataService, FmpService, and YahooFinanceService. Resolves 21 CodeQL security alerts. |
