@@ -21,7 +21,9 @@ public class SqlSymbolRepositoryTests
     private static SqlSymbolRepository CreateRepository(StockAnalyzerDbContext context)
     {
         var logger = new Mock<ILogger<SqlSymbolRepository>>().Object;
-        return new SqlSymbolRepository(context, logger);
+        var cacheLogger = new Mock<ILogger<SymbolCache>>().Object;
+        var cache = new SymbolCache(cacheLogger);
+        return new SqlSymbolRepository(context, logger, cache);
     }
 
     private static async Task SeedSymbols(StockAnalyzerDbContext context)

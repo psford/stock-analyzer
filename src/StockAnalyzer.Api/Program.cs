@@ -127,6 +127,8 @@ if (!string.IsNullOrEmpty(connectionString))
     builder.Services.AddScoped<WatchlistService>();
 
     // Symbol database for fast local search
+    // SymbolCache is singleton - holds ~30K symbols in memory for sub-millisecond lookups
+    builder.Services.AddSingleton<SymbolCache>();
     builder.Services.AddScoped<ISymbolRepository, SqlSymbolRepository>();
     builder.Services.AddSingleton<SymbolRefreshService>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<SymbolRefreshService>());
@@ -799,6 +801,24 @@ app.MapGet("/api/news/market/aggregated", async (int? limit, AggregatedNewsServi
 app.UseSerilogRequestLogging(options =>
 {
     options.MessageTemplate = "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000}ms";
+});
+
+// Load symbol cache into memory at startup (non-blocking, logs timing)
+_ = Task.Run(async () =>
+{
+    try
+    {
+        using var scope = app.Services.CreateScope();
+        var repo = scope.ServiceProvider.GetService<ISymbolRepository>() as SqlSymbolRepository;
+        if (repo != null)
+        {
+            await repo.LoadCacheAsync();
+        }
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Failed to pre-load symbol cache (searches will use DB fallback)");
+    }
 });
 
 Log.Information("Stock Analyzer API started successfully");
