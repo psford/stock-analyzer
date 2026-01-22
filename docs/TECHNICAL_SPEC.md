@@ -700,20 +700,52 @@ Images are rejected (returns null) if:
 
 **File:** `StockAnalyzer.Core/Services/ImageCacheService.cs`
 
-Implements `BackgroundService` for continuous cache maintenance.
+Implements `BackgroundService` for continuous cache maintenance with database persistence.
 
 | Method | Description |
 |--------|-------------|
-| `GetCatImage()` | Dequeue processed cat image from cache |
-| `GetDogImage()` | Dequeue processed dog image from cache |
-| `GetCacheStatus()` | Return (cats, dogs) count tuple |
+| `GetCatImageAsync()` | Get random processed cat image from database |
+| `GetDogImageAsync()` | Get random processed dog image from database |
+| `GetCacheStatusAsync()` | Return (cats, dogs, maxSize) tuple |
 | `ExecuteAsync(token)` | Background loop monitoring cache levels |
+| `GetCatImage()` | Sync wrapper for backward compatibility |
+| `GetDogImage()` | Sync wrapper for backward compatibility |
 
 **Cache Configuration:**
-- **Cache Size:** 100 images per type (configurable)
-- **Refill Threshold:** 30 images (triggers background refill)
-- **Storage:** `ConcurrentQueue<byte[]>` for thread-safe access
+- **Cache Size:** 1000 images per type (configurable via `ImageProcessing:CacheSize`)
+- **Refill Threshold:** 100 images (triggers background refill)
+- **Storage:** SQL Server via `ICachedImageRepository` (persists across restarts)
 - **Refill Delay:** 500ms between cache checks
+- **Startup Delay:** 10 seconds to allow app to become responsive
+
+### 5.9 ICachedImageRepository
+
+**Interface:** `StockAnalyzer.Core/Services/ICachedImageRepository.cs`
+**Implementation:** `StockAnalyzer.Core/Data/SqlCachedImageRepository.cs`
+
+Repository pattern for persistent image cache storage.
+
+| Method | Description |
+|--------|-------------|
+| `GetRandomImageAsync(imageType)` | Get random image using SQL `ORDER BY NEWID()` |
+| `AddImageAsync(imageType, imageData)` | Store new processed image |
+| `GetCountAsync(imageType)` | Get count of cached images by type |
+| `GetAllCountsAsync()` | Get counts for all image types |
+| `TrimOldestAsync(imageType, maxCount)` | Delete oldest images when over limit |
+| `ClearAllAsync()` | Delete all images (for testing/reset) |
+
+**Database Schema:**
+```sql
+CREATE TABLE CachedImages (
+    Id INT IDENTITY(1,1) PRIMARY KEY,
+    ImageType NVARCHAR(10) NOT NULL,      -- "cat" or "dog"
+    ImageData VARBINARY(MAX) NOT NULL,    -- JPEG bytes (~20-30KB each)
+    CreatedAt DATETIME2 DEFAULT GETUTCDATE()
+);
+CREATE INDEX IX_CachedImages_ImageType ON CachedImages(ImageType);
+```
+
+**Storage Estimate:** 2000 images × 25KB avg = ~50MB (acceptable for Azure SQL)
 
 ### 5.6 WatchlistService
 
@@ -1405,9 +1437,11 @@ stock_analyzer_dotnet/
 │       ├── Data/
 │       │   ├── StockAnalyzerDbContext.cs    # EF Core DbContext
 │       │   ├── SqlWatchlistRepository.cs    # Azure SQL implementation
+│       │   ├── SqlCachedImageRepository.cs  # Image cache persistence
 │       │   ├── DesignTimeDbContextFactory.cs
 │       │   ├── Entities/
-│       │   │   └── WatchlistEntity.cs       # EF Core entities
+│       │   │   ├── WatchlistEntity.cs       # EF Core entities
+│       │   │   └── CachedImageEntity.cs     # Cached image entity
 │       │   └── Migrations/                   # EF Core migrations
 │       ├── Models/
 │       │   ├── StockInfo.cs
@@ -1426,7 +1460,8 @@ stock_analyzer_dotnet/
 │           ├── IWatchlistRepository.cs
 │           ├── JsonWatchlistRepository.cs   # Local file storage
 │           ├── ImageProcessingService.cs   # ML detection + cropping
-│           └── ImageCacheService.cs        # Background cache management
+│           ├── ImageCacheService.cs        # Background cache management
+│           └── ICachedImageRepository.cs   # Image cache interface
 └── tests/
     └── StockAnalyzer.Core.Tests/
         ├── StockAnalyzer.Core.Tests.csproj
@@ -2079,6 +2114,7 @@ const [stockInfo, history, analysis, significantMoves, news] = await Promise.all
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.10 | 2026-01-22 | **Persistent Image Cache:** Database-backed image cache replaces in-memory ConcurrentQueue for persistence across restarts. CachedImageEntity model with EF Core migration, ICachedImageRepository interface with SqlCachedImageRepository (random selection via `ORDER BY NEWID()`). ImageCacheService refactored to use IServiceScopeFactory for scoped DbContext access. Cache increased to 1000 images per type. Status page fixed: dynamic maxSize from API, added TwelveData/FMP health check cards. |
 | 2.9 | 2026-01-21 | **Local Symbol Database for Fast Search:** Sub-10ms ticker search via Azure SQL cache of ~10K US stock symbols. SymbolEntity model with EF Core migration, ISymbolRepository interface with SqlSymbolRepository implementation (multi-tier ranking: exact > prefix > contains), SymbolRefreshService BackgroundService (daily Finnhub sync at 2 AM UTC, auto-seed on startup if empty), AggregatedStockDataService now queries local DB first with API fallback. Admin endpoints: POST /api/admin/symbols/refresh, GET /api/admin/symbols/status. 18 new unit tests for repository. |
 | 2.8 | 2026-01-21 | **Log Injection Prevention:** Added LogSanitizer utility to sanitize user input (ticker symbols, search queries) before logging. Prevents log forging attacks via control character injection. Applied to AggregatedStockDataService, TwelveDataService, FmpService, and YahooFinanceService. Resolves 21 CodeQL security alerts. |
 | 2.7 | 2026-01-21 | **GitHub Pages Documentation Refactor:** Documentation now served from GitHub Pages (psford.github.io/claudeProjects/) instead of bundled in container. Enables doc updates without container rebuild. Removed wwwroot/docs folder and MSBuild copy targets. docs.html fetches markdown client-side via CORS. Custom domain SSL (psfordtest.com) with Azure managed certificates. |
