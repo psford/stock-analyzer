@@ -84,11 +84,50 @@ const API = {
         return response.json();
     },
 
+    // Track pending server fallback for debouncing
+    _serverFallbackTimeout: null,
+    _serverFallbackResolve: null,
+
     /**
      * Search for tickers
+     * Uses client-side search for instant results when available.
+     * Falls back to server API if client-side returns no results (after 5s debounce).
      * @param {string} query - Search query
      */
     async search(query) {
+        // Cancel any pending server fallback
+        if (this._serverFallbackTimeout) {
+            clearTimeout(this._serverFallbackTimeout);
+            this._serverFallbackTimeout = null;
+        }
+
+        // Try client-side search first (instant, offline-capable)
+        if (typeof SymbolSearch !== 'undefined' && SymbolSearch.isLoaded) {
+            const results = SymbolSearch.search(query, 10);
+
+            // If we got results, return them immediately
+            if (results.length > 0) {
+                return { query, results };
+            }
+
+            // No local results - return empty now, but schedule server fallback
+            // Server fallback fires after 5 seconds of no typing (debounced)
+            return { query, results, pendingServerFallback: true };
+        }
+
+        // Client-side not available - use server API directly
+        const response = await fetch(`${this.baseUrl}/search?q=${encodeURIComponent(query)}`);
+        if (!response.ok) {
+            throw new Error('Search failed');
+        }
+        return response.json();
+    },
+
+    /**
+     * Server fallback search (called after 5s debounce when local search returns empty)
+     * @param {string} query - Search query
+     */
+    async searchServerFallback(query) {
         const response = await fetch(`${this.baseUrl}/search?q=${encodeURIComponent(query)}`);
         if (!response.ok) {
             throw new Error('Search failed');

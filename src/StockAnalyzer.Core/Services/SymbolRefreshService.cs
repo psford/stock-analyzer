@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using StockAnalyzer.Core.Data;
 
 namespace StockAnalyzer.Core.Services;
 
@@ -16,8 +17,10 @@ public class SymbolRefreshService : BackgroundService
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<SymbolRefreshService> _logger;
     private readonly HttpClient _httpClient;
+    private readonly SymbolCache _symbolCache;
     private readonly string _finnhubApiKey;
     private readonly int _targetHourUtc;
+    private readonly string? _wwwrootPath;
 
     private const string FinnhubBaseUrl = "https://finnhub.io/api/v1";
     private DateTime _lastRefresh = DateTime.MinValue;
@@ -26,15 +29,18 @@ public class SymbolRefreshService : BackgroundService
         IServiceProvider serviceProvider,
         ILogger<SymbolRefreshService> logger,
         IConfiguration configuration,
+        SymbolCache symbolCache,
         HttpClient? httpClient = null)
     {
         _serviceProvider = serviceProvider;
         _logger = logger;
         _httpClient = httpClient ?? new HttpClient();
+        _symbolCache = symbolCache;
         _finnhubApiKey = configuration["Finnhub:ApiKey"]
                       ?? Environment.GetEnvironmentVariable("FINNHUB_API_KEY")
                       ?? "";
         _targetHourUtc = configuration.GetValue("SymbolDatabase:RefreshHourUtc", 2);
+        _wwwrootPath = configuration["WebRoot:Path"];
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -171,6 +177,18 @@ public class SymbolRefreshService : BackgroundService
             // Mark missing symbols as inactive
             var activeSymbols = symbols.Select(s => s.Symbol).ToList();
             var inactiveCount = await repo.MarkInactiveAsync(activeSymbols);
+
+            // Reload cache with fresh data
+            if (repo is SqlSymbolRepository sqlRepo)
+            {
+                await sqlRepo.LoadCacheAsync();
+            }
+
+            // Regenerate static file for client-side search
+            if (!string.IsNullOrEmpty(_wwwrootPath))
+            {
+                _symbolCache.GenerateClientFile(_wwwrootPath);
+            }
 
             stopwatch.Stop();
             _lastRefresh = DateTime.UtcNow;

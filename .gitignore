@@ -33,3 +33,6 @@ node_modules/
 
 # Development secrets (use user-secrets or env vars instead)
 appsettings.Development.json
+
+# Generated client-side symbol data (created at runtime)
+src/StockAnalyzer.Api/wwwroot/data/
