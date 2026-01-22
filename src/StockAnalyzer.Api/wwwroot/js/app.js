@@ -11,6 +11,7 @@ const App = {
     analysisData: null,
     significantMovesData: null,
     searchTimeout: null,
+    serverFallbackTimeout: null,  // 5-second debounce for server fallback on empty results
     hoverTimeout: null,
     hideTimeout: null,
     isHoverCardHovered: false,
@@ -543,14 +544,41 @@ const App = {
 
     /**
      * Perform search for autocomplete
+     * Uses client-side search for instant results.
+     * If no results found locally, waits 5 seconds then tries server.
      */
     async performSearch(query) {
         const loader = document.getElementById('search-loader');
         loader.classList.remove('hidden');
 
+        // Cancel any pending server fallback
+        if (this.serverFallbackTimeout) {
+            clearTimeout(this.serverFallbackTimeout);
+            this.serverFallbackTimeout = null;
+        }
+
         try {
             const data = await API.search(query);
-            this.showSearchResults(data.results);
+            this.showSearchResults(data.results, query);
+
+            // If local search returned empty, schedule server fallback after 5 seconds
+            if (data.pendingServerFallback && data.results.length === 0) {
+                this.serverFallbackTimeout = setTimeout(async () => {
+                    try {
+                        loader.classList.remove('hidden');
+                        const serverData = await API.searchServerFallback(query);
+                        // Only update if user hasn't changed the query
+                        const currentQuery = document.getElementById('ticker-input').value.trim();
+                        if (currentQuery === query && serverData.results && serverData.results.length > 0) {
+                            this.showSearchResults(serverData.results, query);
+                        }
+                    } catch (error) {
+                        console.error('Server fallback search failed:', error);
+                    } finally {
+                        loader.classList.add('hidden');
+                    }
+                }, 5000);
+            }
         } catch (error) {
             console.error('Search failed:', error);
             this.hideSearchResults();
@@ -561,12 +589,19 @@ const App = {
 
     /**
      * Show search results dropdown
+     * @param {Array} results - Search results
+     * @param {string} query - Original search query (for server fallback message)
      */
-    showSearchResults(results) {
+    showSearchResults(results, query = '') {
         const container = document.getElementById('search-results');
 
         if (!results || results.length === 0) {
-            container.innerHTML = '<div class="px-4 py-3 text-gray-500 dark:text-gray-400 text-sm">No results found</div>';
+            // Show message with server fallback hint if client-side returned empty
+            const hasPendingFallback = this.serverFallbackTimeout !== null;
+            const message = hasPendingFallback
+                ? 'No local results. Checking server in a few seconds...'
+                : 'No results found';
+            container.innerHTML = `<div class="px-4 py-3 text-gray-500 dark:text-gray-400 text-sm">${message}</div>`;
             container.classList.remove('hidden');
             return;
         }

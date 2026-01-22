@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.IO.Compression;
+using System.Text;
 using Microsoft.Extensions.Logging;
 using StockAnalyzer.Core.Models;
 
@@ -145,6 +147,17 @@ public class SymbolCache
     }
 
     /// <summary>
+    /// Get all active symbols for export/client-side search.
+    /// </summary>
+    public IEnumerable<CachedSymbol> GetAllActive()
+    {
+        if (!IsLoaded)
+            return Enumerable.Empty<CachedSymbol>();
+
+        return _allSymbols.Where(s => s.IsActive);
+    }
+
+    /// <summary>
     /// Add or update a single symbol in cache (after DB upsert).
     /// </summary>
     public void AddOrUpdate(CachedSymbol symbol)
@@ -167,6 +180,72 @@ public class SymbolCache
                     _allSymbols[index] = symbol;
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Generate static symbols file for client-side search.
+    /// Creates both uncompressed and gzipped versions.
+    /// Format: SYMBOL|Description\n (pipe-delimited, one per line)
+    /// </summary>
+    /// <param name="wwwrootPath">Path to wwwroot directory</param>
+    /// <returns>True if file was generated successfully</returns>
+    public bool GenerateClientFile(string wwwrootPath)
+    {
+        if (!IsLoaded || _allSymbols.Count == 0)
+        {
+            _logger.LogWarning("Cannot generate client file - cache not loaded or empty");
+            return false;
+        }
+
+        try
+        {
+            var dataDir = Path.Combine(wwwrootPath, "data");
+            Directory.CreateDirectory(dataDir);
+
+            var filePath = Path.Combine(dataDir, "symbols.txt");
+            var gzipPath = Path.Combine(dataDir, "symbols.txt.gz");
+
+            // Build content
+            var sb = new StringBuilder();
+            foreach (var symbol in _allSymbols.Where(s => s.IsActive))
+            {
+                sb.Append(symbol.Symbol);
+                sb.Append('|');
+                sb.Append(symbol.Description);
+                sb.Append('\n');
+            }
+
+            var content = sb.ToString();
+            var bytes = Encoding.UTF8.GetBytes(content);
+
+            // Write uncompressed file
+            File.WriteAllText(filePath, content);
+
+            // Write gzipped file
+            using (var fileStream = new FileStream(gzipPath, FileMode.Create))
+            using (var gzipStream = new GZipStream(fileStream, CompressionLevel.Optimal))
+            {
+                gzipStream.Write(bytes, 0, bytes.Length);
+            }
+
+            var uncompressedSize = bytes.Length;
+            var compressedSize = new FileInfo(gzipPath).Length;
+            var compressionRatio = (1 - (double)compressedSize / uncompressedSize) * 100;
+
+            _logger.LogInformation(
+                "Generated client symbols file: {Count} symbols, {Uncompressed:N0} bytes uncompressed, {Compressed:N0} bytes gzipped ({Ratio:F1}% reduction)",
+                _allSymbols.Count(s => s.IsActive),
+                uncompressedSize,
+                compressedSize,
+                compressionRatio);
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to generate client symbols file");
+            return false;
         }
     }
 }

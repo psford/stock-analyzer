@@ -130,7 +130,25 @@ if (!string.IsNullOrEmpty(connectionString))
     // SymbolCache is singleton - holds ~30K symbols in memory for sub-millisecond lookups
     builder.Services.AddSingleton<SymbolCache>();
     builder.Services.AddScoped<ISymbolRepository, SqlSymbolRepository>();
-    builder.Services.AddSingleton<SymbolRefreshService>();
+    // SymbolRefreshService needs wwwroot path for regenerating client-side symbols file
+    builder.Services.AddSingleton(sp =>
+    {
+        var serviceProvider = sp;
+        var logger = sp.GetRequiredService<ILogger<SymbolRefreshService>>();
+        var config = sp.GetRequiredService<IConfiguration>();
+        var cache = sp.GetRequiredService<SymbolCache>();
+        var env = sp.GetRequiredService<IWebHostEnvironment>();
+
+        // Add wwwroot path to config for SymbolRefreshService
+        var configRoot = config as IConfigurationRoot;
+        var memConfig = new Dictionary<string, string?> { ["WebRoot:Path"] = env.WebRootPath };
+        var combinedConfig = new ConfigurationBuilder()
+            .AddConfiguration(config)
+            .AddInMemoryCollection(memConfig)
+            .Build();
+
+        return new SymbolRefreshService(serviceProvider, logger, combinedConfig, cache);
+    });
     builder.Services.AddHostedService(sp => sp.GetRequiredService<SymbolRefreshService>());
 
     // Cached image repository for persistent image storage
@@ -557,6 +575,27 @@ app.MapGet("/api/admin/symbols/status", async (IServiceProvider serviceProvider)
 .WithOpenApi()
 .Produces(StatusCodes.Status200OK);
 
+// GET /api/admin/symbols/export - Export all symbols for client-side search (pipe-delimited)
+app.MapGet("/api/admin/symbols/export", (SymbolCache cache) =>
+{
+    if (!cache.IsLoaded)
+        return Results.Problem("Symbol cache not loaded");
+
+    // Format: SYMBOL|Description\n (most compact text format)
+    var sb = new System.Text.StringBuilder();
+    foreach (var symbol in cache.GetAllActive())
+    {
+        sb.Append(symbol.Symbol);
+        sb.Append('|');
+        sb.Append(symbol.Description);
+        sb.Append('\n');
+    }
+
+    return Results.Text(sb.ToString(), "text/plain");
+})
+.WithName("ExportSymbols")
+.ExcludeFromDescription();
+
 // Health check endpoints
 app.MapHealthChecks("/health", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {
@@ -804,6 +843,7 @@ app.UseSerilogRequestLogging(options =>
 });
 
 // Load symbol cache into memory at startup (non-blocking, logs timing)
+// Also generates static symbols file for client-side search
 _ = Task.Run(async () =>
 {
     try
@@ -813,6 +853,11 @@ _ = Task.Run(async () =>
         if (repo != null)
         {
             await repo.LoadCacheAsync();
+
+            // Generate static file for client-side search
+            var cache = app.Services.GetService<SymbolCache>();
+            var wwwrootPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot");
+            cache?.GenerateClientFile(wwwrootPath);
         }
     }
     catch (Exception ex)

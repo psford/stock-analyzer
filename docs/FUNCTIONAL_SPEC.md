@@ -1,7 +1,7 @@
 # Functional Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.3
-**Last Updated:** 2026-01-21
+**Version:** 2.4
+**Last Updated:** 2026-01-22
 **Author:** Claude (AI Assistant)
 **Status:** Production
 **Audience:** Business Users, Product Owners, QA Testers
@@ -68,11 +68,76 @@ The Stock Analyzer Dashboard allows users to:
 | FR-001.3 | The system must show both ticker symbol and company name in search results |
 | FR-001.4 | The system must show the stock exchange for each search result |
 | FR-001.5 | The system must require at least 2 characters before showing results |
-| FR-001.6 | The system must display up to 8 search results at a time |
+| FR-001.6 | The system must display up to 10 search results at a time |
 | FR-001.7 | The system must debounce search input (300ms delay) |
-| FR-001.8 | The system must return search results within 50ms (sub-10ms from local database) |
+| FR-001.8 | The system must return search results instantly (sub-millisecond) via client-side search |
+| FR-001.9 | The system must load symbol data (~30K symbols) into the browser at page load |
+| FR-001.10 | The symbol data file must be served as a static asset (~315KB gzipped) |
+| FR-001.11 | The system must fall back to server API if client-side data hasn't loaded yet |
+| FR-001.12 | If client-side search returns no results, the system must wait 5 seconds then query the server |
+| FR-001.13 | The 5-second server fallback must be debounced (resets if user keeps typing) |
+| FR-001.14 | When no local results found, the system must display "No local results. Checking server in a few seconds..." |
 
 **User Story:** *As an investor, I want to search for stocks by company name so that I don't need to memorize ticker symbols.*
+
+**Client-Side Search Architecture:**
+
+```
+Page Load                    User Types Query
+    │                              │
+    ▼                              ▼
+┌────────────────┐         ┌─────────────────┐
+│ Fetch          │         │ 300ms debounce  │
+│ /data/symbols.txt │      │ (input)         │
+│ (~315KB gzip)  │         └────────┬────────┘
+└───────┬────────┘                  │
+        │                          ▼
+        ▼                  ┌─────────────────┐
+┌────────────────┐         │ Client-side     │
+│ Parse into     │         │ SymbolSearch    │
+│ 30K symbol     │◄────────│ (instant)       │
+│ array          │         └────────┬────────┘
+└────────────────┘                  │
+                                    ▼
+                           ┌─────────────────┐
+                           │ Results found?  │
+                           └────────┬────────┘
+                              Yes   │   No
+                           ┌────────┴────────┐
+                           │                 │
+                           ▼                 ▼
+                    ┌────────────┐   ┌─────────────────┐
+                    │ Show       │   │ Show "checking  │
+                    │ results    │   │ server..." msg  │
+                    └────────────┘   └────────┬────────┘
+                                              │
+                                              ▼
+                                     ┌─────────────────┐
+                                     │ 5-second wait   │
+                                     │ (debounced)     │
+                                     └────────┬────────┘
+                                              │
+                                              ▼
+                                     ┌─────────────────┐
+                                     │ Server API call │
+                                     │ /api/search     │
+                                     └────────┬────────┘
+                                              │
+                                              ▼
+                                     ┌─────────────────┐
+                                     │ Show server     │
+                                     │ results (if any)│
+                                     └─────────────────┘
+```
+
+**Symbol Data Format:**
+
+| Field | Format | Example |
+|-------|--------|---------|
+| File | Pipe-delimited text | `AAPL|APPLE INC\n` |
+| Location | `/data/symbols.txt` | Static asset in wwwroot |
+| Size | ~857KB uncompressed, ~315KB gzipped | Regenerated at startup |
+| Refresh | Updated daily at 2 AM UTC (Finnhub refresh) | Server regenerates file |
 
 ### 3.2 Chart Display (FR-002)
 
@@ -773,8 +838,12 @@ The dashboard is fully responsive and adapts to mobile devices.
 | Rule ID | Rule Description |
 |---------|------------------|
 | BR-008 | Search requires minimum 2 characters |
-| BR-009 | Search is debounced by 300ms to prevent excessive API calls |
-| BR-010 | Maximum 8 search results are displayed |
+| BR-009 | Search input is debounced by 300ms before querying |
+| BR-010 | Maximum 10 search results are displayed |
+| BR-011 | Client-side search is performed instantly using pre-loaded symbol data |
+| BR-012 | Server fallback is triggered after 5 seconds of no typing when local results are empty |
+| BR-013 | Server fallback is debounced - resets if user types within 5 seconds |
+| BR-014 | Symbol data file is regenerated at startup and after daily Finnhub refresh |
 
 ---
 
@@ -784,11 +853,16 @@ The dashboard is fully responsive and adapts to mobile devices.
 
 | Test | Expected Result | Pass/Fail |
 |------|-----------------|-----------|
-| Type "AAPL" | Shows Apple Inc. in dropdown | |
+| Type "AAPL" | Shows Apple Inc. in dropdown instantly (no network call) | |
 | Type "Apple" | Shows AAPL - Apple Inc. in dropdown | |
 | Type "A" (1 char) | No results shown | |
 | Select result from dropdown | Ticker populates in search box | |
 | Click Analyze after selection | Chart loads for selected ticker | |
+| Page load | Console shows "Loaded ~30K symbols in Xms" | |
+| Type unknown ticker (e.g., "XYZABC") | Shows "No local results. Checking server..." | |
+| Wait 5 seconds after unknown ticker | Server API call made, results updated | |
+| Type during 5-second wait | Timer resets, no server call yet | |
+| Search with no network | Client-side results still work | |
 
 ### 7.2 Chart Functionality
 
@@ -853,6 +927,7 @@ The dashboard is fully responsive and adapts to mobile devices.
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
+| 2.4 | 2026-01-22 | Client-side instant search (FR-001.8-14): Symbol data loaded to browser at startup (~315KB gzipped), sub-millisecond search, 5-second debounced server fallback for unknown symbols | Claude |
 | 2.3 | 2026-01-21 | Added fast search performance requirement (FR-001.8): Sub-10ms search latency via local symbol database | Claude |
 | 2.2 | 2026-01-19 | Added Mobile Responsiveness (FR-016): Hamburger menu for sidebar toggle, slide-in watchlist panel on mobile, responsive breakpoints, touch-friendly overlay dismiss | Claude |
 | 2.1 | 2026-01-18 | Privacy-first localStorage watchlists (FR-014.10-18): Removed server storage, added export/import JSON, storage usage display. No PII collected. | Claude |
