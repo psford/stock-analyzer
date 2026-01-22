@@ -47,9 +47,10 @@ const API = {
      * Get significant price moves
      * @param {string} ticker - Stock ticker symbol
      * @param {number} threshold - Minimum percentage change to consider significant
+     * @param {string} period - Time period (1mo, 3mo, 6mo, ytd, 1y, 2y, 5y)
      */
-    async getSignificantMoves(ticker, threshold = 3) {
-        const response = await fetch(`${this.baseUrl}/stock/${ticker}/significant?threshold=${threshold}`);
+    async getSignificantMoves(ticker, threshold = 3, period = '1y') {
+        const response = await fetch(`${this.baseUrl}/stock/${ticker}/significant?threshold=${threshold}&period=${period}`);
         if (!response.ok) {
             throw new Error('Failed to fetch significant moves');
         }

@@ -67,8 +67,13 @@ public class ImageCacheService : BackgroundService
         _logger.LogInformation("ImageCacheService starting. Target cache size: {Size}, refill threshold: {Threshold}",
             _cacheSize, _refillThreshold);
 
-        // Initial fill
-        await FillCacheAsync(stoppingToken);
+        // Delay startup to allow app to become responsive first
+        // This prevents thread pool starvation during cold start
+        _logger.LogInformation("Deferring image cache fill for 10 seconds to allow app startup...");
+        await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
+
+        // Initial fill (non-blocking - uses gradual fill instead of batch)
+        _logger.LogInformation("Starting gradual image cache fill...");
 
         // Continuous monitoring and refill
         while (!stoppingToken.IsCancellationRequested)
@@ -77,7 +82,9 @@ public class ImageCacheService : BackgroundService
             {
                 var (cats, dogs) = GetCacheStatus();
 
-                if (cats < _refillThreshold || dogs < _refillThreshold)
+                // Refill if below target cache size (not just threshold)
+                // This ensures gradual fill on startup when cache is empty
+                if (cats < _cacheSize || dogs < _cacheSize)
                 {
                     await RefillCacheAsync(stoppingToken);
                 }

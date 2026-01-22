@@ -321,13 +321,16 @@ app.MapGet("/api/stock/{ticker}/news", async (
 app.MapGet("/api/stock/{ticker}/significant", async (
     string ticker,
     decimal? threshold,
+    string? period,
     AggregatedStockDataService stockService,
     AnalysisService analysisService) =>
 {
     if (!IsValidTicker(ticker))
         return InvalidTickerResult();
 
-    var history = await stockService.GetHistoricalDataAsync(ticker, "1y");
+    // Use provided period or default to 1y
+    var historyPeriod = period ?? "1y";
+    var history = await stockService.GetHistoricalDataAsync(ticker, historyPeriod);
     if (history == null)
         return Results.NotFound(new { error = "Historical data not found", symbol = ticker });
 
