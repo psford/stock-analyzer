@@ -89,18 +89,21 @@ Planned features and improvements for the Stock Analyzer .NET application.
 |---------|-------------|--------|
 | Fix AAPL news mismatch | News headlines can be misleading vs actual price movement | Planned |
 | Stochastic Oscillator | Add Stochastic to technical indicators | Planned |
+| Brinson attribution analysis | Major feature for mutual fund performance evaluation | Planned |
 
 ### Medium Priority
 
 | Feature | Description | Status |
 |---------|-------------|--------|
+| Favicon transparent bg | Fix white background on Sulley favicon - should be transparent | Planned |
+| CI dashboard | Build dashboard to visualize CI runs and builds | Planned |
 | Stats tab for docs | Add project statistics tab (LOC, classes, tests, etc.) | Planned |
 | Project summary doc | Brag doc with stats, best practices implemented, etc. | Planned |
 | Verify CodeQL enforcement | Ensure docs reflect what is actually enforced at build | Planned |
 | Dark mode code blocks | Fix gray highlights on code blocks in dark mode | Planned |
 | Container bundle audit | Review Dockerfile to exclude unused files (Jenkins, dev docs) from prod | Planned |
 | Comprehensive docs review | Review docs folder after App Service deploy to catch stale content | Planned |
-| Cold start optimization | Defer ImageCacheService prefill to reduce thread pool starvation | Planned |
+| ~~Cold start optimization~~ | ~~Defer ImageCacheService prefill to reduce thread pool starvation~~ | **Done 01/21** |
 | Fallback image archive | Cache 100 pre-processed cat/dog images for when providers are down | Planned |
 | Mermaid chart review | Verify mermaid charts render correctly in docs | Planned |
 | Azure Monitor alerts | Set up alerting for health check failures | Planned |
@@ -126,6 +129,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 |---------|-------------|--------|
 | Separate project repos | Extract stock-analyzer to its own git repo with main claudeProjects using git submodules for isolation and independent versioning | Future |
 | Staging environment | Azure App Service deployment slot or separate app for pre-prod testing | Planned |
+| Cloudflare IP allowlist | Update App Service to only allow Cloudflare IPs for enhanced security | Planned |
 | VNet + Private Endpoint | Deploy App Service into VNet with SQL private endpoint for enhanced security | Planned |
 | Application Insights | Azure Application Insights for error tracking and APM | Planned |
 | Load testing | k6 or Locust performance benchmarks | Planned |
@@ -155,6 +159,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 
 | Date | Change |
 |------|--------|
+| 01/21/2026 | Cold start optimization: deferred ImageCacheService prefill, fixed chart markers to match selected time period |
 | 01/19/2026 | ROADMAP sync: Updated test count (150), moved Bollinger Bands to completed, cleaned up strikethrough items |
 | 01/19/2026 | Folder reorganization: moved stock_analyzer_dotnet → projects/stock-analyzer, project-specific workflows to project folder, added separate repos option to backlog |
 | 01/19/2026 | **v2.6** - Multi-source news (Finnhub + Marketaux), ML headline relevance scoring, Jaccard deduplication, image quality control (50% confidence, 20% min size), 52 new unit tests |

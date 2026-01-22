@@ -771,7 +771,7 @@ const App = {
                 API.getStockInfo(ticker),
                 API.getHistory(ticker, this.currentPeriod),
                 API.getAnalysis(ticker, this.currentPeriod),
-                API.getSignificantMoves(ticker, this.currentThreshold),
+                API.getSignificantMoves(ticker, this.currentThreshold, this.currentPeriod),
                 API.getAggregatedNews(ticker, 30, 10)
             ]);
 
@@ -1014,7 +1014,8 @@ const App = {
         try {
             this.significantMovesData = await API.getSignificantMoves(
                 this.currentTicker,
-                this.currentThreshold
+                this.currentThreshold,
+                this.currentPeriod
             );
             this.renderChart();
             this.attachChartHoverListeners();

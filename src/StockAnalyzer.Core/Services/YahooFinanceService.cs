@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using OoplesFinance.YahooFinanceAPI;
 using OoplesFinance.YahooFinanceAPI.Enums;
+using StockAnalyzer.Core.Helpers;
 using StockAnalyzer.Core.Models;
 
 namespace StockAnalyzer.Core.Services;
@@ -102,7 +103,7 @@ public class YahooFinanceService : IStockDataProvider
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "Yahoo Finance failed for {Symbol}", symbol);
+            _logger?.LogWarning(ex, "Yahoo Finance failed for {Symbol}", LogSanitizer.Sanitize(symbol));
             return null;
         }
     }
@@ -150,7 +151,7 @@ public class YahooFinanceService : IStockDataProvider
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "Yahoo Finance historical failed for {Symbol}", symbol);
+            _logger?.LogWarning(ex, "Yahoo Finance historical failed for {Symbol}", LogSanitizer.Sanitize(symbol));
             return null;
         }
     }
@@ -189,7 +190,7 @@ public class YahooFinanceService : IStockDataProvider
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "Yahoo Finance search failed for {Query}", query);
+            _logger?.LogWarning(ex, "Yahoo Finance search failed for {Query}", LogSanitizer.Sanitize(query));
             return new List<SearchResult>();
         }
     }
