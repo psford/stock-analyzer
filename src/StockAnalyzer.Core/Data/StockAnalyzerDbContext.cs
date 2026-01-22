@@ -17,6 +17,7 @@ public class StockAnalyzerDbContext : DbContext
     public DbSet<WatchlistEntity> Watchlists => Set<WatchlistEntity>();
     public DbSet<WatchlistTickerEntity> WatchlistTickers => Set<WatchlistTickerEntity>();
     public DbSet<TickerHoldingEntity> TickerHoldings => Set<TickerHoldingEntity>();
+    public DbSet<SymbolEntity> Symbols => Set<SymbolEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -67,6 +68,30 @@ public class StockAnalyzerDbContext : DbContext
             entity.Property(e => e.Symbol).HasMaxLength(20).IsRequired();
             entity.Property(e => e.Shares).HasPrecision(18, 4);
             entity.Property(e => e.DollarValue).HasPrecision(18, 2);
+        });
+
+        // Symbol configuration (for fast local ticker search)
+        modelBuilder.Entity<SymbolEntity>(entity =>
+        {
+            entity.ToTable("Symbols");
+            entity.HasKey(e => e.Symbol);
+            entity.Property(e => e.Symbol).HasMaxLength(20);
+            entity.Property(e => e.DisplaySymbol).HasMaxLength(50);
+            entity.Property(e => e.Description).HasMaxLength(500);
+            entity.Property(e => e.Type).HasMaxLength(50);
+            entity.Property(e => e.Exchange).HasMaxLength(50);
+            entity.Property(e => e.Mic).HasMaxLength(20);
+            entity.Property(e => e.Currency).HasMaxLength(10);
+            entity.Property(e => e.Figi).HasMaxLength(50);
+            entity.Property(e => e.Country).HasMaxLength(10).HasDefaultValue("US");
+            entity.Property(e => e.IsActive).HasDefaultValue(true);
+            entity.Property(e => e.LastUpdated).HasDefaultValueSql("GETUTCDATE()");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+            // Indexes for fast search
+            entity.HasIndex(e => e.Description).HasDatabaseName("IX_Symbols_Description");
+            entity.HasIndex(e => e.Type).HasDatabaseName("IX_Symbols_Type");
+            entity.HasIndex(e => new { e.Country, e.IsActive }).HasDatabaseName("IX_Symbols_Country_Active");
         });
     }
 }

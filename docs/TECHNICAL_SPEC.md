@@ -1,7 +1,7 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.7
-**Last Updated:** 2026-01-20
+**Version:** 2.9
+**Last Updated:** 2026-01-21
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
 
@@ -87,6 +87,8 @@ This specification covers:
 │  │                           - AnalysisService (MAs, Volatility)  │ │
 │  │                           - ImageProcessingService (ML/ONNX)   │ │
 │  │                           - ImageCacheService (Background)     │ │
+│  │                           - SymbolRefreshService (Background)  │ │
+│  │                           - SqlSymbolRepository (Local Search) │ │
 │  └────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────┘
                                     │
@@ -1639,6 +1641,56 @@ else
 }
 ```
 
+#### Symbol Database (Fast Ticker Search)
+
+The application maintains a local cache of ~10K US stock symbols in Azure SQL for sub-10ms search performance. This eliminates cascading API calls during ticker search.
+
+**Schema:**
+```sql
+CREATE TABLE Symbols (
+    Symbol NVARCHAR(20) PRIMARY KEY,     -- Ticker symbol (e.g., "AAPL")
+    DisplaySymbol NVARCHAR(50),          -- Display version from Finnhub
+    Description NVARCHAR(500),           -- Company name
+    Type NVARCHAR(50),                   -- Common Stock, ETF, ADR, etc.
+    Exchange NVARCHAR(50),               -- Exchange (US for US markets)
+    Mic NVARCHAR(20),                    -- Market Identifier Code
+    Currency NVARCHAR(10),               -- Trading currency
+    Figi NVARCHAR(50),                   -- FIGI identifier
+    Country NVARCHAR(10) DEFAULT 'US',   -- Country code
+    IsActive BIT DEFAULT 1,              -- Whether actively traded
+    LastUpdated DATETIME2,               -- Last refresh timestamp
+    CreatedAt DATETIME2                  -- Record creation timestamp
+);
+
+CREATE INDEX IX_Symbols_Description ON Symbols(Description);
+CREATE INDEX IX_Symbols_Type ON Symbols(Type);
+CREATE INDEX IX_Symbols_Country_Active ON Symbols(Country, IsActive);
+```
+
+**Search Ranking Algorithm:**
+
+| Priority | Match Type | Example |
+|----------|-----------|---------|
+| 1 | Exact symbol match | Query "AAPL" matches AAPL |
+| 2 | Symbol prefix | Query "AAP" matches AAPL, AAPD |
+| 3 | Description starts with | Query "Apple" matches Apple Inc |
+| 4 | Description contains | Query "Inc" matches various |
+
+**Background Refresh (SymbolRefreshService):**
+- Runs as `BackgroundService`
+- Daily refresh at 2 AM UTC (configurable via `SymbolDatabase:RefreshHourUtc`)
+- Auto-seeds database on startup if Symbols table is empty
+- Fetches from Finnhub: `GET /stock/symbol?exchange=US`
+- Marks delisted symbols as `IsActive = false`
+
+**Admin Endpoints:**
+- `POST /api/admin/symbols/refresh` - Manually trigger symbol refresh
+- `GET /api/admin/symbols/status` - Returns active count, last refresh time, API key status
+
+**Fallback Behavior:**
+- If local DB has no results or is unavailable, falls back to API providers (TwelveData → FMP → Yahoo)
+- Quotes and historical data always use API providers (symbol DB is search-only)
+
 #### Infrastructure as Code
 
 **Location:** `infrastructure/azure/`
@@ -2027,6 +2079,7 @@ const [stockInfo, history, analysis, significantMoves, news] = await Promise.all
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.9 | 2026-01-21 | **Local Symbol Database for Fast Search:** Sub-10ms ticker search via Azure SQL cache of ~10K US stock symbols. SymbolEntity model with EF Core migration, ISymbolRepository interface with SqlSymbolRepository implementation (multi-tier ranking: exact > prefix > contains), SymbolRefreshService BackgroundService (daily Finnhub sync at 2 AM UTC, auto-seed on startup if empty), AggregatedStockDataService now queries local DB first with API fallback. Admin endpoints: POST /api/admin/symbols/refresh, GET /api/admin/symbols/status. 18 new unit tests for repository. |
 | 2.8 | 2026-01-21 | **Log Injection Prevention:** Added LogSanitizer utility to sanitize user input (ticker symbols, search queries) before logging. Prevents log forging attacks via control character injection. Applied to AggregatedStockDataService, TwelveDataService, FmpService, and YahooFinanceService. Resolves 21 CodeQL security alerts. |
 | 2.7 | 2026-01-21 | **GitHub Pages Documentation Refactor:** Documentation now served from GitHub Pages (psford.github.io/claudeProjects/) instead of bundled in container. Enables doc updates without container rebuild. Removed wwwroot/docs folder and MSBuild copy targets. docs.html fetches markdown client-side via CORS. Custom domain SSL (psfordtest.com) with Azure managed certificates. |
 | 2.6 | 2026-01-19 | **Multi-Source News Aggregation + ML Scoring:** MarketauxService (alternative news source), HeadlineRelevanceService (weighted relevance scoring: ticker 35%, company name 25%, recency 20%, sentiment 10%, source quality 10%), AggregatedNewsService (combines sources with Jaccard deduplication), NewsItem model extended (RelevanceScore, SourceApi fields), new aggregated news endpoints, ImageProcessingService quality control (0.50 confidence threshold, 20% minimum detection size, reject images without valid detection), image cache increased to 100/30, 52 new unit tests |
