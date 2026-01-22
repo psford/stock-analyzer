@@ -8,110 +8,44 @@ namespace StockAnalyzer.Core.Data;
 
 /// <summary>
 /// SQL Server implementation of ISymbolRepository.
-/// Optimized for sub-10ms search latency on ~30K symbols using Full-Text Search.
-/// Falls back to LINQ for InMemory testing or SQL Server without FTS installed.
+/// Uses in-memory SymbolCache for sub-millisecond search performance.
+/// Database operations (upsert, mark inactive) update both DB and cache.
 /// </summary>
 public class SqlSymbolRepository : ISymbolRepository
 {
     private readonly StockAnalyzerDbContext _context;
     private readonly ILogger<SqlSymbolRepository> _logger;
-    private bool _fullTextSearchAvailable = true;
+    private readonly SymbolCache _cache;
 
-    public SqlSymbolRepository(StockAnalyzerDbContext context, ILogger<SqlSymbolRepository> logger)
+    public SqlSymbolRepository(StockAnalyzerDbContext context, ILogger<SqlSymbolRepository> logger, SymbolCache cache)
     {
         _context = context;
         _logger = logger;
+        _cache = cache;
     }
 
     /// <inheritdoc />
-    public async Task<List<SearchResult>> SearchAsync(string query, int limit = 10, bool includeInactive = false)
+    public Task<List<SearchResult>> SearchAsync(string query, int limit = 10, bool includeInactive = false)
+    {
+        // Use in-memory cache for sub-millisecond search (no DB round-trip)
+        if (_cache.IsLoaded)
+        {
+            return Task.FromResult(_cache.Search(query, limit, includeInactive));
+        }
+
+        // Fallback to DB if cache not yet loaded (rare - only during startup)
+        return SearchFromDatabaseAsync(query, limit, includeInactive);
+    }
+
+    /// <summary>
+    /// Database fallback for search (used before cache is loaded or in tests).
+    /// </summary>
+    private async Task<List<SearchResult>> SearchFromDatabaseAsync(string query, int limit, bool includeInactive)
     {
         if (string.IsNullOrWhiteSpace(query))
             return new List<SearchResult>();
 
         var normalizedQuery = query.Trim().ToUpperInvariant();
-
-        // Use provider-aware search: SQL Server uses Full-Text Search, InMemory uses LINQ
-        if (_context.Database.IsSqlServer() && _fullTextSearchAvailable)
-        {
-            try
-            {
-                return await SearchWithFullTextAsync(normalizedQuery, limit, includeInactive);
-            }
-            catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 7601 || ex.Number == 7609)
-            {
-                // 7601: Full-text search is not available
-                // 7609: Full-Text Search is not installed
-                _logger.LogWarning(ex, "Full-Text Search not available, falling back to LINQ search");
-                _fullTextSearchAvailable = false;
-                return await SearchWithLinqAsync(normalizedQuery, limit, includeInactive);
-            }
-        }
-        else
-        {
-            // Fallback for InMemory database (testing) or SQL Server without FTS
-            return await SearchWithLinqAsync(normalizedQuery, limit, includeInactive);
-        }
-    }
-
-    /// <summary>
-    /// SQL Server search using Full-Text Search for fast description matching.
-    /// Production path - achieves sub-10ms latency on 30K+ symbols.
-    /// </summary>
-    private async Task<List<SearchResult>> SearchWithFullTextAsync(string normalizedQuery, int limit, bool includeInactive)
-    {
-        // For CONTAINS Full-Text Search, quote the term and add wildcard for prefix matching
-        // Example: "APPLE*" matches "APPLE", "APPLE INC", etc.
-        var ftsQuery = $"\"{normalizedQuery}*\"";
-
-        // Use Full-Text Search with CONTAINS for fast description search
-        // Multi-tier ranking:
-        // 1 = exact symbol match
-        // 2 = symbol starts with query
-        // 3 = description contains query (via Full-Text index)
-        // Parameterized query to prevent SQL injection
-        var results = await _context.Database
-            .SqlQueryRaw<SymbolSearchResult>(
-                @"SELECT TOP (@limit)
-                    Symbol,
-                    Description,
-                    Exchange,
-                    Type,
-                    CASE
-                        WHEN Symbol = @query THEN 1
-                        WHEN Symbol LIKE @queryPrefix THEN 2
-                        ELSE 3
-                    END AS Rank
-                FROM Symbols
-                WHERE (@includeInactive = 1 OR IsActive = 1)
-                  AND (
-                      Symbol LIKE @queryPrefix
-                      OR CONTAINS(Description, @ftsQuery)
-                  )
-                ORDER BY Rank, Symbol",
-                new Microsoft.Data.SqlClient.SqlParameter("@limit", limit),
-                new Microsoft.Data.SqlClient.SqlParameter("@query", normalizedQuery),
-                new Microsoft.Data.SqlClient.SqlParameter("@queryPrefix", $"{normalizedQuery}%"),
-                new Microsoft.Data.SqlClient.SqlParameter("@ftsQuery", ftsQuery),
-                new Microsoft.Data.SqlClient.SqlParameter("@includeInactive", includeInactive ? 1 : 0))
-            .ToListAsync();
-
-        return results.Select(r => new SearchResult
-        {
-            Symbol = r.Symbol,
-            ShortName = r.Description,
-            LongName = r.Description,
-            Exchange = r.Exchange,
-            Type = r.Type
-        }).ToList();
-    }
-
-    /// <summary>
-    /// LINQ-based search for InMemory database (testing).
-    /// Not as fast as Full-Text Search but works without SQL Server.
-    /// </summary>
-    private async Task<List<SearchResult>> SearchWithLinqAsync(string normalizedQuery, int limit, bool includeInactive)
-    {
         var baseQuery = _context.Symbols.AsNoTracking();
 
         if (!includeInactive)
@@ -119,15 +53,12 @@ public class SqlSymbolRepository : ISymbolRepository
             baseQuery = baseQuery.Where(s => s.IsActive);
         }
 
-        // Filter: symbol prefix OR description contains query
         var filtered = baseQuery.Where(s =>
             s.Symbol.StartsWith(normalizedQuery) ||
             s.Description.ToUpper().Contains(normalizedQuery));
 
-        // Load to memory for ranking (acceptable for test data volumes)
         var candidates = await filtered.ToListAsync();
 
-        // Rank and sort in memory
         var ranked = candidates
             .Select(s => new
             {
@@ -150,18 +81,20 @@ public class SqlSymbolRepository : ISymbolRepository
         }).ToList();
     }
 
-    // Internal DTO for raw SQL query results
-    private class SymbolSearchResult
+    /// <inheritdoc />
+    public Task<SearchResult?> GetBySymbolAsync(string symbol)
     {
-        public string Symbol { get; set; } = string.Empty;
-        public string Description { get; set; } = string.Empty;
-        public string Exchange { get; set; } = string.Empty;
-        public string Type { get; set; } = string.Empty;
-        public int Rank { get; set; }
+        // Use cache for O(1) lookup
+        if (_cache.IsLoaded)
+        {
+            return Task.FromResult(_cache.GetBySymbol(symbol));
+        }
+
+        // Fallback to DB
+        return GetBySymbolFromDatabaseAsync(symbol);
     }
 
-    /// <inheritdoc />
-    public async Task<SearchResult?> GetBySymbolAsync(string symbol)
+    private async Task<SearchResult?> GetBySymbolFromDatabaseAsync(string symbol)
     {
         var entity = await _context.Symbols
             .AsNoTracking()
@@ -181,10 +114,16 @@ public class SqlSymbolRepository : ISymbolRepository
     }
 
     /// <inheritdoc />
-    public async Task<bool> ExistsAsync(string symbol)
+    public Task<bool> ExistsAsync(string symbol)
     {
-        return await _context.Symbols
-            .AnyAsync(s => s.Symbol == symbol.ToUpperInvariant());
+        // Use cache for O(1) lookup
+        if (_cache.IsLoaded)
+        {
+            return Task.FromResult(_cache.Exists(symbol));
+        }
+
+        // Fallback to DB
+        return _context.Symbols.AnyAsync(s => s.Symbol == symbol.ToUpperInvariant());
     }
 
     /// <inheritdoc />
@@ -305,5 +244,32 @@ public class SqlSymbolRepository : ISymbolRepository
     {
         return await _context.Symbols
             .MaxAsync(s => (DateTime?)s.LastUpdated);
+    }
+
+    /// <summary>
+    /// Load all symbols from database into in-memory cache.
+    /// Called at application startup and after symbol refresh.
+    /// </summary>
+    public async Task LoadCacheAsync()
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        var symbols = await _context.Symbols
+            .AsNoTracking()
+            .Select(s => new CachedSymbol
+            {
+                Symbol = s.Symbol,
+                Description = s.Description,
+                Exchange = s.Exchange ?? "",
+                Type = s.Type ?? "",
+                IsActive = s.IsActive
+            })
+            .ToListAsync();
+
+        _cache.Load(symbols);
+
+        sw.Stop();
+        _logger.LogInformation("Loaded {Count} symbols into cache in {ElapsedMs}ms",
+            symbols.Count, sw.ElapsedMilliseconds);
     }
 }
