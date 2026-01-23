@@ -1,6 +1,8 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using StockAnalyzer.Core.Data.Entities;
 using StockAnalyzer.Core.Helpers;
 using StockAnalyzer.Core.Models;
 
@@ -30,6 +32,9 @@ public class AggregatedStockDataService
     private static readonly TimeSpan QuoteCacheDuration = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan HistoryCacheDuration = TimeSpan.FromHours(1);
     private static readonly TimeSpan SearchCacheDuration = TimeSpan.FromHours(24);
+
+    // Track tickers that are already queued for background backfill (to avoid duplicate requests)
+    private static readonly ConcurrentDictionary<string, DateTime> _pendingBackfills = new();
 
     public AggregatedStockDataService(
         IEnumerable<IStockDataProvider> providers,
@@ -80,18 +85,36 @@ public class AggregatedStockDataService
     }
 
     /// <summary>
-    /// Get historical OHLCV data with cascading fallback.
+    /// Get historical OHLCV data.
+    /// Priority: 1) Memory cache, 2) Database (pre-loaded prices), 3) API providers (with background backfill)
     /// </summary>
     public async Task<HistoricalDataResult?> GetHistoricalDataAsync(string symbol, string period = "1y")
     {
-        var cacheKey = $"history:{symbol.ToUpper()}:{period}";
+        var upperSymbol = symbol.ToUpper();
+        var cacheKey = $"history:{upperSymbol}:{period}";
 
+        // 1. Check memory cache first
         if (_cache.TryGetValue(cacheKey, out HistoricalDataResult? cached))
         {
             _logger?.LogDebug("Cache hit for {Symbol} history", LogSanitizer.Sanitize(symbol));
             return cached;
         }
 
+        // 2. Check database for pre-loaded prices
+        if (_serviceScopeFactory != null)
+        {
+            var dbResult = await TryGetFromDatabaseAsync(upperSymbol, period);
+            if (dbResult != null)
+            {
+                _logger?.LogInformation(
+                    "Got history for {Symbol} from database ({Count} points)",
+                    LogSanitizer.Sanitize(symbol), dbResult.Data.Count);
+                _cache.Set(cacheKey, dbResult, HistoryCacheDuration);
+                return dbResult;
+            }
+        }
+
+        // 3. Fall back to API providers
         foreach (var provider in _providers.Where(p => p.IsAvailable))
         {
             _logger?.LogDebug("Trying {Provider} for {Symbol} history", provider.ProviderName, LogSanitizer.Sanitize(symbol));
@@ -103,6 +126,10 @@ public class AggregatedStockDataService
                     "Got history for {Symbol} from {Provider} ({Count} points)",
                     LogSanitizer.Sanitize(symbol), provider.ProviderName, result.Data.Count);
                 _cache.Set(cacheKey, result, HistoryCacheDuration);
+
+                // Queue background backfill to database for future requests
+                QueueBackgroundBackfill(upperSymbol);
+
                 return result;
             }
         }
@@ -254,6 +281,167 @@ public class AggregatedStockDataService
         }
 
         _logger?.LogDebug("Cache invalidated for {Symbol}", LogSanitizer.Sanitize(symbol));
+    }
+
+    /// <summary>
+    /// Try to get historical data from the database (pre-loaded prices).
+    /// </summary>
+    private async Task<HistoricalDataResult?> TryGetFromDatabaseAsync(string symbol, string period)
+    {
+        if (_serviceScopeFactory == null) return null;
+
+        try
+        {
+            using var scope = _serviceScopeFactory.CreateScope();
+            var securityRepo = scope.ServiceProvider.GetService<ISecurityMasterRepository>();
+            var priceRepo = scope.ServiceProvider.GetService<IPriceRepository>();
+
+            if (securityRepo == null || priceRepo == null) return null;
+
+            // Look up the security by ticker
+            var security = await securityRepo.GetByTickerAsync(symbol);
+            if (security == null)
+            {
+                _logger?.LogDebug("Security {Symbol} not found in SecurityMaster", LogSanitizer.Sanitize(symbol));
+                return null;
+            }
+
+            // Get the date range for the requested period
+            var (startDate, endDate) = GetDateRangeForPeriod(period);
+
+            // Fetch prices from database
+            var prices = await priceRepo.GetPricesAsync(security.SecurityAlias, startDate, endDate);
+
+            if (prices.Count == 0)
+            {
+                _logger?.LogDebug("No prices in database for {Symbol} in period {Period}",
+                    LogSanitizer.Sanitize(symbol), LogSanitizer.Sanitize(period));
+                return null;
+            }
+
+            // Convert to HistoricalDataResult
+            var ohlcvData = prices.Select(p => new OhlcvData
+            {
+                Date = p.EffectiveDate,
+                Open = p.Open,
+                High = p.High,
+                Low = p.Low,
+                Close = p.Close,
+                Volume = p.Volume ?? 0,
+                AdjustedClose = p.AdjustedClose
+            }).OrderBy(d => d.Date).ToList();
+
+            return new HistoricalDataResult
+            {
+                Symbol = symbol,
+                Period = period,
+                StartDate = ohlcvData.First().Date,
+                EndDate = ohlcvData.Last().Date,
+                Data = ohlcvData
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Error fetching {Symbol} from database", LogSanitizer.Sanitize(symbol));
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Convert period string to date range.
+    /// </summary>
+    private static (DateTime StartDate, DateTime EndDate) GetDateRangeForPeriod(string period)
+    {
+        var endDate = DateTime.Now.Date;
+        var startDate = period.ToLower() switch
+        {
+            "ytd" => new DateTime(endDate.Year, 1, 1),
+            "1d" => endDate.AddDays(-1),
+            "5d" => endDate.AddDays(-5),
+            "1mo" => endDate.AddMonths(-1),
+            "3mo" => endDate.AddMonths(-3),
+            "6mo" => endDate.AddMonths(-6),
+            "1y" => endDate.AddYears(-1),
+            "2y" => endDate.AddYears(-2),
+            "5y" => endDate.AddYears(-5),
+            "10y" => endDate.AddYears(-10),
+            _ => endDate.AddYears(-1)
+        };
+
+        return (startDate, endDate);
+    }
+
+    /// <summary>
+    /// Queue a background task to backfill historical data for a ticker.
+    /// Adds the security to SecurityMaster if not present and loads historical prices from EODHD.
+    /// </summary>
+    private void QueueBackgroundBackfill(string symbol)
+    {
+        if (_serviceScopeFactory == null) return;
+
+        // Check if already queued recently (within last hour) to avoid duplicate requests
+        if (_pendingBackfills.TryGetValue(symbol, out var queuedAt) &&
+            DateTime.UtcNow - queuedAt < TimeSpan.FromHours(1))
+        {
+            _logger?.LogDebug("Backfill for {Symbol} already queued at {QueuedAt}", LogSanitizer.Sanitize(symbol), queuedAt);
+            return;
+        }
+
+        _pendingBackfills[symbol] = DateTime.UtcNow;
+
+        // Fire-and-forget background task
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var scope = _serviceScopeFactory.CreateScope();
+                var priceRefreshService = scope.ServiceProvider.GetService<PriceRefreshService>();
+
+                if (priceRefreshService == null)
+                {
+                    _logger?.LogWarning("PriceRefreshService not available for backfill of {Symbol}", LogSanitizer.Sanitize(symbol));
+                    return;
+                }
+
+                _logger?.LogInformation("Starting background backfill for {Symbol}", LogSanitizer.Sanitize(symbol));
+
+                // Load 10 years of historical data (matching what we did for S&P 500)
+                var startDate = DateTime.Now.AddYears(-10);
+                var endDate = DateTime.Now;
+
+                var result = await priceRefreshService.LoadHistoricalDataForTickersAsync(
+                    new[] { symbol },
+                    startDate,
+                    endDate);
+
+                if (result.TotalRecordsInserted > 0)
+                {
+                    _logger?.LogInformation(
+                        "Background backfill complete for {Symbol}: {Count} records inserted",
+                        LogSanitizer.Sanitize(symbol), result.TotalRecordsInserted);
+
+                    // Invalidate cache so next request uses database
+                    InvalidateCache(symbol);
+                }
+                else if (result.Errors.Count > 0)
+                {
+                    _logger?.LogWarning(
+                        "Background backfill for {Symbol} had errors: {Errors}",
+                        LogSanitizer.Sanitize(symbol), LogSanitizer.Sanitize(string.Join("; ", result.Errors)));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Background backfill failed for {Symbol}", LogSanitizer.Sanitize(symbol));
+            }
+            finally
+            {
+                // Clean up after some time to allow retry
+                _ = Task.Delay(TimeSpan.FromHours(2)).ContinueWith(
+                    _ => _pendingBackfills.TryRemove(symbol, out DateTime _),
+                    TaskScheduler.Default);
+            }
+        });
     }
 }
 

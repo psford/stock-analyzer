@@ -14,12 +14,17 @@ public class StockAnalyzerDbContext : DbContext
     {
     }
 
+    // Operational tables (dbo schema)
     public DbSet<WatchlistEntity> Watchlists => Set<WatchlistEntity>();
     public DbSet<WatchlistTickerEntity> WatchlistTickers => Set<WatchlistTickerEntity>();
     public DbSet<TickerHoldingEntity> TickerHoldings => Set<TickerHoldingEntity>();
     public DbSet<SymbolEntity> Symbols => Set<SymbolEntity>();
     public DbSet<CachedImageEntity> CachedImages => Set<CachedImageEntity>();
     public DbSet<CachedSentimentEntity> CachedSentiments => Set<CachedSentimentEntity>();
+
+    // Domain data tables (data schema)
+    public DbSet<SecurityMasterEntity> SecurityMaster => Set<SecurityMasterEntity>();
+    public DbSet<PriceEntity> Prices => Set<PriceEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -134,6 +139,69 @@ public class StockAnalyzerDbContext : DbContext
             // Index for finding pending items
             entity.HasIndex(e => new { e.IsPending, e.CreatedAt })
                 .HasDatabaseName("IX_CachedSentiments_Pending");
+        });
+
+        // ========================================================================
+        // Domain Data Tables (data schema)
+        // These tables store the core business data the application serves,
+        // separate from operational/infrastructure tables above.
+        // ========================================================================
+
+        // SecurityMaster configuration
+        modelBuilder.Entity<SecurityMasterEntity>(entity =>
+        {
+            entity.ToTable("SecurityMaster", "data");
+            entity.HasKey(e => e.SecurityAlias);
+            entity.Property(e => e.SecurityAlias).UseIdentityColumn();
+            entity.Property(e => e.PrimaryAssetId).HasMaxLength(50);
+            entity.Property(e => e.IssueName).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.TickerSymbol).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.Exchange).HasMaxLength(50);
+            entity.Property(e => e.SecurityType).HasMaxLength(50);
+            entity.Property(e => e.IsActive).HasDefaultValue(true);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+            // Unique index on ticker symbol - most common lookup
+            entity.HasIndex(e => e.TickerSymbol)
+                .IsUnique()
+                .HasDatabaseName("IX_SecurityMaster_TickerSymbol");
+
+            // Index for filtering active securities
+            entity.HasIndex(e => e.IsActive)
+                .HasDatabaseName("IX_SecurityMaster_IsActive");
+
+            // One-to-many: SecurityMaster -> Prices
+            entity.HasMany(e => e.Prices)
+                .WithOne(p => p.Security)
+                .HasForeignKey(p => p.SecurityAlias)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // Prices configuration
+        modelBuilder.Entity<PriceEntity>(entity =>
+        {
+            entity.ToTable("Prices", "data");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).UseIdentityColumn();
+            entity.Property(e => e.EffectiveDate).HasColumnType("date");  // DATE only, no time
+            entity.Property(e => e.Open).HasPrecision(18, 4);
+            entity.Property(e => e.High).HasPrecision(18, 4);
+            entity.Property(e => e.Low).HasPrecision(18, 4);
+            entity.Property(e => e.Close).HasPrecision(18, 4);
+            entity.Property(e => e.Volatility).HasPrecision(10, 6);
+            entity.Property(e => e.AdjustedClose).HasPrecision(18, 4);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+            // Composite unique index: one price per security per date
+            // This is the primary workhorse index for range queries
+            entity.HasIndex(e => new { e.SecurityAlias, e.EffectiveDate })
+                .IsUnique()
+                .HasDatabaseName("IX_Prices_SecurityAlias_EffectiveDate");
+
+            // Index for batch date lookups (e.g., "all prices for 2025-01-15")
+            entity.HasIndex(e => e.EffectiveDate)
+                .HasDatabaseName("IX_Prices_EffectiveDate");
         });
     }
 }

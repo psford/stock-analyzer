@@ -161,6 +161,11 @@ if (!string.IsNullOrEmpty(connectionString))
         var cacheSize = config.GetValue<int>("ImageProcessing:CacheSize", 1000);
         return new SqlCachedImageRepository(context, logger, cacheSize);
     });
+
+    // Security master and price repositories (data schema)
+    builder.Services.AddScoped<ISecurityMasterRepository, SqlSecurityMasterRepository>();
+    builder.Services.AddScoped<IPriceRepository, SqlPriceRepository>();
+
     Log.Information("Using SQL database for watchlist storage, symbol search, and image cache");
 }
 else
@@ -229,6 +234,24 @@ builder.Services.AddSingleton(sp =>
     return new SentimentCacheService(finbert, scopeFactory, logger);
 });
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SentimentCacheService>());
+
+// Register EODHD service for historical price data
+builder.Services.AddSingleton(sp =>
+{
+    var httpClient = new HttpClient();
+    var logger = sp.GetRequiredService<ILogger<EodhdService>>();
+    var config = sp.GetRequiredService<IConfiguration>();
+    return new EodhdService(httpClient, logger, config);
+});
+
+// Register PriceRefreshService (background service for daily price updates)
+builder.Services.AddSingleton(sp =>
+{
+    var logger = sp.GetRequiredService<ILogger<PriceRefreshService>>();
+    var config = sp.GetRequiredService<IConfiguration>();
+    return new PriceRefreshService(sp, logger, config);
+});
+builder.Services.AddHostedService(sp => sp.GetRequiredService<PriceRefreshService>());
 
 // Add health checks
 // External API checks report Degraded (not Unhealthy) when unavailable - app can still function with fallback providers
@@ -667,6 +690,206 @@ app.MapGet("/api/admin/symbols/export", (SymbolCache cache) =>
 })
 .WithName("ExportSymbols")
 .ExcludeFromDescription();
+
+// Admin endpoints for price database management
+
+// GET /api/admin/prices/status - Get price database status
+app.MapGet("/api/admin/prices/status", async (IServiceProvider serviceProvider) =>
+{
+    using var scope = serviceProvider.CreateScope();
+    var priceRepo = scope.ServiceProvider.GetService<IPriceRepository>();
+    var securityRepo = scope.ServiceProvider.GetService<ISecurityMasterRepository>();
+    var eodhd = serviceProvider.GetService<EodhdService>();
+
+    if (priceRepo == null || securityRepo == null)
+        return Results.Ok(new { enabled = false, message = "Price database not configured (no SQL connection)" });
+
+    var totalPrices = await priceRepo.GetTotalCountAsync();
+    var activeSecurities = await securityRepo.GetActiveCountAsync();
+
+    // Get latest date from a sample of securities
+    DateTime? latestDate = null;
+    if (totalPrices > 0)
+    {
+        var securities = await securityRepo.GetAllActiveAsync();
+        var sampleAliases = securities.Take(5).Select(s => s.SecurityAlias);
+        var latestPrices = await priceRepo.GetLatestPricesAsync(sampleAliases);
+        if (latestPrices.Count > 0)
+        {
+            latestDate = latestPrices.Values.Max(p => p.EffectiveDate);
+        }
+    }
+
+    return Results.Ok(new
+    {
+        enabled = true,
+        totalPriceRecords = totalPrices,
+        activeSecurities,
+        latestPriceDate = latestDate?.ToString("yyyy-MM-dd"),
+        eodhdApiConfigured = eodhd?.IsAvailable ?? false
+    });
+})
+.WithName("GetPriceStatus")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK);
+
+// POST /api/admin/prices/sync-securities - Sync SecurityMaster from Symbols table
+app.MapPost("/api/admin/prices/sync-securities", async (PriceRefreshService? refreshService) =>
+{
+    if (refreshService == null)
+        return Results.BadRequest(new { error = "Price refresh service not configured" });
+
+    try
+    {
+        var count = await refreshService.SyncSecurityMasterFromSymbolsAsync();
+        return Results.Ok(new { message = "Security sync complete", securitiesUpserted = count });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Security sync failed");
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("SyncSecurities")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status500InternalServerError);
+
+// POST /api/admin/prices/refresh-date - Refresh prices for a specific date
+app.MapPost("/api/admin/prices/refresh-date", async (
+    PriceRefreshService? refreshService,
+    HttpRequest request) =>
+{
+    if (refreshService == null)
+        return Results.BadRequest(new { error = "Price refresh service not configured" });
+
+    var body = await request.ReadFromJsonAsync<RefreshDateRequest>();
+    if (body == null || string.IsNullOrEmpty(body.Date))
+        return Results.BadRequest(new { error = "Date parameter required (format: yyyy-MM-dd)" });
+
+    if (!DateTime.TryParse(body.Date, out var date))
+        return Results.BadRequest(new { error = "Invalid date format. Use yyyy-MM-dd" });
+
+    try
+    {
+        await refreshService.RefreshDateAsync(date, CancellationToken.None);
+        return Results.Ok(new { message = $"Prices refreshed for {date:yyyy-MM-dd}" });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Price refresh failed for {Date}", date);
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("RefreshPricesForDate")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status500InternalServerError);
+
+// POST /api/admin/prices/bulk-load - Start bulk historical data load
+app.MapPost("/api/admin/prices/bulk-load", async (
+    PriceRefreshService? refreshService,
+    HttpRequest request) =>
+{
+    if (refreshService == null)
+        return Results.BadRequest(new { error = "Price refresh service not configured" });
+
+    var body = await request.ReadFromJsonAsync<BulkLoadRequest>();
+    if (body == null || string.IsNullOrEmpty(body.StartDate) || string.IsNullOrEmpty(body.EndDate))
+        return Results.BadRequest(new { error = "StartDate and EndDate required (format: yyyy-MM-dd)" });
+
+    if (!DateTime.TryParse(body.StartDate, out var startDate))
+        return Results.BadRequest(new { error = "Invalid StartDate format. Use yyyy-MM-dd" });
+
+    if (!DateTime.TryParse(body.EndDate, out var endDate))
+        return Results.BadRequest(new { error = "Invalid EndDate format. Use yyyy-MM-dd" });
+
+    if (startDate > endDate)
+        return Results.BadRequest(new { error = "StartDate must be before EndDate" });
+
+    try
+    {
+        // Run bulk load in background - this can take a long time
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var result = await refreshService.BulkLoadHistoricalDataAsync(startDate, endDate);
+                Log.Information("Bulk load completed: {Processed}/{Total} days, {Errors} errors",
+                    result.DaysProcessed, result.TotalDays, result.Errors.Count);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Bulk load failed");
+            }
+        });
+
+        return Results.Accepted(value: new
+        {
+            message = $"Bulk load started for {startDate:yyyy-MM-dd} to {endDate:yyyy-MM-dd}",
+            note = "Check logs for progress. This operation runs in the background."
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Failed to start bulk load");
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("BulkLoadPrices")
+.WithOpenApi()
+.Produces(StatusCodes.Status202Accepted)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status500InternalServerError);
+
+// POST /api/admin/prices/load-tickers - Load historical data for specific tickers
+app.MapPost("/api/admin/prices/load-tickers", async (
+    PriceRefreshService? refreshService,
+    HttpRequest request) =>
+{
+    if (refreshService == null)
+        return Results.BadRequest(new { error = "Price refresh service not configured" });
+
+    var body = await request.ReadFromJsonAsync<TickerLoadRequest>();
+    if (body == null || body.Tickers == null || body.Tickers.Length == 0)
+        return Results.BadRequest(new { error = "Tickers array required" });
+
+    if (string.IsNullOrEmpty(body.StartDate) || string.IsNullOrEmpty(body.EndDate))
+        return Results.BadRequest(new { error = "StartDate and EndDate required (format: yyyy-MM-dd)" });
+
+    if (!DateTime.TryParse(body.StartDate, out var startDate))
+        return Results.BadRequest(new { error = "Invalid StartDate format. Use yyyy-MM-dd" });
+
+    if (!DateTime.TryParse(body.EndDate, out var endDate))
+        return Results.BadRequest(new { error = "Invalid EndDate format. Use yyyy-MM-dd" });
+
+    try
+    {
+        var result = await refreshService.LoadHistoricalDataForTickersAsync(
+            body.Tickers, startDate, endDate);
+
+        return Results.Ok(new
+        {
+            message = "Ticker load complete",
+            tickersRequested = result.TotalTickers,
+            tickersProcessed = result.TickersProcessed,
+            recordsInserted = result.TotalRecordsInserted,
+            errors = result.Errors
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Failed to load ticker data");
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("LoadTickerPrices")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status500InternalServerError);
 
 // Health check endpoints
 app.MapHealthChecks("/health", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions

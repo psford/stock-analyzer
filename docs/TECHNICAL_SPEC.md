@@ -1963,6 +1963,131 @@ ORDER BY Rank, Symbol
 - If local DB has no results or is unavailable, falls back to API providers (TwelveData → FMP → Yahoo)
 - Quotes and historical data always use API providers (symbol DB is search-only)
 
+#### Security Master & Historical Prices (data schema)
+
+The application maintains a separate `data` schema for domain data (securities and price history), distinct from the `dbo` schema used for operational tables (watchlists, symbols, cached images).
+
+**Schema Separation Rationale:**
+- **Clear ownership** - Operational vs. analytical data separation
+- **Security** - Can grant read-only access to `data` schema for reporting
+- **Backup strategy** - `data` schema (larger) can be backed up on different schedule
+- **Future scaling** - Could move `data` schema to separate database later
+
+**SecurityMaster Table:**
+```sql
+CREATE TABLE data.SecurityMaster (
+    SecurityAlias INT IDENTITY(1,1) PRIMARY KEY,  -- Auto-increment for efficient joins
+    PrimaryAssetId NVARCHAR(50),                   -- Future: CUSIP, ISIN, etc.
+    IssueName NVARCHAR(200) NOT NULL,              -- Full name (e.g., "Apple Inc.")
+    TickerSymbol NVARCHAR(20) NOT NULL,            -- Ticker (e.g., "AAPL")
+    Exchange NVARCHAR(50),                          -- Exchange (e.g., "NASDAQ")
+    SecurityType NVARCHAR(50),                      -- Common Stock, ETF, ADR, etc.
+    IsActive BIT DEFAULT 1,                         -- Whether actively traded
+    CreatedAt DATETIME2 DEFAULT GETUTCDATE(),
+    UpdatedAt DATETIME2 DEFAULT GETUTCDATE()
+);
+
+CREATE UNIQUE INDEX IX_SecurityMaster_TickerSymbol ON data.SecurityMaster(TickerSymbol);
+CREATE INDEX IX_SecurityMaster_IsActive ON data.SecurityMaster(IsActive);
+```
+
+**Prices Table:**
+```sql
+CREATE TABLE data.Prices (
+    Id BIGINT IDENTITY(1,1) PRIMARY KEY,          -- BIGINT for >2B row scale
+    SecurityAlias INT NOT NULL,                    -- FK to SecurityMaster
+    EffectiveDate DATE NOT NULL,                   -- Trading date (no time component)
+    Open DECIMAL(18,4) NOT NULL,
+    High DECIMAL(18,4) NOT NULL,
+    Low DECIMAL(18,4) NOT NULL,
+    Close DECIMAL(18,4) NOT NULL,
+    Volatility DECIMAL(10,6),                      -- Calculated volatility
+    Volume BIGINT,                                  -- Trading volume
+    AdjustedClose DECIMAL(18,4),                   -- Split/dividend adjusted
+    CreatedAt DATETIME2 DEFAULT GETUTCDATE(),
+    FOREIGN KEY (SecurityAlias) REFERENCES data.SecurityMaster(SecurityAlias) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IX_Prices_SecurityAlias_EffectiveDate ON data.Prices(SecurityAlias, EffectiveDate);
+CREATE INDEX IX_Prices_EffectiveDate ON data.Prices(EffectiveDate);
+```
+
+**Scale Target:** ~1.26 million rows (500 stocks × 252 trading days × 10 years)
+
+**Repository Interfaces:**
+
+| Interface | Implementation | Purpose |
+|-----------|----------------|---------|
+| `ISecurityMasterRepository` | `SqlSecurityMasterRepository` | Security CRUD, upsert, search |
+| `IPriceRepository` | `SqlPriceRepository` | Price range queries, bulk insert |
+
+**Key Methods:**
+- `GetByTickerAsync(ticker)` - Lookup by ticker symbol
+- `UpsertManyAsync(securities)` - Batch upsert for data loading (500-row batches)
+- `GetPricesAsync(alias, startDate, endDate)` - Date range query
+- `BulkInsertAsync(prices)` - High-performance insert (1000-row batches with progress logging)
+- `GetLatestPricesAsync(aliases)` - Batch latest price lookup
+
+**Files:**
+- `Data/Entities/SecurityMasterEntity.cs` - Security master entity
+- `Data/Entities/PriceEntity.cs` - Price entity
+- `Services/ISecurityMasterRepository.cs` - Interface + DTOs
+- `Services/IPriceRepository.cs` - Interface + DTOs
+- `Data/SqlSecurityMasterRepository.cs` - SQL implementation
+- `Data/SqlPriceRepository.cs` - SQL implementation
+- `scripts/001_CreateDataSchema.sql` - Schema creation script
+- `scripts/002_AddSecurityMasterAndPrices.sql` - Migration script
+
+#### EODHD Integration (Historical Price Data)
+
+**Service:** `EodhdService.cs`
+
+Primary data source for historical EOD prices. Uses [EODHD API](https://eodhd.com/financial-apis/) which provides:
+- Bulk API: Download entire exchange in one request (100 API calls)
+- Historical API: Per-ticker date range queries
+- Data quality: Institutional-grade OHLCV with adjusted close
+
+**Configuration:**
+```json
+{
+  "Eodhd": {
+    "ApiKey": "your-api-key"
+  }
+}
+```
+
+**Key Methods:**
+| Method | Description |
+|--------|-------------|
+| `GetHistoricalDataAsync(ticker, start, end)` | Get date range for single ticker |
+| `GetBulkEodDataAsync(date, exchange)` | Get all tickers for a date (entire exchange) |
+| `GetBulkEodDataForTickersAsync(tickers, date)` | Get specific tickers for a date |
+
+**PriceRefreshService (Background Service):**
+
+Maintains the historical price database with automatic daily updates.
+
+| Behavior | Description |
+|----------|-------------|
+| Startup | Checks `MAX(EffectiveDate)` and backfills missing days |
+| Daily Schedule | 2:30 AM UTC - fetches previous trading day |
+| Weekend Skip | No refresh on Saturday/Sunday |
+| Rate Limiting | 2-second delay between bulk requests |
+
+**Admin Endpoints:**
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/admin/prices/status` | Database status: counts, latest date, EODHD status |
+| `POST /api/admin/prices/sync-securities` | Sync SecurityMaster from Symbols table |
+| `POST /api/admin/prices/refresh-date` | Fetch prices for specific date (body: `{Date: "yyyy-MM-dd"}`) |
+| `POST /api/admin/prices/bulk-load` | Start bulk historical load (body: `{StartDate, EndDate}`) |
+
+**Bulk Load Flow:**
+1. Call `/api/admin/prices/sync-securities` to populate SecurityMaster
+2. Call `/api/admin/prices/bulk-load` with date range
+3. Service runs in background, logs progress every 100 tickers
+4. Check `/api/admin/prices/status` for completion
+
 #### Infrastructure as Code
 
 **Location:** `infrastructure/azure/`
