@@ -45,46 +45,65 @@ public class AnalysisService
         decimal threshold = 3.0m,
         bool includeNews = true)
     {
-        var moves = new List<SignificantMove>();
-
-        foreach (var day in data)
-        {
-            if (day.Open == 0) continue;
-
-            var percentChange = ((day.Close - day.Open) / day.Open) * 100;
-
-            if (Math.Abs(percentChange) >= threshold)
+        // First pass: identify all significant moves without news
+        var significantDays = data
+            .Where(day => day.Open > 0)
+            .Select(day => new
             {
-                var move = new SignificantMove
-                {
-                    Date = day.Date,
-                    OpenPrice = day.Open,
-                    ClosePrice = day.Close,
-                    PercentChange = percentChange,
-                    Volume = day.Volume,
-                    RelatedNews = null
-                };
+                Day = day,
+                PercentChange = ((day.Close - day.Open) / day.Open) * 100
+            })
+            .Where(x => Math.Abs(x.PercentChange) >= threshold)
+            .ToList();
 
-                // Fetch related news if requested and service is available
-                // Uses sentiment-aware filtering to match news tone with price direction
-                if (includeNews && _newsService != null)
+        // Create initial moves without news
+        var moves = significantDays.Select(x => new SignificantMove
+        {
+            Date = x.Day.Date,
+            OpenPrice = x.Day.Open,
+            ClosePrice = x.Day.Close,
+            PercentChange = x.PercentChange,
+            Volume = x.Day.Volume,
+            RelatedNews = null
+        }).ToList();
+
+        // Fetch news in parallel if requested and service is available
+        if (includeNews && _newsService != null && moves.Count > 0)
+        {
+            // Create tasks for parallel news fetching (limit concurrency to avoid overwhelming APIs)
+            using var semaphore = new SemaphoreSlim(5); // Max 5 concurrent requests
+            var newsTasks = moves.Select(async (move, index) =>
+            {
+                await semaphore.WaitAsync();
+                try
                 {
-                    try
-                    {
-                        var news = await _newsService.GetNewsForDateWithSentimentAsync(
-                            symbol,
-                            day.Date,
-                            percentChange,
-                            maxArticles: 5);
-                        move = move with { RelatedNews = news };
-                    }
-                    catch
-                    {
-                        // Ignore news errors, continue without news
-                    }
+                    var news = await _newsService.GetNewsForDateWithSentimentAsync(
+                        symbol,
+                        move.Date,
+                        move.PercentChange,
+                        maxArticles: 5);
+                    return (Index: index, News: news);
                 }
+                catch
+                {
+                    return (Index: index, News: (List<NewsItem>?)null);
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            }).ToList();
 
-                moves.Add(move);
+            // Wait for all news fetches to complete
+            var newsResults = await Task.WhenAll(newsTasks);
+
+            // Update moves with fetched news
+            foreach (var result in newsResults)
+            {
+                if (result.News != null)
+                {
+                    moves[result.Index] = moves[result.Index] with { RelatedNews = result.News };
+                }
             }
         }
 
