@@ -34,6 +34,10 @@ const App = {
     INITIAL_IMAGE_CACHE_SIZE: 5,  // Start with just 5 to avoid blocking chart data
     IMAGE_CACHE_THRESHOLD: 10,
 
+    // Track user activity for idle-time operations
+    lastUserActivity: Date.now(),
+    idleImageLoaderId: null,
+
     /**
      * Initialize the application
      */
@@ -42,7 +46,27 @@ const App = {
         this.initMobileSidebar();
         this.bindEvents();
         this.checkApiHealth();
-        this.prefetchImages();
+        this.trackUserActivity();
+        // Start idle-time image cache building (doesn't block anything)
+        this.scheduleIdleImageLoad();
+    },
+
+    /**
+     * Track user activity to know when we're idle
+     */
+    trackUserActivity() {
+        const updateActivity = () => { this.lastUserActivity = Date.now(); };
+        document.addEventListener('click', updateActivity);
+        document.addEventListener('keydown', updateActivity);
+        document.addEventListener('mousemove', updateActivity, { passive: true });
+        document.addEventListener('scroll', updateActivity, { passive: true });
+    },
+
+    /**
+     * Check if the user has been idle for at least the specified duration
+     */
+    isUserIdle(idleMs = 2000) {
+        return Date.now() - this.lastUserActivity > idleMs;
     },
 
     /**
@@ -141,40 +165,64 @@ const App = {
     },
 
     /**
-     * Prefetch animal images on page load.
-     * Images are processed server-side with ML detection for better cropping.
-     * Loads a small initial set first, then continues in background to avoid
-     * blocking chart data loading (thread pool exhaustion).
+     * Schedule idle-time image cache building using requestIdleCallback.
+     * Only loads images when user is idle, never blocks critical operations.
      */
-    async prefetchImages() {
-        console.log('Prefetching initial animal images from backend...');
-        // Start with small cache to avoid blocking chart data
-        // Sequential, not parallel, to reduce server load
-        await this.fetchImagesFromBackend('dogs', this.INITIAL_IMAGE_CACHE_SIZE);
-        await this.fetchImagesFromBackend('cats', this.INITIAL_IMAGE_CACHE_SIZE);
-        console.log(`Initial cache ready: ${this.imageCache.dogs.length} dogs, ${this.imageCache.cats.length} cats`);
+    scheduleIdleImageLoad() {
+        const loadOneImage = (deadline) => {
+            // Check if we have time and user is idle
+            const hasTime = deadline.timeRemaining() > 10;
+            const isIdle = this.isUserIdle(1500);
+            const needsImages = this.imageCache.dogs.length < this.IMAGE_CACHE_SIZE ||
+                               this.imageCache.cats.length < this.IMAGE_CACHE_SIZE;
 
-        // Continue filling cache in background after a delay
-        setTimeout(() => {
-            this.continueImageCacheFill();
-        }, 3000);
+            if (hasTime && isIdle && needsImages && !this.imageCache.isRefilling.dogs && !this.imageCache.isRefilling.cats) {
+                // Load one image at a time during idle
+                const type = this.imageCache.dogs.length <= this.imageCache.cats.length ? 'dogs' : 'cats';
+                this.loadSingleImage(type);
+            }
+
+            // Schedule next check (always keep checking)
+            this.idleImageLoaderId = requestIdleCallback(loadOneImage, { timeout: 5000 });
+        };
+
+        // Start the idle loader
+        if ('requestIdleCallback' in window) {
+            this.idleImageLoaderId = requestIdleCallback(loadOneImage, { timeout: 5000 });
+        } else {
+            // Fallback for Safari - use setTimeout with longer delay
+            const fallbackLoader = () => {
+                if (this.isUserIdle(2000)) {
+                    const needsImages = this.imageCache.dogs.length < this.IMAGE_CACHE_SIZE ||
+                                       this.imageCache.cats.length < this.IMAGE_CACHE_SIZE;
+                    if (needsImages && !this.imageCache.isRefilling.dogs && !this.imageCache.isRefilling.cats) {
+                        const type = this.imageCache.dogs.length <= this.imageCache.cats.length ? 'dogs' : 'cats';
+                        this.loadSingleImage(type);
+                    }
+                }
+                setTimeout(fallbackLoader, 3000);
+            };
+            setTimeout(fallbackLoader, 3000);
+        }
     },
 
     /**
-     * Continue filling image cache in background with delays between batches.
+     * Load a single image from backend (non-blocking, fire-and-forget).
      */
-    async continueImageCacheFill() {
-        const dogsNeeded = this.IMAGE_CACHE_SIZE - this.imageCache.dogs.length;
-        const catsNeeded = this.IMAGE_CACHE_SIZE - this.imageCache.cats.length;
+    loadSingleImage(type) {
+        if (this.imageCache[type].length >= this.IMAGE_CACHE_SIZE) return;
 
-        if (dogsNeeded > 0) {
-            await this.fetchImagesFromBackend('dogs', dogsNeeded);
-            await this.sleep(500);  // Small delay between types
-        }
-        if (catsNeeded > 0) {
-            await this.fetchImagesFromBackend('cats', catsNeeded);
-        }
-        console.log(`Full cache ready: ${this.imageCache.dogs.length} dogs, ${this.imageCache.cats.length} cats`);
+        const endpoint = `/api/images/${type === 'dogs' ? 'dog' : 'cat'}?_=${Date.now()}`;
+
+        fetch(endpoint, { cache: 'no-store' })
+            .then(async (response) => {
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = URL.createObjectURL(blob);
+                    this.imageCache[type].push(url);
+                }
+            })
+            .catch(() => { /* Silently ignore - will retry on next idle */ });
     },
 
     sleep(ms) {
@@ -182,9 +230,8 @@ const App = {
     },
 
     /**
-     * Fetch processed images from backend API.
-     * Backend handles ML-based detection and cropping for optimal thumbnails.
-     * Uses small batches with delays to avoid thread pool exhaustion.
+     * Fetch multiple images from backend (used for refills when cache runs low).
+     * Non-blocking - uses setTimeout to yield to other operations.
      */
     async fetchImagesFromBackend(type, count) {
         if (this.imageCache.isRefilling[type]) return;
@@ -193,39 +240,23 @@ const App = {
         try {
             const baseEndpoint = `/api/images/${type === 'dogs' ? 'dog' : 'cat'}`;
 
-            // Fetch in small batches with delays to avoid overwhelming the server
-            const batchSize = 3;  // Reduced from 10 to prevent thread exhaustion
-            for (let batch = 0; batch < count; batch += batchSize) {
-                const batchCount = Math.min(batchSize, count - batch);
-                const fetches = [];
+            // Load images one at a time with delays to avoid blocking
+            for (let i = 0; i < count; i++) {
+                const endpoint = `${baseEndpoint}?_=${Date.now()}-${i}`;
 
-                for (let i = 0; i < batchCount; i++) {
-                    // Add cache-buster to prevent browser caching
-                    const endpoint = `${baseEndpoint}?_=${Date.now()}-${batch + i}`;
-                    fetches.push(
-                        fetch(endpoint, { cache: 'no-store' })
-                            .then(async (response) => {
-                                if (response.ok) {
-                                    const blob = await response.blob();
-                                    return URL.createObjectURL(blob);
-                                }
-                                return null;
-                            })
-                            .catch(() => null)
-                    );
+                try {
+                    const response = await fetch(endpoint, { cache: 'no-store' });
+                    if (response.ok) {
+                        const blob = await response.blob();
+                        this.imageCache[type].push(URL.createObjectURL(blob));
+                    }
+                } catch (e) {
+                    // Continue with next image
                 }
 
-                const results = await Promise.all(fetches);
-                const validUrls = results.filter(url => url !== null);
-                this.imageCache[type].push(...validUrls);
-
-                // Delay between batches to let other requests through
-                if (batch + batchSize < count) {
-                    await this.sleep(200);
-                }
+                // Yield to other operations between each image
+                await this.sleep(100);
             }
-
-            console.log(`Fetched ${this.imageCache[type].length} ${type} images from backend`);
         } catch (e) {
             console.error(`Failed to fetch ${type} images:`, e);
         } finally {
@@ -836,7 +867,8 @@ const App = {
     },
 
     /**
-     * Main analysis function
+     * Main analysis function - optimized for fast chart display.
+     * Priority: history + analysis (for chart) → show chart → load extras
      */
     async analyzeStock() {
         const ticker = document.getElementById('ticker-input').value.trim().toUpperCase();
@@ -851,31 +883,48 @@ const App = {
         this.showLoading();
 
         try {
-            // Fetch all data in parallel
-            const [stockInfo, history, analysis, significantMoves, news] = await Promise.all([
-                API.getStockInfo(ticker),
+            // PHASE 1: Critical path - only what's needed for chart
+            // These are the minimum requirements to show the chart
+            const [history, analysis] = await Promise.all([
                 API.getHistory(ticker, this.currentPeriod),
-                API.getAnalysis(ticker, this.currentPeriod),
-                API.getSignificantMoves(ticker, this.currentThreshold, this.currentPeriod),
-                API.getAggregatedNews(ticker, 30, 10)
+                API.getAnalysis(ticker, this.currentPeriod)
             ]);
 
             this.historyData = history;
             this.analysisData = analysis;
-            this.significantMovesData = significantMoves;
 
-            this.renderStockInfo(stockInfo);
-            this.renderKeyMetrics(stockInfo);
+            // Render chart immediately - this is what the user is waiting for
             this.renderPerformance(analysis.performance);
             this.renderChart();
-            this.attachChartHoverListeners();
-            this.renderSignificantMoves(significantMoves);
-            this.renderNews(news);
-
             this.showResults();
 
-            // Pre-fetch news for significant moves in background
-            this.prefetchNewsForMoves();
+            // PHASE 2: Load secondary data in background (non-blocking)
+            // Start all these requests but don't wait for them
+            const stockInfoPromise = API.getStockInfo(ticker);
+            const significantMovesPromise = API.getSignificantMoves(ticker, this.currentThreshold, this.currentPeriod);
+            const newsPromise = API.getAggregatedNews(ticker, 30, 10);
+
+            // Handle stock info when ready
+            stockInfoPromise.then(stockInfo => {
+                this.renderStockInfo(stockInfo);
+                this.renderKeyMetrics(stockInfo);
+            }).catch(e => console.warn('Failed to load stock info:', e));
+
+            // Handle significant moves when ready
+            significantMovesPromise.then(significantMoves => {
+                this.significantMovesData = significantMoves;
+                this.renderSignificantMoves(significantMoves);
+                this.attachChartHoverListeners();
+                // Re-render chart with markers now that we have significant moves
+                this.renderChart();
+                // Pre-fetch news for moves AFTER chart is fully rendered
+                this.scheduleNewsPrefetch();
+            }).catch(e => console.warn('Failed to load significant moves:', e));
+
+            // Handle news when ready
+            newsPromise.then(news => {
+                this.renderNews(news);
+            }).catch(e => console.warn('Failed to load news:', e));
 
             // Show "Add to Watchlist" button
             if (typeof Watchlist !== 'undefined') {
@@ -1111,8 +1160,8 @@ const App = {
             this.attachChartHoverListeners();
             this.renderSignificantMoves(this.significantMovesData);
 
-            // Pre-fetch news for the new set of moves
-            this.prefetchNewsForMoves();
+            // Pre-fetch news for the new set of moves (deferred)
+            this.scheduleNewsPrefetch();
         } catch (error) {
             console.error('Failed to refresh significant moves:', error);
         }
@@ -1174,8 +1223,29 @@ const App = {
     },
 
     /**
+     * Schedule news pre-fetch to run during idle time.
+     * Uses requestIdleCallback to avoid blocking user interactions.
+     */
+    scheduleNewsPrefetch() {
+        if (!this.significantMovesData?.moves || !this.currentTicker) return;
+
+        const prefetch = () => {
+            // Small delay to ensure chart is fully rendered and visible
+            setTimeout(() => this.prefetchNewsForMoves(), 500);
+        };
+
+        if ('requestIdleCallback' in window) {
+            requestIdleCallback(prefetch, { timeout: 2000 });
+        } else {
+            // Fallback for Safari
+            setTimeout(prefetch, 1000);
+        }
+    },
+
+    /**
      * Pre-fetch news for all significant moves in the background.
      * Called after chart renders to have news ready before user hovers.
+     * Staggers requests to avoid overwhelming the server.
      */
     prefetchNewsForMoves() {
         if (!this.significantMovesData?.moves || !this.currentTicker) return;
@@ -1185,7 +1255,10 @@ const App = {
 
         console.log(`Pre-fetching news for ${moves.length} significant moves...`);
 
-        // Fetch news for each move in parallel (but don't await - run in background)
+        // Stagger requests to avoid overwhelming the server
+        let delay = 0;
+        const delayIncrement = 200; // 200ms between each request
+
         moves.forEach(move => {
             const moveDate = new Date(move.date);
             const dateParam = moveDate.toISOString().split('T')[0];
@@ -1198,22 +1271,30 @@ const App = {
             // Mark as pending to avoid duplicate fetches
             this.newsCache[cacheKey] = { pending: true };
 
-            fetch(`/api/stock/${ticker}/news/move?date=${dateParam}&change=${move.percentChange}`)
-                .then(response => response.json())
-                .then(data => {
-                    this.newsCache[cacheKey] = {
-                        articles: data.articles || [],
-                        fetchedAt: Date.now()
-                    };
-                })
-                .catch(() => {
-                    // Cache the failure so we don't retry immediately
-                    this.newsCache[cacheKey] = {
-                        articles: [],
-                        error: true,
-                        fetchedAt: Date.now()
-                    };
-                });
+            // Stagger each request
+            setTimeout(() => {
+                // Check ticker hasn't changed
+                if (this.currentTicker !== ticker) return;
+
+                fetch(`/api/stock/${ticker}/news/move?date=${dateParam}&change=${move.percentChange}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        this.newsCache[cacheKey] = {
+                            articles: data.articles || [],
+                            fetchedAt: Date.now()
+                        };
+                    })
+                    .catch(() => {
+                        // Cache the failure so we don't retry immediately
+                        this.newsCache[cacheKey] = {
+                            articles: [],
+                            error: true,
+                            fetchedAt: Date.now()
+                        };
+                    });
+            }, delay);
+
+            delay += delayIncrement;
         });
     },
 
