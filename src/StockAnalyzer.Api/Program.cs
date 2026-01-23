@@ -161,6 +161,11 @@ if (!string.IsNullOrEmpty(connectionString))
         var cacheSize = config.GetValue<int>("ImageProcessing:CacheSize", 1000);
         return new SqlCachedImageRepository(context, logger, cacheSize);
     });
+
+    // Security master and price repositories (data schema)
+    builder.Services.AddScoped<ISecurityMasterRepository, SqlSecurityMasterRepository>();
+    builder.Services.AddScoped<IPriceRepository, SqlPriceRepository>();
+
     Log.Information("Using SQL database for watchlist storage, symbol search, and image cache");
 }
 else
