@@ -95,6 +95,9 @@ Planned features and improvements for the Stock Analyzer .NET application.
 
 | Feature | Description | Status |
 |---------|-------------|--------|
+| Server-side watchlists | Move watchlists to server with zero-knowledge encrypted sync for privacy-preserving multi-device access | Planned |
+| News caching service | Cache headlines, descriptions, and URLs from API calls; feed into sentiment analyzer to reduce API reliance | Planned |
+| Anonymous API monitoring | Track popular stocks anonymously (similar to heat scores) to pre-cache news for common searches | Planned |
 | Staging environment | Azure staging slot for pre-production testing (separate DB, same infra) | Planned |
 | Brinson attribution analysis | Major feature for mutual fund performance evaluation | Planned |
 
