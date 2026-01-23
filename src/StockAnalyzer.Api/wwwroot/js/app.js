@@ -1131,6 +1131,7 @@ const App = {
 
     /**
      * Show Wikipedia-style hover card for significant move
+     * News is lazy-loaded when the card is shown
      */
     showHoverCard(event, moveData) {
         // Cancel any pending hide when showing
@@ -1150,22 +1151,18 @@ const App = {
 
         // Format date
         const moveDate = new Date(moveData.date);
-        dateEl.textContent = moveDate.toLocaleDateString('en-US', {
+        const formattedDate = moveDate.toLocaleDateString('en-US', {
             weekday: 'long',
             year: 'numeric',
             month: 'long',
             day: 'numeric'
         });
+        dateEl.textContent = formattedDate;
 
         // Format return
         const isPositive = moveData.percentChange >= 0;
         returnEl.textContent = `${isPositive ? '+' : ''}${moveData.percentChange.toFixed(2)}% ${moveData.magnitude} move`;
         returnEl.className = `text-sm font-bold mb-2 ${isPositive ? 'text-green-600' : 'text-red-600'}`;
-
-        // Check for related news
-        const news = moveData.relatedNews && moveData.relatedNews.length > 0
-            ? moveData.relatedNews[0]
-            : null;
 
         // Get image URL from cache (instant, no fetch delay)
         const setAnimalImage = () => {
@@ -1211,33 +1208,48 @@ const App = {
             }
         };
 
-        if (news) {
-            // Show animal image (Finnhub images are just publisher logos)
-            setAnimalImage();
+        // Show animal image immediately
+        setAnimalImage();
 
-            // Populate news content
-            headlineEl.textContent = news.headline;
-            headlineEl.href = news.url || '#';
-            headlineEl.style.display = 'block';
+        // Show loading state while fetching news
+        headlineEl.textContent = 'Loading news...';
+        headlineEl.href = '#';
+        headlineEl.style.display = 'block';
+        summaryEl.textContent = '';
+        summaryEl.style.display = 'none';
+        sourceEl.textContent = '';
 
-            summaryEl.textContent = news.summary || '';
-            summaryEl.style.display = news.summary ? 'block' : 'none';
+        // Lazy-load news from API
+        const ticker = this.currentTicker;
+        const dateParam = moveDate.toISOString().split('T')[0];
+        const changeParam = moveData.percentChange;
 
-            const newsDate = new Date(news.publishedAt);
-            sourceEl.textContent = `${news.source} • ${newsDate.toLocaleDateString()}`;
-        } else {
-            // No news available - still show an animal
-            setAnimalImage();
-
-            headlineEl.textContent = 'No related news found';
-            headlineEl.href = '#';
-            headlineEl.style.display = 'block';
-
-            summaryEl.textContent = 'No news articles were found for this date range.';
-            summaryEl.style.display = 'block';
-
-            sourceEl.textContent = '';
-        }
+        fetch(`/api/stock/${ticker}/news/move?date=${dateParam}&change=${changeParam}`)
+            .then(response => response.json())
+            .then(data => {
+                const news = data.articles && data.articles.length > 0 ? data.articles[0] : null;
+                if (news) {
+                    headlineEl.textContent = news.headline;
+                    headlineEl.href = news.url || '#';
+                    summaryEl.textContent = news.summary || '';
+                    summaryEl.style.display = news.summary ? 'block' : 'none';
+                    const newsDate = new Date(news.publishedAt);
+                    sourceEl.textContent = `${news.source} • ${newsDate.toLocaleDateString()}`;
+                } else {
+                    headlineEl.textContent = 'No related news found';
+                    headlineEl.href = '#';
+                    summaryEl.textContent = 'No news articles were found for this date range.';
+                    summaryEl.style.display = 'block';
+                    sourceEl.textContent = '';
+                }
+            })
+            .catch(() => {
+                headlineEl.textContent = 'Unable to load news';
+                headlineEl.href = '#';
+                summaryEl.textContent = 'News service temporarily unavailable.';
+                summaryEl.style.display = 'block';
+                sourceEl.textContent = '';
+            });
 
         // Position the card near the cursor
         const x = event.clientX || event.pageX;

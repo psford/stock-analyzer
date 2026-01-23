@@ -397,41 +397,30 @@ app.MapGet("/api/stock/{ticker}/news", async (
 .WithOpenApi()
 .Produces<StockAnalyzer.Core.Models.NewsResult>(StatusCodes.Status200OK);
 
-// GET /api/stock/{ticker}/significant - Get significant price moves
+// GET /api/stock/{ticker}/significant - Get significant price moves (no news - use /news/move for lazy loading)
 app.MapGet("/api/stock/{ticker}/significant", async (
     string ticker,
     decimal? threshold,
     string? period,
     AggregatedStockDataService stockService,
-    AnalysisService analysisService,
-    IMemoryCache cache) =>
+    AnalysisService analysisService) =>
 {
     if (!IsValidTicker(ticker))
         return InvalidTickerResult();
 
-    // Use provided values or defaults
     var historyPeriod = period ?? "1y";
     var thresholdValue = threshold ?? 3.0m;
-
-    // Check cache first (5 minute TTL)
-    var cacheKey = $"significant:{ticker.ToUpper()}:{thresholdValue}:{historyPeriod}";
-    if (cache.TryGetValue(cacheKey, out SignificantMovesResult? cachedResult) && cachedResult != null)
-    {
-        return Results.Ok(cachedResult);
-    }
 
     var history = await stockService.GetHistoricalDataAsync(ticker, historyPeriod);
     if (history == null)
         return Results.NotFound(new { error = "Historical data not found", symbol = ticker });
 
+    // Don't fetch news - let frontend lazy-load via /news/move endpoint
     var moves = await analysisService.DetectSignificantMovesAsync(
         ticker,
         history.Data,
         thresholdValue,
-        includeNews: true);
-
-    // Cache for 5 minutes
-    cache.Set(cacheKey, moves, TimeSpan.FromMinutes(5));
+        includeNews: false);
 
     return Results.Ok(moves);
 })
@@ -439,6 +428,41 @@ app.MapGet("/api/stock/{ticker}/significant", async (
 .WithOpenApi()
 .Produces<StockAnalyzer.Core.Models.SignificantMovesResult>(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status404NotFound);
+
+// GET /api/stock/{ticker}/news/move - Get news for a specific significant move date (lazy loaded on hover)
+app.MapGet("/api/stock/{ticker}/news/move", async (
+    string ticker,
+    DateTime date,
+    decimal change,
+    int? limit,
+    NewsService newsService,
+    IMemoryCache cache) =>
+{
+    if (!IsValidTicker(ticker))
+        return InvalidTickerResult();
+
+    // Cache key includes ticker, date, and price direction
+    var cacheKey = $"movenews:{ticker.ToUpper()}:{date:yyyy-MM-dd}:{(change >= 0 ? "up" : "down")}";
+    if (cache.TryGetValue(cacheKey, out List<NewsItem>? cachedNews) && cachedNews != null)
+    {
+        return Results.Ok(new { articles = cachedNews });
+    }
+
+    var news = await newsService.GetNewsForDateWithSentimentAsync(
+        ticker,
+        date,
+        change,
+        maxArticles: limit ?? 5);
+
+    // Cache for 30 minutes (news doesn't change for historical dates)
+    cache.Set(cacheKey, news, TimeSpan.FromMinutes(30));
+
+    return Results.Ok(new { articles = news });
+})
+.WithName("GetMoveNews")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest);
 
 // GET /api/stock/{ticker}/analysis - Get performance metrics, moving averages, and technical indicators
 app.MapGet("/api/stock/{ticker}/analysis", async (
