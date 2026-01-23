@@ -39,3 +39,6 @@ src/StockAnalyzer.Api/wwwroot/data/
 
 # Large ML model files (download separately)
 src/StockAnalyzer.Api/MLModels/finbert-onnx/
+
+# Database exports (too large for git, store in Azure Blob or local backup)
+*.bacpac
