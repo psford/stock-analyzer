@@ -105,6 +105,9 @@
                             <button data-doc="security" class="tab-btn border-b-2 border-transparent py-3 sm:py-4 px-1 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 transition-colors whitespace-nowrap">
                                 Security
                             </button>
+                            <button data-doc="privacy" class="tab-btn border-b-2 border-transparent py-3 sm:py-4 px-1 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 transition-colors whitespace-nowrap">
+                                Privacy
+                            </button>
                         </nav>
                     </div>
                     <!-- Desktop: Search box inline with tabs (only shown at 1100px and above) -->
@@ -163,6 +166,8 @@
                             <span class="mx-2">|</span>
                             <a href="/" class="text-primary hover:text-blue-600 dark:hover:text-blue-400 hover:underline">Back to App</a>
                             <span class="mx-2">|</span>
+                            <a href="#privacy" class="text-primary hover:text-blue-600 dark:hover:text-blue-400 hover:underline" onclick="Docs.loadDocument('privacy'); return false;">Privacy</a>
+                            <span class="mx-2">|</span>
                             <a href="https://github.com/psford/claudeProjects" target="_blank" class="text-primary hover:text-blue-600 dark:hover:text-blue-400 hover:underline">GitHub</a>
                         </p>
                     </div>
@@ -205,7 +210,8 @@
                 functional: { title: 'Functional Spec', file: 'FUNCTIONAL_SPEC.md' },
                 technical: { title: 'Technical Spec', file: 'TECHNICAL_SPEC.md' },
                 architecture: { title: 'Architecture', type: 'architecture' },
-                security: { title: 'Security', file: 'SECURITY_OVERVIEW.md' }
+                security: { title: 'Security', file: 'SECURITY_OVERVIEW.md' },
+                privacy: { title: 'Privacy', file: 'PRIVACY_POLICY.md' }
             },
             cache: {},
             fuse: null,
@@ -218,7 +224,12 @@
                 this.initResize();
                 this.initSearch();
                 this.bindEvents();
-                await this.loadDocument('explanation');
+
+                // Check for hash in URL to load specific tab (e.g., #privacy)
+                const hash = window.location.hash.substring(1);
+                const initialDoc = (hash && this.docs[hash]) ? hash : 'explanation';
+
+                await this.loadDocument(initialDoc);
                 await this.buildSearchIndex();
             },
 

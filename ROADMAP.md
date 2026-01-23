@@ -116,6 +116,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 | User stories | Review roadmap and propose user stories with acceptance criteria | Planned |
 | Earnings calendar | Show earnings dates on charts | Planned |
 | Export to Excel | Export analysis data to .xlsx format | Planned |
+| Search scoring telemetry | Collect anonymous, fuzzed search patterns to tune relevance scoring weights based on actual user behavior | Planned |
 
 ### Low Priority / Nice to Have
 
