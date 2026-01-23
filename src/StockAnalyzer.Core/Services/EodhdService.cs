@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using StockAnalyzer.Core.Helpers;
 using StockAnalyzer.Core.Services;
 
 namespace StockAnalyzer.Core.Services;
@@ -76,14 +77,14 @@ public class EodhdService
                       $"order=a";
 
             _logger.LogDebug("Fetching EODHD data for {Symbol} from {Start} to {End}",
-                symbol, startDate.ToString("yyyy-MM-dd"), endDate.ToString("yyyy-MM-dd"));
+                LogSanitizer.Sanitize(symbol), startDate.ToString("yyyy-MM-dd"), endDate.ToString("yyyy-MM-dd"));
 
             var response = await _httpClient.GetAsync(url, ct);
 
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("EODHD API returned {StatusCode} for {Symbol}",
-                    response.StatusCode, symbol);
+                    response.StatusCode, LogSanitizer.Sanitize(symbol));
                 return new List<EodhdPriceRecord>();
             }
 
@@ -92,7 +93,7 @@ public class EodhdService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error fetching EODHD data for {Ticker}", ticker);
+            _logger.LogError(ex, "Error fetching EODHD data for {Ticker}", LogSanitizer.Sanitize(ticker));
             return new List<EodhdPriceRecord>();
         }
     }

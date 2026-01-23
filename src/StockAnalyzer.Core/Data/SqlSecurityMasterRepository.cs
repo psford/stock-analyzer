@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using StockAnalyzer.Core.Data.Entities;
+using StockAnalyzer.Core.Helpers;
 using StockAnalyzer.Core.Services;
 
 namespace StockAnalyzer.Core.Data;
@@ -80,7 +81,7 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
         _context.SecurityMaster.Add(entity);
         await _context.SaveChangesAsync();
 
-        _logger.LogInformation("Created security: {Ticker} ({Name})", entity.TickerSymbol, entity.IssueName);
+        _logger.LogInformation("Created security: {Ticker} ({Name})", LogSanitizer.Sanitize(entity.TickerSymbol), LogSanitizer.Sanitize(entity.IssueName));
         return entity;
     }
 
@@ -108,7 +109,7 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
         entity.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
-        _logger.LogInformation("Updated security: {Ticker} (alias {Alias})", entity.TickerSymbol, securityAlias);
+        _logger.LogInformation("Updated security: {Ticker} (alias {Alias})", LogSanitizer.Sanitize(entity.TickerSymbol), securityAlias);
     }
 
     /// <inheritdoc />
@@ -125,7 +126,7 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
         entity.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
-        _logger.LogInformation("Deactivated security: {Ticker} (alias {Alias})", entity.TickerSymbol, securityAlias);
+        _logger.LogInformation("Deactivated security: {Ticker} (alias {Alias})", LogSanitizer.Sanitize(entity.TickerSymbol), securityAlias);
     }
 
     /// <inheritdoc />

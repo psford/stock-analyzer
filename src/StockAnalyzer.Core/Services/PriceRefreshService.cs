@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using StockAnalyzer.Core.Data.Entities;
+using StockAnalyzer.Core.Helpers;
 
 namespace StockAnalyzer.Core.Services;
 
@@ -358,7 +359,7 @@ public class PriceRefreshService : BackgroundService
                         IssueName = ticker.ToUpperInvariant() // Will be updated later if needed
                     });
                     _logger.LogInformation("Created new security for {Ticker} with alias {Alias}",
-                        ticker, security.SecurityAlias);
+                        LogSanitizer.Sanitize(ticker), security.SecurityAlias);
                 }
 
                 // Fetch historical data from EODHD
@@ -366,7 +367,7 @@ public class PriceRefreshService : BackgroundService
 
                 if (historicalData.Count == 0)
                 {
-                    _logger.LogWarning("No historical data returned for {Ticker}", ticker);
+                    _logger.LogWarning("No historical data returned for {Ticker}", LogSanitizer.Sanitize(ticker));
                     result.Errors.Add($"{ticker}: No data returned");
                     continue;
                 }
@@ -391,14 +392,14 @@ public class PriceRefreshService : BackgroundService
                 result.TotalRecordsInserted += inserted;
 
                 _logger.LogInformation("Loaded {Count} price records for {Ticker}",
-                    inserted, ticker);
+                    inserted, LogSanitizer.Sanitize(ticker));
 
                 // Small delay to be nice to the API
                 await Task.Delay(500, ct);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error loading data for {Ticker}", ticker);
+                _logger.LogError(ex, "Error loading data for {Ticker}", LogSanitizer.Sanitize(ticker));
                 result.Errors.Add($"{ticker}: {ex.Message}");
             }
         }

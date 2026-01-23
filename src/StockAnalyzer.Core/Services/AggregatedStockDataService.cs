@@ -383,7 +383,7 @@ public class AggregatedStockDataService
         if (_pendingBackfills.TryGetValue(symbol, out var queuedAt) &&
             DateTime.UtcNow - queuedAt < TimeSpan.FromHours(1))
         {
-            _logger?.LogDebug("Backfill for {Symbol} already queued at {QueuedAt}", symbol, queuedAt);
+            _logger?.LogDebug("Backfill for {Symbol} already queued at {QueuedAt}", LogSanitizer.Sanitize(symbol), queuedAt);
             return;
         }
 
@@ -399,11 +399,11 @@ public class AggregatedStockDataService
 
                 if (priceRefreshService == null)
                 {
-                    _logger?.LogWarning("PriceRefreshService not available for backfill of {Symbol}", symbol);
+                    _logger?.LogWarning("PriceRefreshService not available for backfill of {Symbol}", LogSanitizer.Sanitize(symbol));
                     return;
                 }
 
-                _logger?.LogInformation("Starting background backfill for {Symbol}", symbol);
+                _logger?.LogInformation("Starting background backfill for {Symbol}", LogSanitizer.Sanitize(symbol));
 
                 // Load 10 years of historical data (matching what we did for S&P 500)
                 var startDate = DateTime.Now.AddYears(-10);
@@ -418,7 +418,7 @@ public class AggregatedStockDataService
                 {
                     _logger?.LogInformation(
                         "Background backfill complete for {Symbol}: {Count} records inserted",
-                        symbol, result.TotalRecordsInserted);
+                        LogSanitizer.Sanitize(symbol), result.TotalRecordsInserted);
 
                     // Invalidate cache so next request uses database
                     InvalidateCache(symbol);
@@ -427,12 +427,12 @@ public class AggregatedStockDataService
                 {
                     _logger?.LogWarning(
                         "Background backfill for {Symbol} had errors: {Errors}",
-                        symbol, string.Join("; ", result.Errors));
+                        LogSanitizer.Sanitize(symbol), string.Join("; ", result.Errors));
                 }
             }
             catch (Exception ex)
             {
-                _logger?.LogError(ex, "Background backfill failed for {Symbol}", symbol);
+                _logger?.LogError(ex, "Background backfill failed for {Symbol}", LogSanitizer.Sanitize(symbol));
             }
             finally
             {
