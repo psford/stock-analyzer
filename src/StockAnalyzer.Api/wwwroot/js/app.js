@@ -914,9 +914,10 @@ const App = {
             significantMovesPromise.then(significantMoves => {
                 this.significantMovesData = significantMoves;
                 this.renderSignificantMoves(significantMoves);
-                this.attachChartHoverListeners();
                 // Re-render chart with markers now that we have significant moves
                 this.renderChart();
+                // Attach listeners AFTER chart is rendered (Plotly replaces the DOM element)
+                this.attachChartHoverListeners();
                 // Pre-fetch news for moves AFTER chart is fully rendered
                 this.scheduleNewsPrefetch();
             }).catch(e => console.warn('Failed to load significant moves:', e));
