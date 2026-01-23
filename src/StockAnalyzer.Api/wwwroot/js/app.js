@@ -30,7 +30,8 @@ const App = {
         dogs: [],
         isRefilling: { cats: false, dogs: false }
     },
-    IMAGE_CACHE_SIZE: 50,
+    IMAGE_CACHE_SIZE: 20,  // Reduced from 50 - refills as needed
+    INITIAL_IMAGE_CACHE_SIZE: 5,  // Start with just 5 to avoid blocking chart data
     IMAGE_CACHE_THRESHOLD: 10,
 
     /**
@@ -142,20 +143,48 @@ const App = {
     /**
      * Prefetch animal images on page load.
      * Images are processed server-side with ML detection for better cropping.
+     * Loads a small initial set first, then continues in background to avoid
+     * blocking chart data loading (thread pool exhaustion).
      */
     async prefetchImages() {
-        console.log('Prefetching animal images from backend...');
-        // Backend cache fills in background - just start the frontend cache fill
-        await Promise.all([
-            this.fetchImagesFromBackend('dogs', this.IMAGE_CACHE_SIZE),
-            this.fetchImagesFromBackend('cats', this.IMAGE_CACHE_SIZE)
-        ]);
-        console.log(`Image cache ready: ${this.imageCache.dogs.length} dogs, ${this.imageCache.cats.length} cats`);
+        console.log('Prefetching initial animal images from backend...');
+        // Start with small cache to avoid blocking chart data
+        // Sequential, not parallel, to reduce server load
+        await this.fetchImagesFromBackend('dogs', this.INITIAL_IMAGE_CACHE_SIZE);
+        await this.fetchImagesFromBackend('cats', this.INITIAL_IMAGE_CACHE_SIZE);
+        console.log(`Initial cache ready: ${this.imageCache.dogs.length} dogs, ${this.imageCache.cats.length} cats`);
+
+        // Continue filling cache in background after a delay
+        setTimeout(() => {
+            this.continueImageCacheFill();
+        }, 3000);
+    },
+
+    /**
+     * Continue filling image cache in background with delays between batches.
+     */
+    async continueImageCacheFill() {
+        const dogsNeeded = this.IMAGE_CACHE_SIZE - this.imageCache.dogs.length;
+        const catsNeeded = this.IMAGE_CACHE_SIZE - this.imageCache.cats.length;
+
+        if (dogsNeeded > 0) {
+            await this.fetchImagesFromBackend('dogs', dogsNeeded);
+            await this.sleep(500);  // Small delay between types
+        }
+        if (catsNeeded > 0) {
+            await this.fetchImagesFromBackend('cats', catsNeeded);
+        }
+        console.log(`Full cache ready: ${this.imageCache.dogs.length} dogs, ${this.imageCache.cats.length} cats`);
+    },
+
+    sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
     },
 
     /**
      * Fetch processed images from backend API.
      * Backend handles ML-based detection and cropping for optimal thumbnails.
+     * Uses small batches with delays to avoid thread pool exhaustion.
      */
     async fetchImagesFromBackend(type, count) {
         if (this.imageCache.isRefilling[type]) return;
@@ -164,8 +193,8 @@ const App = {
         try {
             const baseEndpoint = `/api/images/${type === 'dogs' ? 'dog' : 'cat'}`;
 
-            // Fetch in actual batches to avoid overwhelming the server
-            const batchSize = 10;
+            // Fetch in small batches with delays to avoid overwhelming the server
+            const batchSize = 3;  // Reduced from 10 to prevent thread exhaustion
             for (let batch = 0; batch < count; batch += batchSize) {
                 const batchCount = Math.min(batchSize, count - batch);
                 const fetches = [];
@@ -189,6 +218,11 @@ const App = {
                 const results = await Promise.all(fetches);
                 const validUrls = results.filter(url => url !== null);
                 this.imageCache[type].push(...validUrls);
+
+                // Delay between batches to let other requests through
+                if (batch + batchSize < count) {
+                    await this.sleep(200);
+                }
             }
 
             console.log(`Fetched ${this.imageCache[type].length} ${type} images from backend`);
