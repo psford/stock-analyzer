@@ -274,7 +274,7 @@ public class AnalysisService
             if (i >= signalStartIndex && macdLine[i].HasValue && signalLineRaw[i].HasValue)
             {
                 signal = signalLineRaw[i];
-                histogram = macdLine[i].Value - signal.Value;
+                histogram = macdLine[i]!.Value - signal!.Value;
             }
 
             result.Add(new MacdData
@@ -398,6 +398,100 @@ public class AnalysisService
                     LowerBand = lowerBand
                 });
             }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Calculate Stochastic Oscillator for historical data.
+    /// The Stochastic Oscillator compares a stock's closing price to its price range over a period.
+    /// %K = 100 × (Close - Lowest Low) / (Highest High - Lowest Low)
+    /// %D = SMA of %K
+    /// </summary>
+    /// <param name="data">OHLCV data points</param>
+    /// <param name="kPeriod">%K period (default 14)</param>
+    /// <param name="dPeriod">%D period for signal line SMA (default 3)</param>
+    /// <returns>List of Stochastic data points</returns>
+    public List<StochasticData> CalculateStochastic(
+        List<OhlcvData> data,
+        int kPeriod = 14,
+        int dPeriod = 3)
+    {
+        var result = new List<StochasticData>();
+
+        // Need at least kPeriod data points for first %K value
+        if (data.Count < kPeriod)
+        {
+            // Not enough data - return all nulls
+            return data.Select(d => new StochasticData
+            {
+                Date = d.Date,
+                K = null,
+                D = null
+            }).ToList();
+        }
+
+        // Calculate %K values first
+        var kValues = new List<decimal?>();
+
+        for (int i = 0; i < data.Count; i++)
+        {
+            if (i < kPeriod - 1)
+            {
+                // Not enough data yet for %K
+                kValues.Add(null);
+            }
+            else
+            {
+                // Get the window for this period
+                var window = data.Skip(i - kPeriod + 1).Take(kPeriod).ToList();
+
+                decimal highestHigh = window.Max(d => d.High);
+                decimal lowestLow = window.Min(d => d.Low);
+                decimal close = data[i].Close;
+
+                // Avoid division by zero
+                decimal k;
+                if (highestHigh == lowestLow)
+                {
+                    // If high and low are equal, %K is 100 if close equals them, otherwise use midpoint
+                    k = close == highestHigh ? 100m : 50m;
+                }
+                else
+                {
+                    k = 100m * (close - lowestLow) / (highestHigh - lowestLow);
+                }
+
+                kValues.Add(k);
+            }
+        }
+
+        // Calculate %D as SMA of %K
+        for (int i = 0; i < data.Count; i++)
+        {
+            decimal? d = null;
+
+            // %D needs dPeriod valid %K values
+            // First valid %D is at index (kPeriod - 1) + (dPeriod - 1) = kPeriod + dPeriod - 2
+            if (i >= kPeriod + dPeriod - 2)
+            {
+                // Get last dPeriod %K values
+                var kWindow = kValues.Skip(i - dPeriod + 1).Take(dPeriod).ToList();
+
+                // All values in window should be non-null at this point
+                if (kWindow.All(k => k.HasValue))
+                {
+                    d = kWindow.Average(k => k!.Value);
+                }
+            }
+
+            result.Add(new StochasticData
+            {
+                Date = data[i].Date,
+                K = kValues[i],
+                D = d
+            });
         }
 
         return result;

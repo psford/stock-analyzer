@@ -1,6 +1,6 @@
 # Functional Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.4
+**Version:** 2.6
 **Last Updated:** 2026-01-22
 **Author:** Claude (AI Assistant)
 **Status:** Production
@@ -77,8 +77,22 @@ The Stock Analyzer Dashboard allows users to:
 | FR-001.12 | If client-side search returns no results, the system must wait 5 seconds then query the server |
 | FR-001.13 | The 5-second server fallback must be debounced (resets if user keeps typing) |
 | FR-001.14 | When no local results found, the system must display "No local results. Checking server in a few seconds..." |
+| FR-001.15 | The system must rank search results by relevance, not alphabetically |
+| FR-001.16 | Exact ticker matches must appear first in search results |
+| FR-001.17 | Well-known stocks must be boosted over obscure substring matches |
+| FR-001.18 | Results where the company name starts with the query must rank higher than substring matches |
 
 **User Story:** *As an investor, I want to search for stocks by company name so that I don't need to memorize ticker symbols.*
+
+**Relevance Scoring:**
+
+| Match Type | Score | Example |
+|------------|-------|---------|
+| Exact ticker match | 1000 | Query "F" → symbol "F" |
+| Ticker starts with query | 200 | Query "FORD" → symbol "FORD..." |
+| Company name word starts with query | 100 | Query "ford" → "FORD Motor Company" |
+| Company name contains query (substring) | 25 | Query "ford" → "BedFORD..." |
+| Popularity boost | +10 to +50 | Well-known tickers (AAPL, F, etc.) |
 
 **Client-Side Search Architecture:**
 
@@ -317,8 +331,14 @@ Page Load                    User Types Query
 | FR-011.15 | The system must use 14-period RSI calculation by default |
 | FR-011.16 | The system must use standard MACD parameters (12, 26, 9) by default |
 | FR-011.17 | The system must use standard Bollinger Bands parameters (20-period SMA, 2 std dev) |
+| FR-011.18 | The system must support Stochastic Oscillator indicator |
+| FR-011.19 | The system must allow users to toggle Stochastic display independently |
+| FR-011.20 | The system must display Stochastic in a separate panel below the price chart |
+| FR-011.21 | The Stochastic panel must show %K line (fast) and %D line (signal) |
+| FR-011.22 | The Stochastic panel must show overbought (80) and oversold (20) reference lines |
+| FR-011.23 | The system must use standard Stochastic parameters (K=14, D=3) by default |
 
-**User Story:** *As a technical trader, I want to see RSI, MACD, and Bollinger Bands indicators so that I can identify overbought/oversold conditions, momentum trends, and volatility.*
+**User Story:** *As a technical trader, I want to see RSI, MACD, Bollinger Bands, and Stochastic Oscillator indicators so that I can identify overbought/oversold conditions, momentum trends, and volatility.*
 
 **RSI Configuration:**
 
@@ -352,14 +372,27 @@ Page Load                    User Types Query
 | Fill Color | Indigo with 10% opacity (rgba(99, 102, 241, 0.1)) |
 | Middle Band Style | Dashed line |
 
+**Stochastic Oscillator Configuration:**
+
+| Setting | Value |
+|---------|-------|
+| %K Period | 14 days |
+| %D Period | 3 days (SMA of %K) |
+| Range | 0-100 |
+| Overbought Level | 80 |
+| Oversold Level | 20 |
+| %K Line Color | Teal (#14B8A6) |
+| %D Line Color | Orange (#F59E0B) |
+| %D Line Style | Dashed |
+
 **Chart Layout (Dynamic):**
 
-| Configuration | Price Panel | RSI Panel | MACD Panel | Total Height |
-|---------------|-------------|-----------|------------|--------------|
-| No indicators | 100% | - | - | 400px |
-| RSI only | 68% | 28% | - | 550px |
-| MACD only | 68% | - | 28% | 550px |
-| Both indicators | 50% | 21% | 25% | 700px |
+| Configuration | Price Panel | RSI Panel | MACD Panel | Stoch Panel | Total Height |
+|---------------|-------------|-----------|------------|-------------|--------------|
+| No indicators | 100% | - | - | - | 400px |
+| 1 indicator | 68% | 28% | - | - | 550px |
+| 2 indicators | 50% | 21% | 25% | - | 700px |
+| 3 indicators | 45% | 17% | 17% | 17% | 800px |
 
 ### 3.12 Stock Comparison (FR-012)
 
@@ -927,6 +960,8 @@ The dashboard is fully responsive and adapts to mobile devices.
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
+| 2.6 | 2026-01-22 | Weighted relevance scoring for search (FR-001.15-18): Results ranked by match type + popularity boost, Ford/Apple surface before substring matches | Claude |
+| 2.5 | 2026-01-22 | Stochastic Oscillator (FR-011.18-23): %K and %D lines with 14,3 parameters, overbought/oversold zones at 80/20, separate panel below price chart | Claude |
 | 2.4 | 2026-01-22 | Client-side instant search (FR-001.8-14): Symbol data loaded to browser at startup (~315KB gzipped), sub-millisecond search, 5-second debounced server fallback for unknown symbols | Claude |
 | 2.3 | 2026-01-21 | Added fast search performance requirement (FR-001.8): Sub-10ms search latency via local symbol database | Claude |
 | 2.2 | 2026-01-19 | Added Mobile Responsiveness (FR-016): Hamburger menu for sidebar toggle, slide-in watchlist panel on mobile, responsive breakpoints, touch-friendly overlay dismiss | Claude |

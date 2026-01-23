@@ -43,43 +43,54 @@ const Charts = {
      * Calculate subplot domains based on enabled indicators
      * @param {boolean} showRsi - Whether RSI panel is shown
      * @param {boolean} showMacd - Whether MACD panel is shown
+     * @param {boolean} showStochastic - Whether Stochastic panel is shown
      * @returns {Object} Domain ranges for each subplot
      */
-    calculateSubplotDomains(showRsi, showMacd) {
-        // Gap between subplots
-        const gap = 0.03;
+    calculateSubplotDomains(showRsi, showMacd, showStochastic) {
+        const indicatorCount = [showRsi, showMacd, showStochastic].filter(Boolean).length;
 
         // No indicators: full chart for price
-        if (!showRsi && !showMacd) {
+        if (indicatorCount === 0) {
             return {
                 priceDomain: [0, 1],
                 rsiDomain: null,
-                macdDomain: null
+                macdDomain: null,
+                stochasticDomain: null
             };
         }
 
-        // One indicator: 68% price, 28% indicator (with gaps)
-        if (showRsi && !showMacd) {
+        // One indicator: 68% price, 28% indicator
+        if (indicatorCount === 1) {
+            const indicatorDomain = [0, 0.28];
             return {
                 priceDomain: [0.32, 1],
-                rsiDomain: [0, 0.28],
-                macdDomain: null
+                rsiDomain: showRsi ? indicatorDomain : null,
+                macdDomain: showMacd ? indicatorDomain : null,
+                stochasticDomain: showStochastic ? indicatorDomain : null
             };
         }
 
-        if (!showRsi && showMacd) {
+        // Two indicators: 50% price, 22% each indicator
+        if (indicatorCount === 2) {
+            const activeIndicators = [];
+            if (showRsi) activeIndicators.push('rsi');
+            if (showMacd) activeIndicators.push('macd');
+            if (showStochastic) activeIndicators.push('stochastic');
+
             return {
-                priceDomain: [0.32, 1],
-                rsiDomain: null,
-                macdDomain: [0, 0.28]
+                priceDomain: [0.50, 1],
+                rsiDomain: activeIndicators[0] === 'rsi' ? [0.25, 0.46] : (activeIndicators[1] === 'rsi' ? [0, 0.21] : null),
+                macdDomain: activeIndicators[0] === 'macd' ? [0.25, 0.46] : (activeIndicators[1] === 'macd' ? [0, 0.21] : null),
+                stochasticDomain: activeIndicators[0] === 'stochastic' ? [0.25, 0.46] : (activeIndicators[1] === 'stochastic' ? [0, 0.21] : null)
             };
         }
 
-        // Both indicators: 50% price, 22% each indicator (with gaps)
+        // Three indicators: 45% price, 17% each indicator
         return {
-            priceDomain: [0.50, 1],
-            rsiDomain: [0.25, 0.46],
-            macdDomain: [0, 0.21]
+            priceDomain: [0.55, 1],
+            rsiDomain: [0.37, 0.52],
+            macdDomain: [0.19, 0.34],
+            stochasticDomain: [0, 0.16]
         };
     },
 
@@ -101,6 +112,7 @@ const Charts = {
             showRsi = false,
             showMacd = false,
             showBollinger = false,
+            showStochastic = false,
             comparisonData = null,
             comparisonTicker = null
         } = options;
@@ -212,7 +224,7 @@ const Charts = {
         const lows = data.map(d => d.low);
         const closes = data.map(d => d.close);
 
-        const domains = this.calculateSubplotDomains(showRsi, showMacd);
+        const domains = this.calculateSubplotDomains(showRsi, showMacd, showStochastic);
 
         // Main price chart (yaxis = y)
         if (chartType === 'candlestick') {
@@ -481,6 +493,60 @@ const Charts = {
             });
         }
 
+        // Stochastic Oscillator (yaxis4)
+        if (showStochastic && analysisData && analysisData.stochastic) {
+            const stochData = analysisData.stochastic;
+            const stochDates = stochData.map(d => d.date);
+
+            // %K Line (fast stochastic) - teal
+            traces.push({
+                type: 'scatter',
+                mode: 'lines',
+                x: stochDates,
+                y: stochData.map(d => d.k),
+                name: '%K',
+                line: { color: '#14B8A6', width: 1.5 },
+                yaxis: 'y4'
+            });
+
+            // %D Line (signal line) - orange dashed
+            traces.push({
+                type: 'scatter',
+                mode: 'lines',
+                x: stochDates,
+                y: stochData.map(d => d.d),
+                name: '%D',
+                line: { color: '#F59E0B', width: 1.5, dash: 'dash' },
+                yaxis: 'y4'
+            });
+
+            // Overbought line (80)
+            traces.push({
+                type: 'scatter',
+                mode: 'lines',
+                x: [stochDates[0], stochDates[stochDates.length - 1]],
+                y: [80, 80],
+                name: 'Overbought',
+                line: { color: '#EF4444', width: 1, dash: 'dot' },
+                yaxis: 'y4',
+                showlegend: false,
+                hoverinfo: 'skip'
+            });
+
+            // Oversold line (20)
+            traces.push({
+                type: 'scatter',
+                mode: 'lines',
+                x: [stochDates[0], stochDates[stochDates.length - 1]],
+                y: [20, 20],
+                name: 'Oversold',
+                line: { color: '#10B981', width: 1, dash: 'dot' },
+                yaxis: 'y4',
+                showlegend: false,
+                hoverinfo: 'skip'
+            });
+        }
+
         // Build layout
         const layout = {
             title: {
@@ -539,6 +605,20 @@ const Charts = {
                 tickfont: { color: themeColors.axisColor, size: 9 },
                 linecolor: themeColors.gridColor,
                 domain: domains.macdDomain,
+                anchor: 'x'
+            };
+        }
+
+        // Add Stochastic y-axis if shown
+        if (showStochastic && domains.stochasticDomain) {
+            layout.yaxis4 = {
+                title: { text: 'Stoch', font: { color: themeColors.axisColor, size: 10 } },
+                gridcolor: themeColors.gridColor,
+                tickfont: { color: themeColors.axisColor, size: 9 },
+                linecolor: themeColors.gridColor,
+                domain: domains.stochasticDomain,
+                range: [0, 100],
+                dtick: 20,
                 anchor: 'x'
             };
         }

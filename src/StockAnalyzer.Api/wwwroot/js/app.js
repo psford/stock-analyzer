@@ -307,8 +307,8 @@ const App = {
             document.getElementById(id).addEventListener('change', () => this.updateChart());
         });
 
-        // Technical indicator toggles (RSI, MACD, Bollinger)
-        ['show-rsi', 'show-macd', 'show-bollinger'].forEach(id => {
+        // Technical indicator toggles (RSI, MACD, Bollinger, Stochastic)
+        ['show-rsi', 'show-macd', 'show-bollinger', 'show-stochastic'].forEach(id => {
             document.getElementById(id).addEventListener('change', () => this.updateChart());
         });
 
@@ -757,26 +757,32 @@ const App = {
         const rsiCheckbox = document.getElementById('show-rsi');
         const macdCheckbox = document.getElementById('show-macd');
         const bollingerCheckbox = document.getElementById('show-bollinger');
+        const stochasticCheckbox = document.getElementById('show-stochastic');
         const rsiLabel = document.getElementById('rsi-label');
         const macdLabel = document.getElementById('macd-label');
         const bollingerLabel = document.getElementById('bollinger-label');
+        const stochasticLabel = document.getElementById('stochastic-label');
 
         rsiCheckbox.disabled = disabled;
         macdCheckbox.disabled = disabled;
         bollingerCheckbox.disabled = disabled;
+        stochasticCheckbox.disabled = disabled;
 
         if (disabled) {
             // Uncheck and dim the indicators
             rsiCheckbox.checked = false;
             macdCheckbox.checked = false;
             bollingerCheckbox.checked = false;
+            stochasticCheckbox.checked = false;
             rsiLabel.classList.add('opacity-50', 'cursor-not-allowed');
             macdLabel.classList.add('opacity-50', 'cursor-not-allowed');
             bollingerLabel.classList.add('opacity-50', 'cursor-not-allowed');
+            stochasticLabel.classList.add('opacity-50', 'cursor-not-allowed');
         } else {
             rsiLabel.classList.remove('opacity-50', 'cursor-not-allowed');
             macdLabel.classList.remove('opacity-50', 'cursor-not-allowed');
             bollingerLabel.classList.remove('opacity-50', 'cursor-not-allowed');
+            stochasticLabel.classList.remove('opacity-50', 'cursor-not-allowed');
         }
     },
 
@@ -1015,6 +1021,7 @@ const App = {
             showRsi: document.getElementById('show-rsi').checked,
             showMacd: document.getElementById('show-macd').checked,
             showBollinger: document.getElementById('show-bollinger').checked,
+            showStochastic: document.getElementById('show-stochastic').checked,
             // Comparison data
             comparisonData: this.comparisonHistoryData,
             comparisonTicker: this.comparisonTicker
@@ -1030,6 +1037,7 @@ const App = {
         if (!this.comparisonTicker) {
             if (options.showRsi) totalHeight += indicatorHeight;
             if (options.showMacd) totalHeight += indicatorHeight;
+            if (options.showStochastic) totalHeight += indicatorHeight;
         }
         chartEl.style.height = `${totalHeight}px`;
 
