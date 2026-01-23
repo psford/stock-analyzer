@@ -66,12 +66,17 @@ public class AnalysisService
                 };
 
                 // Fetch related news if requested and service is available
+                // Uses sentiment-aware filtering to match news tone with price direction
                 if (includeNews && _newsService != null)
                 {
                     try
                     {
-                        var news = await _newsService.GetNewsForDateAsync(symbol, day.Date);
-                        move = move with { RelatedNews = news.Take(5).ToList() };
+                        var news = await _newsService.GetNewsForDateWithSentimentAsync(
+                            symbol,
+                            day.Date,
+                            percentChange,
+                            maxArticles: 5);
+                        move = move with { RelatedNews = news };
                     }
                     catch
                     {

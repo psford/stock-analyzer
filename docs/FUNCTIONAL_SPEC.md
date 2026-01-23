@@ -1,6 +1,6 @@
 # Functional Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.6
+**Version:** 2.7
 **Last Updated:** 2026-01-22
 **Author:** Claude (AI Assistant)
 **Status:** Production
@@ -229,6 +229,10 @@ Page Load                    User Types Query
 | FR-005.13 | The system must automatically refill the image cache when it drops below 10 images |
 | FR-005.14 | The system must use each cached image only once (no repeats) |
 | FR-005.15 | The system must clear the previous image when hiding the popup to prevent flash |
+| FR-005.16 | The system must filter news headlines so their sentiment matches the price direction |
+| FR-005.17 | Positive sentiment headlines (e.g., "soars", "surges") must not display for negative price moves |
+| FR-005.18 | Negative sentiment headlines (e.g., "plunges", "crashes") must not display for positive price moves |
+| FR-005.19 | When no sentiment-matched company news exists, the system must fall back to market news |
 
 **Calculation Method:** Daily return = (Today's Close - Today's Open) / Today's Open
 
@@ -960,6 +964,7 @@ The dashboard is fully responsive and adapts to mobile devices.
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
+| 2.7 | 2026-01-22 | Sentiment-filtered news (FR-005.16-19): Headlines must match price direction, positive headlines don't show for drops, market news fallback when no matched company news | Claude |
 | 2.6 | 2026-01-22 | Weighted relevance scoring for search (FR-001.15-18): Results ranked by match type + popularity boost, Ford/Apple surface before substring matches | Claude |
 | 2.5 | 2026-01-22 | Stochastic Oscillator (FR-011.18-23): %K and %D lines with 14,3 parameters, overbought/oversold zones at 80/20, separate panel below price chart | Claude |
 | 2.4 | 2026-01-22 | Client-side instant search (FR-001.8-14): Symbol data loaded to browser at startup (~315KB gzipped), sub-millisecond search, 5-second debounced server fallback for unknown symbols | Claude |

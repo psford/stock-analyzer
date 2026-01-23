@@ -27,6 +27,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 | Fast ticker search | Local symbol database (~30K US symbols) with sub-10ms search latency | 01/21/2026 |
 | Client-side instant search | Symbol data loaded to browser for sub-millisecond search, 5s server fallback | 01/22/2026 |
 | Weighted relevance search | Results ranked by match type + popularity boost; Ford/Apple surface before substring matches | 01/22/2026 |
+| Sentiment-filtered news | Headlines filtered to match price direction; market news fallback | 01/22/2026 |
 
 ### Image System
 
@@ -93,7 +94,6 @@ Planned features and improvements for the Stock Analyzer .NET application.
 | Feature | Description | Status |
 |---------|-------------|--------|
 | Staging environment | Azure staging slot for pre-production testing (separate DB, same infra) | Planned |
-| Fix AAPL news mismatch | News headlines can be misleading vs actual price movement | Planned |
 | Brinson attribution analysis | Major feature for mutual fund performance evaluation | Planned |
 
 ### Medium Priority
