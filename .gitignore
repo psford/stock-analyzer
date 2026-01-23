@@ -36,3 +36,6 @@ appsettings.Development.json
 
 # Generated client-side symbol data (created at runtime)
 src/StockAnalyzer.Api/wwwroot/data/
+
+# Large ML model files (download separately)
+src/StockAnalyzer.Api/MLModels/finbert-onnx/

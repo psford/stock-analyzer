@@ -1,7 +1,7 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.15
-**Last Updated:** 2026-01-22
+**Version:** 2.16
+**Last Updated:** 2026-01-23
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
 
@@ -570,11 +570,11 @@ GET https://finnhub.io/api/v1/news?category={category}&token={api_key}
 ```
 Returns general market news. Categories: `general`, `forex`, `crypto`, `merger`.
 
-### 5.2.1 SentimentAnalyzer
+### 5.2.1 SentimentAnalyzer (3-Tier Ensemble)
 
 **File:** `StockAnalyzer.Core/Services/SentimentAnalyzer.cs`
 
-Static utility class for keyword-based sentiment analysis of news headlines. Used to filter news articles so they match price movement direction.
+Static utility class for ensemble sentiment analysis of news headlines. Uses a 3-tier approach combining keyword matching, VADER, and optionally FinBERT for high accuracy.
 
 | Method | Description |
 |--------|-------------|
@@ -588,25 +588,113 @@ Static utility class for keyword-based sentiment analysis of news headlines. Use
 public enum Sentiment { Positive, Negative, Neutral }
 ```
 
-**Keyword Lists (~50 each):**
+**3-Tier Sentiment Architecture:**
+
+| Tier | Service | Weight | Description |
+|------|---------|--------|-------------|
+| 1 | Keyword matching | 60% | Financial domain-specific vocabulary with word-boundary matching |
+| 2 | VADER | 40% | General sentiment with modifier/negation handling |
+| 3 | FinBERT | (Optional) | ML-based financial text analysis via ONNX |
+
+**Keyword Lists (~70+ each with word-boundary matching):**
 
 | Category | Examples |
 |----------|----------|
-| **Positive** | soars, surges, rallies, jumps, beats, upgrade, bullish, strong, record, boost |
-| **Negative** | plunges, crashes, tumbles, downgrade, bearish, warning, miss, drops, falls, weak |
+| **Positive** | soars, surges, rallies, jumps, beats, upgrade, bullish, strong, record, boost, gains |
+| **Negative** | plunges, crashes, tumbles, downgrade, bearish, warning, miss, drops, falls, weak, **dips**, **slump**, **weaken** |
 
-**Scoring Algorithm:**
+**Word Boundary Matching (v2.16+):**
+- Uses regex `\b{keyword}\b` to prevent substring matches
+- "regains" no longer matches "gains" keyword
+- "uprising" no longer matches "rising" keyword
+- Multi-word phrases use simple contains matching
+
+**Scoring Algorithm (Ensemble):**
 
 ```
-sentiment_score = (positive_count - negative_count) / total_words
-                  clamped to [-1.0, +1.0]
+keyword_score = (positive_count - negative_count) / max(total, 1)
+vader_score = VADER.Analyze(headline).Compound  // -1 to +1
+
+combined_score = (keyword_score * 0.6) + (vader_score * 0.4)
+
+Classification:
+  - combined_score > 0.05 → Positive
+  - combined_score < -0.05 → Negative
+  - else → Neutral
 
 match_score (0-100):
   - Neutral headline → 50 (base)
-  - Matching direction → 50 + (sentiment_score * 50 * direction_factor)
-  - Mismatching direction (≥5% move) → max(0, 50 - mismatch_penalty)
-  - Small price moves (< 5%) → lenient scoring (less strict matching)
+  - Matching direction → 50 + (|combined_score| * 50)
+  - Mismatching direction → 50 - (|combined_score| * 50)
 ```
+
+### 5.2.2 VaderSentimentService
+
+**File:** `StockAnalyzer.Core/Services/VaderSentimentService.cs`
+
+VADER (Valence Aware Dictionary and sEntiment Reasoner) wrapper for general sentiment analysis.
+
+| Method | Description |
+|--------|-------------|
+| `Analyze(text)` | Returns VaderResult with Positive, Negative, Neutral, Compound scores |
+| `GetSentimentLabel(text)` | Returns "positive", "negative", or "neutral" string |
+
+**VADER Features:**
+- Handles modifiers ("not good" → negative)
+- Handles intensifiers ("very good" → more positive)
+- Handles punctuation ("great!!!" → stronger)
+- Handles emoji and emoticons
+- Compound score: -1 (most negative) to +1 (most positive)
+
+**NuGet Package:** `VaderSharp2` v3.3.2.1
+
+### 5.2.3 FinBertSentimentService (Optional ML Tier)
+
+**File:** `StockAnalyzer.Core/Services/FinBertSentimentService.cs`
+
+FinBERT sentiment analysis using ONNX Runtime for high-accuracy financial text classification.
+
+| Method | Description |
+|--------|-------------|
+| `Analyze(text)` | Returns FinBertResult with label and probability distribution |
+
+**FinBertResult Record:**
+```csharp
+public record FinBertResult(
+    string Label,        // "positive", "negative", "neutral"
+    float Confidence,    // 0-1 confidence for predicted label
+    float PositiveProb,  // Probability of positive
+    float NegativeProb,  // Probability of negative
+    float NeutralProb    // Probability of neutral
+);
+```
+
+**Model Files (Optional):**
+- `wwwroot/MLModels/finbert-onnx/model.onnx` (~418 MB)
+- Uses built-in BERT vocabulary via BERTTokenizers NuGet
+
+**Dependencies:**
+- `Microsoft.ML.OnnxRuntime` v1.23.2
+- `BERTTokenizers` v1.2.0
+
+### 5.2.4 SentimentCacheService
+
+**File:** `StockAnalyzer.Core/Services/SentimentCacheService.cs`
+
+Background service that pre-computes and caches FinBERT sentiment analysis results.
+
+| Method | Description |
+|--------|-------------|
+| `QueueForAnalysisAsync(headline)` | Queue headline for background analysis |
+| `GetCachedResultAsync(headline)` | Get cached result (or null if pending) |
+| `AnalyzeNow(headline)` | Synchronous analysis (blocking) |
+| `GetStatisticsAsync()` | Get cache statistics |
+
+**Database Table:** `CachedSentiments`
+- HeadlineHash (SHA256, unique index)
+- Headline, Sentiment, Confidence
+- PositiveProb, NegativeProb, NeutralProb
+- AnalyzerVersion, CreatedAt, IsPending
 
 **Usage in NewsService:**
 
@@ -617,7 +705,7 @@ public async Task<List<NewsItem>> GetNewsForDateWithSentimentAsync(
     // 1. Fetch company news
     // 2. Score each headline with SentimentAnalyzer
     // 3. Filter to articles with matchScore > 25
-    // 4. Fallback cascade: matched company → any company → market news
+    // 4. Fallback: no match → general market news
 }
 ```
 
@@ -626,8 +714,9 @@ public async Task<List<NewsItem>> GetNewsForDateWithSentimentAsync(
 | Priority | Condition | Source |
 |----------|-----------|--------|
 | 1 | Sentiment-matched company news exists | Company news (filtered) |
-| 2 | Any company news exists | Company news (unfiltered, top 2) |
-| 3 | No company news | Market news matching price direction |
+| 2 | No sentiment match | General market news (e.g., "S&P 500 rallies") |
+
+**Note:** We skip directly to market news when no sentiment-matched company news exists. Showing mismatched or unrelated company news is worse than showing general market context that explains broader conditions.
 
 ### 5.3 MarketauxService
 

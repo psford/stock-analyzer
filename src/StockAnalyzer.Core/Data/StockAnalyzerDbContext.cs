@@ -19,6 +19,7 @@ public class StockAnalyzerDbContext : DbContext
     public DbSet<TickerHoldingEntity> TickerHoldings => Set<TickerHoldingEntity>();
     public DbSet<SymbolEntity> Symbols => Set<SymbolEntity>();
     public DbSet<CachedImageEntity> CachedImages => Set<CachedImageEntity>();
+    public DbSet<CachedSentimentEntity> CachedSentiments => Set<CachedSentimentEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -107,6 +108,32 @@ public class StockAnalyzerDbContext : DbContext
 
             // Index for efficient type filtering
             entity.HasIndex(e => e.ImageType).HasDatabaseName("IX_CachedImages_ImageType");
+        });
+
+        // CachedSentiment configuration (for FinBERT sentiment cache)
+        modelBuilder.Entity<CachedSentimentEntity>(entity =>
+        {
+            entity.ToTable("CachedSentiments");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).UseIdentityColumn();
+            entity.Property(e => e.HeadlineHash).HasMaxLength(64).IsRequired();  // SHA256 = 64 hex chars
+            entity.Property(e => e.Headline).HasMaxLength(1000).IsRequired();
+            entity.Property(e => e.Sentiment).HasMaxLength(20);
+            entity.Property(e => e.Confidence).HasPrecision(5, 4);
+            entity.Property(e => e.PositiveProb).HasPrecision(5, 4);
+            entity.Property(e => e.NegativeProb).HasPrecision(5, 4);
+            entity.Property(e => e.NeutralProb).HasPrecision(5, 4);
+            entity.Property(e => e.AnalyzerVersion).HasMaxLength(50);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+            // Index for fast hash lookup
+            entity.HasIndex(e => e.HeadlineHash)
+                .IsUnique()
+                .HasDatabaseName("IX_CachedSentiments_HeadlineHash");
+
+            // Index for finding pending items
+            entity.HasIndex(e => new { e.IsPending, e.CreatedAt })
+                .HasDatabaseName("IX_CachedSentiments_Pending");
         });
     }
 }

@@ -134,19 +134,9 @@ public class NewsService
             return filteredNews;
         }
 
-        // Fallback: try to get any company news (even if sentiment doesn't match perfectly)
-        var anyCompanyNews = scoredNews
-            .Select(x => x.Article)
-            .Take(maxArticles)
-            .ToList();
-
-        if (anyCompanyNews.Count > 0)
-        {
-            return anyCompanyNews;
-        }
-
-        // Final fallback: get market news for this date
-        // This handles cases where the move was due to broader market conditions
+        // No sentiment-matched company news - fall back to general market news
+        // This explains the move via broader market conditions (e.g., "S&P 500 rallies")
+        // rather than showing mismatched or unrelated company news
         var marketNews = await GetMarketNewsForDateAsync(date, priceChangePercent, maxArticles);
         return marketNews;
     }

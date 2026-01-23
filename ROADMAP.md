@@ -28,6 +28,8 @@ Planned features and improvements for the Stock Analyzer .NET application.
 | Client-side instant search | Symbol data loaded to browser for sub-millisecond search, 5s server fallback | 01/22/2026 |
 | Weighted relevance search | Results ranked by match type + popularity boost; Ford/Apple surface before substring matches | 01/22/2026 |
 | Sentiment-filtered news | Headlines filtered to match price direction; market news fallback | 01/22/2026 |
+| 3-tier sentiment analysis | Ensemble: keyword (60%) + VADER (40%) + optional FinBERT ONNX | 01/23/2026 |
+| Word-boundary matching | Regex-based keyword detection prevents substring false positives | 01/23/2026 |
 
 ### Image System
 

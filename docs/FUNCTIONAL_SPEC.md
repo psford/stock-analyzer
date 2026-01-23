@@ -964,6 +964,7 @@ The dashboard is fully responsive and adapts to mobile devices.
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
+| 2.8 | 2026-01-23 | Enhanced sentiment analysis: 3-tier ensemble (keyword 60% + VADER 40%), word-boundary matching to prevent false positives, optional FinBERT ML tier | Claude |
 | 2.7 | 2026-01-22 | Sentiment-filtered news (FR-005.16-19): Headlines must match price direction, positive headlines don't show for drops, market news fallback when no matched company news | Claude |
 | 2.6 | 2026-01-22 | Weighted relevance scoring for search (FR-001.15-18): Results ranked by match type + popularity boost, Ford/Apple surface before substring matches | Claude |
 | 2.5 | 2026-01-22 | Stochastic Oscillator (FR-011.18-23): %K and %D lines with 14,3 parameters, overbought/oversold zones at 80/20, separate panel below price chart | Claude |

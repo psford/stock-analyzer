@@ -197,6 +197,38 @@ builder.Services.AddSingleton(sp =>
 });
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ImageCacheService>());
 
+// Register FinBERT sentiment analysis services (optional - requires model file)
+var finbertModelPath = Path.Combine(builder.Environment.WebRootPath ?? "wwwroot", "MLModels", "finbert-onnx", "model.onnx");
+if (File.Exists(finbertModelPath))
+{
+    Log.Information("FinBERT model found - enabling ML-based sentiment analysis");
+    builder.Services.AddSingleton(sp =>
+    {
+        return new FinBertSentimentService(finbertModelPath);
+    });
+}
+else
+{
+    Log.Information("FinBERT model not found at {Path} - using keyword/VADER ensemble only", finbertModelPath);
+    // Don't register FinBertSentimentService - SentimentCacheService will get null from GetService
+}
+
+// Sentiment cache repository (only with SQL)
+if (!string.IsNullOrEmpty(connectionString))
+{
+    builder.Services.AddScoped<ISentimentCacheRepository, SqlSentimentCacheRepository>();
+}
+
+// Sentiment cache service (background processor for FinBERT)
+builder.Services.AddSingleton(sp =>
+{
+    var finbert = sp.GetService<FinBertSentimentService>();
+    var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
+    var logger = sp.GetRequiredService<ILogger<SentimentCacheService>>();
+    return new SentimentCacheService(finbert, scopeFactory, logger);
+});
+builder.Services.AddHostedService(sp => sp.GetRequiredService<SentimentCacheService>());
+
 // Add health checks
 // External API checks report Degraded (not Unhealthy) when unavailable - app can still function with fallback providers
 builder.Services.AddHealthChecks()

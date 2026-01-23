@@ -1,11 +1,16 @@
+using System.Text.RegularExpressions;
+
 namespace StockAnalyzer.Core.Services;
 
 /// <summary>
-/// Keyword-based sentiment analyzer for news headlines.
-/// Detects positive, negative, or neutral sentiment based on financial news vocabulary.
+/// Ensemble sentiment analyzer for news headlines.
+/// Combines keyword-based analysis with VADER for improved accuracy.
 /// </summary>
 public static class SentimentAnalyzer
 {
+    // VADER service instance (thread-safe)
+    private static readonly VaderSentimentService _vader = new();
+
     /// <summary>
     /// Sentiment classification result.
     /// </summary>
@@ -47,6 +52,13 @@ public static class SentimentAnalyzer
         "fall", "falls", "falling", "drop", "drops", "dropping", "decline", "declines",
         "slide", "slides", "sliding", "slip", "slips", "slipping", "down", "lower",
         "decrease", "decreases", "loss", "loses", "losing", "retreat", "retreats",
+        "dip", "dips", "dipping", "dipped",
+        "slump", "slumps", "slumping", "slumped",
+        "sag", "sags", "sagging",
+        "weaken", "weakens", "weakening", "weakened",
+        "soften", "softens", "softening",
+        "worsen", "worsens", "worsening",
+        "stall", "stalls", "stalling",
 
         // Fundamental negative
         "miss", "misses", "missing", "disappoint", "disappoints", "disappointing",
@@ -57,7 +69,24 @@ public static class SentimentAnalyzer
     };
 
     /// <summary>
-    /// Analyze sentiment of a headline.
+    /// Check if text contains keyword as a whole word (not substring).
+    /// Multi-word phrases use simple Contains for flexibility.
+    /// </summary>
+    private static bool ContainsWord(string text, string keyword)
+    {
+        // For multi-word phrases, use simple Contains
+        if (keyword.Contains(' '))
+            return text.Contains(keyword, StringComparison.OrdinalIgnoreCase);
+
+        // For single words, use word boundary matching to prevent false positives
+        // e.g., "gains" should not match "regains"
+        var pattern = $@"\b{Regex.Escape(keyword)}\b";
+        return Regex.IsMatch(text, pattern, RegexOptions.IgnoreCase);
+    }
+
+    /// <summary>
+    /// Analyze sentiment of a headline using ensemble approach.
+    /// Combines keyword-based analysis (30%) with VADER (70%) for improved accuracy.
     /// </summary>
     /// <param name="headline">The news headline text</param>
     /// <returns>Tuple of (sentiment, score) where score ranges from -1.0 (very negative) to +1.0 (very positive)</returns>
@@ -66,20 +95,50 @@ public static class SentimentAnalyzer
         if (string.IsNullOrWhiteSpace(headline))
             return (Sentiment.Neutral, 0m);
 
+        // Get keyword-based score (financial-specific vocabulary)
+        var keywordScore = AnalyzeKeywords(headline);
+
+        // Get VADER score (general sentiment, handles modifiers/negations)
+        var vaderResult = _vader.Analyze(headline);
+        var vaderScore = (decimal)vaderResult.Compound;
+
+        // Ensemble: 60% keyword (financial-specific), 40% VADER (general modifiers)
+        // We weight keywords more heavily because they're tuned for financial news,
+        // while VADER provides modulation for negations and intensifiers
+        var combinedScore = (keywordScore * 0.6m) + (vaderScore * 0.4m);
+
+        // Classify based on combined score
+        // Using slightly tighter thresholds than before since VADER is more nuanced
+        Sentiment sentiment;
+        if (combinedScore > 0.05m)
+            sentiment = Sentiment.Positive;
+        else if (combinedScore < -0.05m)
+            sentiment = Sentiment.Negative;
+        else
+            sentiment = Sentiment.Neutral;
+
+        return (sentiment, combinedScore);
+    }
+
+    /// <summary>
+    /// Analyze sentiment using keywords only (internal method for ensemble).
+    /// </summary>
+    private static decimal AnalyzeKeywords(string headline)
+    {
         var text = headline.ToLowerInvariant();
         int positiveCount = 0;
         int negativeCount = 0;
 
-        // Check for keyword matches
+        // Check for keyword matches with word boundaries
         foreach (var keyword in PositiveKeywords)
         {
-            if (text.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+            if (ContainsWord(text, keyword))
                 positiveCount++;
         }
 
         foreach (var keyword in NegativeKeywords)
         {
-            if (text.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+            if (ContainsWord(text, keyword))
                 negativeCount++;
         }
 
@@ -87,20 +146,9 @@ public static class SentimentAnalyzer
         // Normalize to -1.0 to +1.0 range
         int total = positiveCount + negativeCount;
         if (total == 0)
-            return (Sentiment.Neutral, 0m);
+            return 0m;
 
-        decimal score = (decimal)(positiveCount - negativeCount) / Math.Max(total, 1);
-
-        // Classify based on score
-        Sentiment sentiment;
-        if (score > 0.1m)
-            sentiment = Sentiment.Positive;
-        else if (score < -0.1m)
-            sentiment = Sentiment.Negative;
-        else
-            sentiment = Sentiment.Neutral;
-
-        return (sentiment, score);
+        return (decimal)(positiveCount - negativeCount) / Math.Max(total, 1);
     }
 
     /// <summary>
