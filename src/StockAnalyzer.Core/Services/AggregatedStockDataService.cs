@@ -315,7 +315,7 @@ public class AggregatedStockDataService
             if (prices.Count == 0)
             {
                 _logger?.LogDebug("No prices in database for {Symbol} in period {Period}",
-                    LogSanitizer.Sanitize(symbol), period);
+                    LogSanitizer.Sanitize(symbol), LogSanitizer.Sanitize(period));
                 return null;
             }
 
@@ -427,7 +427,7 @@ public class AggregatedStockDataService
                 {
                     _logger?.LogWarning(
                         "Background backfill for {Symbol} had errors: {Errors}",
-                        LogSanitizer.Sanitize(symbol), string.Join("; ", result.Errors));
+                        LogSanitizer.Sanitize(symbol), LogSanitizer.Sanitize(string.Join("; ", result.Errors)));
                 }
             }
             catch (Exception ex)
