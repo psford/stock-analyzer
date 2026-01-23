@@ -2038,6 +2038,56 @@ CREATE INDEX IX_Prices_EffectiveDate ON data.Prices(EffectiveDate);
 - `scripts/001_CreateDataSchema.sql` - Schema creation script
 - `scripts/002_AddSecurityMasterAndPrices.sql` - Migration script
 
+#### EODHD Integration (Historical Price Data)
+
+**Service:** `EodhdService.cs`
+
+Primary data source for historical EOD prices. Uses [EODHD API](https://eodhd.com/financial-apis/) which provides:
+- Bulk API: Download entire exchange in one request (100 API calls)
+- Historical API: Per-ticker date range queries
+- Data quality: Institutional-grade OHLCV with adjusted close
+
+**Configuration:**
+```json
+{
+  "Eodhd": {
+    "ApiKey": "your-api-key"
+  }
+}
+```
+
+**Key Methods:**
+| Method | Description |
+|--------|-------------|
+| `GetHistoricalDataAsync(ticker, start, end)` | Get date range for single ticker |
+| `GetBulkEodDataAsync(date, exchange)` | Get all tickers for a date (entire exchange) |
+| `GetBulkEodDataForTickersAsync(tickers, date)` | Get specific tickers for a date |
+
+**PriceRefreshService (Background Service):**
+
+Maintains the historical price database with automatic daily updates.
+
+| Behavior | Description |
+|----------|-------------|
+| Startup | Checks `MAX(EffectiveDate)` and backfills missing days |
+| Daily Schedule | 2:30 AM UTC - fetches previous trading day |
+| Weekend Skip | No refresh on Saturday/Sunday |
+| Rate Limiting | 2-second delay between bulk requests |
+
+**Admin Endpoints:**
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/admin/prices/status` | Database status: counts, latest date, EODHD status |
+| `POST /api/admin/prices/sync-securities` | Sync SecurityMaster from Symbols table |
+| `POST /api/admin/prices/refresh-date` | Fetch prices for specific date (body: `{Date: "yyyy-MM-dd"}`) |
+| `POST /api/admin/prices/bulk-load` | Start bulk historical load (body: `{StartDate, EndDate}`) |
+
+**Bulk Load Flow:**
+1. Call `/api/admin/prices/sync-securities` to populate SecurityMaster
+2. Call `/api/admin/prices/bulk-load` with date range
+3. Service runs in background, logs progress every 100 tickers
+4. Check `/api/admin/prices/status` for completion
+
 #### Infrastructure as Code
 
 **Location:** `infrastructure/azure/`
