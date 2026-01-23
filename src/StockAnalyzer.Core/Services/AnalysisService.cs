@@ -274,7 +274,7 @@ public class AnalysisService
             if (i >= signalStartIndex && macdLine[i].HasValue && signalLineRaw[i].HasValue)
             {
                 signal = signalLineRaw[i];
-                histogram = macdLine[i]!.Value - signal.Value;
+                histogram = macdLine[i].Value - signal.Value;
             }
 
             result.Add(new MacdData

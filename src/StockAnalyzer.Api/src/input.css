@@ -313,3 +313,15 @@ html {
         overflow-x: scroll;  /* Force scroll instead of auto for iOS */
     }
 }
+
+/* iOS Safari safe area insets for bottom navigation bar */
+.pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Extra bottom padding on mobile for iOS address bar */
+@media (max-width: 768px) {
+    .pb-safe {
+        padding-bottom: max(env(safe-area-inset-bottom, 0px), 1rem);
+    }
+}
