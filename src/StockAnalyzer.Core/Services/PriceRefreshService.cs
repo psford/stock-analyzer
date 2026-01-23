@@ -312,6 +312,104 @@ public class PriceRefreshService : BackgroundService
     }
 
     /// <summary>
+    /// Load historical data for specific tickers.
+    /// Uses the per-ticker historical API endpoint.
+    /// </summary>
+    /// <param name="tickers">List of ticker symbols to load</param>
+    /// <param name="startDate">Start date for historical data</param>
+    /// <param name="endDate">End date for historical data</param>
+    /// <param name="ct">Cancellation token</param>
+    /// <returns>Result with counts and any errors</returns>
+    public async Task<TickerLoadResult> LoadHistoricalDataForTickersAsync(
+        IEnumerable<string> tickers,
+        DateTime startDate,
+        DateTime endDate,
+        CancellationToken ct = default)
+    {
+        var tickerList = tickers.ToList();
+        var result = new TickerLoadResult { TotalTickers = tickerList.Count };
+
+        _logger.LogInformation("Loading historical data for {Count} tickers from {Start} to {End}",
+            tickerList.Count, startDate.ToString("yyyy-MM-dd"), endDate.ToString("yyyy-MM-dd"));
+
+        using var scope = _serviceProvider.CreateScope();
+        var eodhd = scope.ServiceProvider.GetRequiredService<EodhdService>();
+        var priceRepo = scope.ServiceProvider.GetRequiredService<IPriceRepository>();
+        var securityRepo = scope.ServiceProvider.GetRequiredService<ISecurityMasterRepository>();
+
+        foreach (var ticker in tickerList)
+        {
+            if (ct.IsCancellationRequested)
+            {
+                result.WasCancelled = true;
+                break;
+            }
+
+            try
+            {
+                // Get or create security in SecurityMaster
+                var security = await securityRepo.GetByTickerAsync(ticker);
+                if (security == null)
+                {
+                    // Create a new security entry
+                    security = await securityRepo.CreateAsync(new SecurityMasterCreateDto
+                    {
+                        TickerSymbol = ticker.ToUpperInvariant(),
+                        IssueName = ticker.ToUpperInvariant() // Will be updated later if needed
+                    });
+                    _logger.LogInformation("Created new security for {Ticker} with alias {Alias}",
+                        ticker, security.SecurityAlias);
+                }
+
+                // Fetch historical data from EODHD
+                var historicalData = await eodhd.GetHistoricalDataAsync(ticker, startDate, endDate, ct);
+
+                if (historicalData.Count == 0)
+                {
+                    _logger.LogWarning("No historical data returned for {Ticker}", ticker);
+                    result.Errors.Add($"{ticker}: No data returned");
+                    continue;
+                }
+
+                // Convert to price DTOs
+                var priceDtos = historicalData.Select(record => new PriceCreateDto
+                {
+                    SecurityAlias = security.SecurityAlias,
+                    EffectiveDate = record.ParsedDate,
+                    Open = record.Open,
+                    High = record.High,
+                    Low = record.Low,
+                    Close = record.Close,
+                    AdjustedClose = record.AdjustedClose,
+                    Volume = record.Volume
+                }).ToList();
+
+                // Insert prices
+                var inserted = await priceRepo.BulkInsertAsync(priceDtos);
+
+                result.TickersProcessed++;
+                result.TotalRecordsInserted += inserted;
+
+                _logger.LogInformation("Loaded {Count} price records for {Ticker}",
+                    inserted, ticker);
+
+                // Small delay to be nice to the API
+                await Task.Delay(500, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading data for {Ticker}", ticker);
+                result.Errors.Add($"{ticker}: {ex.Message}");
+            }
+        }
+
+        _logger.LogInformation("Ticker load complete: {Processed}/{Total} tickers, {Records} records, {Errors} errors",
+            result.TickersProcessed, result.TotalTickers, result.TotalRecordsInserted, result.Errors.Count);
+
+        return result;
+    }
+
+    /// <summary>
     /// Sync SecurityMaster from the existing Symbols table.
     /// Creates SecurityMaster entries for all active symbols.
     /// </summary>
@@ -398,6 +496,18 @@ public class BulkLoadResult
 }
 
 /// <summary>
+/// Result of loading historical data for specific tickers.
+/// </summary>
+public class TickerLoadResult
+{
+    public int TotalTickers { get; set; }
+    public int TickersProcessed { get; set; }
+    public int TotalRecordsInserted { get; set; }
+    public bool WasCancelled { get; set; }
+    public List<string> Errors { get; set; } = new();
+}
+
+/// <summary>
 /// Progress report for bulk load operations.
 /// </summary>
 public class BulkLoadProgress
@@ -421,6 +531,16 @@ public record RefreshDateRequest
 /// </summary>
 public record BulkLoadRequest
 {
+    public string? StartDate { get; init; }
+    public string? EndDate { get; init; }
+}
+
+/// <summary>
+/// Request body for loading historical data for specific tickers.
+/// </summary>
+public record TickerLoadRequest
+{
+    public string[]? Tickers { get; init; }
     public string? StartDate { get; init; }
     public string? EndDate { get; init; }
 }

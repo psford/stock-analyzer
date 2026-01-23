@@ -844,6 +844,53 @@ app.MapPost("/api/admin/prices/bulk-load", async (
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status500InternalServerError);
 
+// POST /api/admin/prices/load-tickers - Load historical data for specific tickers
+app.MapPost("/api/admin/prices/load-tickers", async (
+    PriceRefreshService? refreshService,
+    HttpRequest request) =>
+{
+    if (refreshService == null)
+        return Results.BadRequest(new { error = "Price refresh service not configured" });
+
+    var body = await request.ReadFromJsonAsync<TickerLoadRequest>();
+    if (body == null || body.Tickers == null || body.Tickers.Length == 0)
+        return Results.BadRequest(new { error = "Tickers array required" });
+
+    if (string.IsNullOrEmpty(body.StartDate) || string.IsNullOrEmpty(body.EndDate))
+        return Results.BadRequest(new { error = "StartDate and EndDate required (format: yyyy-MM-dd)" });
+
+    if (!DateTime.TryParse(body.StartDate, out var startDate))
+        return Results.BadRequest(new { error = "Invalid StartDate format. Use yyyy-MM-dd" });
+
+    if (!DateTime.TryParse(body.EndDate, out var endDate))
+        return Results.BadRequest(new { error = "Invalid EndDate format. Use yyyy-MM-dd" });
+
+    try
+    {
+        var result = await refreshService.LoadHistoricalDataForTickersAsync(
+            body.Tickers, startDate, endDate);
+
+        return Results.Ok(new
+        {
+            message = "Ticker load complete",
+            tickersRequested = result.TotalTickers,
+            tickersProcessed = result.TickersProcessed,
+            recordsInserted = result.TotalRecordsInserted,
+            errors = result.Errors
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Failed to load ticker data");
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("LoadTickerPrices")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status500InternalServerError);
+
 // Health check endpoints
 app.MapHealthChecks("/health", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {

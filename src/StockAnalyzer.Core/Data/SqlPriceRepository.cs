@@ -107,11 +107,41 @@ public class SqlPriceRepository : IPriceRepository
     public async Task<int> BulkInsertAsync(IEnumerable<PriceCreateDto> prices)
     {
         var priceList = prices.ToList();
+        if (priceList.Count == 0) return 0;
+
         var now = DateTime.UtcNow;
         var count = 0;
 
+        // Get all existing (SecurityAlias, EffectiveDate) pairs to filter out duplicates
+        var securityAliases = priceList.Select(p => p.SecurityAlias).Distinct().ToList();
+        var dates = priceList.Select(p => p.EffectiveDate.Date).Distinct().ToList();
+
+        var existingKeys = await _context.Prices
+            .AsNoTracking()
+            .Where(p => securityAliases.Contains(p.SecurityAlias) && dates.Contains(p.EffectiveDate))
+            .Select(p => new { p.SecurityAlias, p.EffectiveDate })
+            .ToListAsync();
+
+        var existingSet = existingKeys
+            .Select(k => (k.SecurityAlias, k.EffectiveDate))
+            .ToHashSet();
+
+        // Filter to only new prices
+        var newPrices = priceList
+            .Where(p => !existingSet.Contains((p.SecurityAlias, p.EffectiveDate.Date)))
+            .ToList();
+
+        if (newPrices.Count == 0)
+        {
+            _logger.LogInformation("Bulk insert: All {Total} prices already exist, nothing to insert", priceList.Count);
+            return 0;
+        }
+
+        _logger.LogInformation("Bulk insert: {New} new prices out of {Total} total (skipping {Existing} existing)",
+            newPrices.Count, priceList.Count, priceList.Count - newPrices.Count);
+
         // Process in batches of 1000 for efficiency with large datasets
-        foreach (var batch in priceList.Chunk(1000))
+        foreach (var batch in newPrices.Chunk(1000))
         {
             var entities = batch.Select(dto => new PriceEntity
             {
