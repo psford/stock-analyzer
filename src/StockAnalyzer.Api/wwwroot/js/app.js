@@ -16,6 +16,9 @@ const App = {
     hideTimeout: null,
     isHoverCardHovered: false,
 
+    // Cache for pre-fetched news (keyed by "TICKER:YYYY-MM-DD:up/down")
+    newsCache: {},
+
     // Comparison feature state
     comparisonTicker: null,
     comparisonHistoryData: null,
@@ -810,6 +813,7 @@ const App = {
 
         this.currentTicker = ticker;
         this.currentPeriod = document.getElementById('period-select').value;
+        this.newsCache = {}; // Clear news cache for new ticker
         this.showLoading();
 
         try {
@@ -835,6 +839,9 @@ const App = {
             this.renderNews(news);
 
             this.showResults();
+
+            // Pre-fetch news for significant moves in background
+            this.prefetchNewsForMoves();
 
             // Show "Add to Watchlist" button
             if (typeof Watchlist !== 'undefined') {
@@ -1069,6 +1076,9 @@ const App = {
             this.renderChart();
             this.attachChartHoverListeners();
             this.renderSignificantMoves(this.significantMovesData);
+
+            // Pre-fetch news for the new set of moves
+            this.prefetchNewsForMoves();
         } catch (error) {
             console.error('Failed to refresh significant moves:', error);
         }
@@ -1127,6 +1137,50 @@ const App = {
                 this.scheduleHideHoverCard();
             });
         }
+    },
+
+    /**
+     * Pre-fetch news for all significant moves in the background.
+     * Called after chart renders to have news ready before user hovers.
+     */
+    prefetchNewsForMoves() {
+        if (!this.significantMovesData?.moves || !this.currentTicker) return;
+
+        const ticker = this.currentTicker;
+        const moves = this.significantMovesData.moves;
+
+        console.log(`Pre-fetching news for ${moves.length} significant moves...`);
+
+        // Fetch news for each move in parallel (but don't await - run in background)
+        moves.forEach(move => {
+            const moveDate = new Date(move.date);
+            const dateParam = moveDate.toISOString().split('T')[0];
+            const direction = move.percentChange >= 0 ? 'up' : 'down';
+            const cacheKey = `${ticker}:${dateParam}:${direction}`;
+
+            // Skip if already cached
+            if (this.newsCache[cacheKey]) return;
+
+            // Mark as pending to avoid duplicate fetches
+            this.newsCache[cacheKey] = { pending: true };
+
+            fetch(`/api/stock/${ticker}/news/move?date=${dateParam}&change=${move.percentChange}`)
+                .then(response => response.json())
+                .then(data => {
+                    this.newsCache[cacheKey] = {
+                        articles: data.articles || [],
+                        fetchedAt: Date.now()
+                    };
+                })
+                .catch(() => {
+                    // Cache the failure so we don't retry immediately
+                    this.newsCache[cacheKey] = {
+                        articles: [],
+                        error: true,
+                        fetchedAt: Date.now()
+                    };
+                });
+        });
     },
 
     /**
@@ -1211,45 +1265,77 @@ const App = {
         // Show animal image immediately
         setAnimalImage();
 
-        // Show loading state while fetching news
-        headlineEl.textContent = 'Loading news...';
-        headlineEl.href = '#';
-        headlineEl.style.display = 'block';
-        summaryEl.textContent = '';
-        summaryEl.style.display = 'none';
-        sourceEl.textContent = '';
-
-        // Lazy-load news from API
+        // Build cache key
         const ticker = this.currentTicker;
         const dateParam = moveDate.toISOString().split('T')[0];
-        const changeParam = moveData.percentChange;
+        const direction = moveData.percentChange >= 0 ? 'up' : 'down';
+        const cacheKey = `${ticker}:${dateParam}:${direction}`;
 
-        fetch(`/api/stock/${ticker}/news/move?date=${dateParam}&change=${changeParam}`)
-            .then(response => response.json())
-            .then(data => {
-                const news = data.articles && data.articles.length > 0 ? data.articles[0] : null;
-                if (news) {
-                    headlineEl.textContent = news.headline;
-                    headlineEl.href = news.url || '#';
-                    summaryEl.textContent = news.summary || '';
-                    summaryEl.style.display = news.summary ? 'block' : 'none';
-                    const newsDate = new Date(news.publishedAt);
-                    sourceEl.textContent = `${news.source} • ${newsDate.toLocaleDateString()}`;
-                } else {
-                    headlineEl.textContent = 'No related news found';
-                    headlineEl.href = '#';
-                    summaryEl.textContent = 'No news articles were found for this date range.';
-                    summaryEl.style.display = 'block';
-                    sourceEl.textContent = '';
-                }
-            })
-            .catch(() => {
-                headlineEl.textContent = 'Unable to load news';
+        // Helper to display news content
+        const displayNews = (articles) => {
+            const news = articles && articles.length > 0 ? articles[0] : null;
+            if (news) {
+                headlineEl.textContent = news.headline;
+                headlineEl.href = news.url || '#';
+                summaryEl.textContent = news.summary || '';
+                summaryEl.style.display = news.summary ? 'block' : 'none';
+                const newsDate = new Date(news.publishedAt);
+                sourceEl.textContent = `${news.source} • ${newsDate.toLocaleDateString()}`;
+            } else {
+                headlineEl.textContent = 'No related news found';
                 headlineEl.href = '#';
-                summaryEl.textContent = 'News service temporarily unavailable.';
+                summaryEl.textContent = 'No news articles were found for this date range.';
                 summaryEl.style.display = 'block';
                 sourceEl.textContent = '';
-            });
+            }
+        };
+
+        // Check cache first
+        const cached = this.newsCache[cacheKey];
+        if (cached && !cached.pending) {
+            // Cache hit - display immediately
+            displayNews(cached.articles);
+        } else {
+            // Cache miss or still pending - show loading and fetch
+            headlineEl.textContent = 'Loading news...';
+            headlineEl.href = '#';
+            headlineEl.style.display = 'block';
+            summaryEl.textContent = '';
+            summaryEl.style.display = 'none';
+            sourceEl.textContent = '';
+
+            // If pending, poll for completion; otherwise fetch fresh
+            if (cached?.pending) {
+                // Poll for cache completion
+                const pollInterval = setInterval(() => {
+                    const updated = this.newsCache[cacheKey];
+                    if (updated && !updated.pending) {
+                        clearInterval(pollInterval);
+                        displayNews(updated.articles);
+                    }
+                }, 50);
+                // Timeout after 5 seconds
+                setTimeout(() => clearInterval(pollInterval), 5000);
+            } else {
+                // Fetch fresh
+                fetch(`/api/stock/${ticker}/news/move?date=${dateParam}&change=${moveData.percentChange}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        this.newsCache[cacheKey] = {
+                            articles: data.articles || [],
+                            fetchedAt: Date.now()
+                        };
+                        displayNews(data.articles);
+                    })
+                    .catch(() => {
+                        headlineEl.textContent = 'Unable to load news';
+                        headlineEl.href = '#';
+                        summaryEl.textContent = 'News service temporarily unavailable.';
+                        summaryEl.style.display = 'block';
+                        sourceEl.textContent = '';
+                    });
+            }
+        }
 
         // Position the card near the cursor
         const x = event.clientX || event.pageX;
