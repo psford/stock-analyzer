@@ -87,6 +87,9 @@ Planned features and improvements for the Stock Analyzer .NET application.
 | Mobile responsiveness | Responsive layout for mobile/tablet with drawer navigation | 01/18/2026 |
 | App Service migration | Migrated from ACI to App Service B1 for zero-downtime deploys | 01/19/2026 |
 | Azure Key Vault | Secrets management for SQL password, Finnhub API key, Cloudflare tokens | 01/19/2026 |
+| SecurityMaster & Prices tables | Persistent data infrastructure with `data` schema, ~3.5M+ price records for S&P 500 | 01/23/2026 |
+| EODHD API integration | Historical price data loading with 10-year backfill capability | 01/23/2026 |
+| Database-first price lookup | 3-tier lookup (cache → database → API) with background backfill for new tickers | 01/23/2026 |
 
 ---
 
@@ -171,6 +174,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 
 | Date | Change |
 |------|--------|
+| 01/23/2026 | **v3.0** - Data infrastructure: SecurityMaster & Prices tables (3.5M+ rows), EODHD API integration, database-first price lookup with background backfill, sub-second chart loading for pre-cached securities |
 | 01/23/2026 | **v2.17** - Lazy news loading: decoupled news from chart load, new `/api/stock/{ticker}/news/move` endpoint, 162ms vs 22s initial load |
 | 01/22/2026 | **v2.14** - Weighted relevance search: scoreMatch() with popularity boost, Ford/Apple now surface before substring matches |
 | 01/22/2026 | **v2.13** - Stochastic Oscillator: %K/%D lines with 14,3 parameters, overbought (80) / oversold (20) zones, subplot rendering, 6 new unit tests |
