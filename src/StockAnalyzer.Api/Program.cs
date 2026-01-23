@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using Serilog.Events;
@@ -402,13 +403,23 @@ app.MapGet("/api/stock/{ticker}/significant", async (
     decimal? threshold,
     string? period,
     AggregatedStockDataService stockService,
-    AnalysisService analysisService) =>
+    AnalysisService analysisService,
+    IMemoryCache cache) =>
 {
     if (!IsValidTicker(ticker))
         return InvalidTickerResult();
 
-    // Use provided period or default to 1y
+    // Use provided values or defaults
     var historyPeriod = period ?? "1y";
+    var thresholdValue = threshold ?? 3.0m;
+
+    // Check cache first (5 minute TTL)
+    var cacheKey = $"significant:{ticker.ToUpper()}:{thresholdValue}:{historyPeriod}";
+    if (cache.TryGetValue(cacheKey, out SignificantMovesResult? cachedResult) && cachedResult != null)
+    {
+        return Results.Ok(cachedResult);
+    }
+
     var history = await stockService.GetHistoricalDataAsync(ticker, historyPeriod);
     if (history == null)
         return Results.NotFound(new { error = "Historical data not found", symbol = ticker });
@@ -416,8 +427,11 @@ app.MapGet("/api/stock/{ticker}/significant", async (
     var moves = await analysisService.DetectSignificantMovesAsync(
         ticker,
         history.Data,
-        threshold ?? 3.0m,
+        thresholdValue,
         includeNews: true);
+
+    // Cache for 5 minutes
+    cache.Set(cacheKey, moves, TimeSpan.FromMinutes(5));
 
     return Results.Ok(moves);
 })
