@@ -30,6 +30,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 | Sentiment-filtered news | Headlines filtered to match price direction; market news fallback | 01/22/2026 |
 | 3-tier sentiment analysis | Ensemble: keyword (60%) + VADER (40%) + optional FinBERT ONNX | 01/23/2026 |
 | Word-boundary matching | Regex-based keyword detection prevents substring false positives | 01/23/2026 |
+| Lazy news loading | News fetched on marker hover, not during chart load; 162ms vs 22s initial load | 01/23/2026 |
 
 ### Image System
 
@@ -170,6 +171,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 
 | Date | Change |
 |------|--------|
+| 01/23/2026 | **v2.17** - Lazy news loading: decoupled news from chart load, new `/api/stock/{ticker}/news/move` endpoint, 162ms vs 22s initial load |
 | 01/22/2026 | **v2.14** - Weighted relevance search: scoreMatch() with popularity boost, Ford/Apple now surface before substring matches |
 | 01/22/2026 | **v2.13** - Stochastic Oscillator: %K/%D lines with 14,3 parameters, overbought (80) / oversold (20) zones, subplot rendering, 6 new unit tests |
 | 01/22/2026 | **v2.12** - Client-side instant search: ~30K symbols (315KB gzipped) loaded to browser at page load, sub-millisecond search latency, 5-second debounced server fallback for unknown symbols, symbolSearch.js module |

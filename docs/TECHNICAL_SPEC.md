@@ -1,6 +1,6 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.16
+**Version:** 2.17
 **Last Updated:** 2026-01-23
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
@@ -216,7 +216,8 @@ Environment variables: `TWELVEDATA_API_KEY`, `FMP_API_KEY`
 | `/api/stock/{ticker}` | GET | Stock information | `ticker`: Stock symbol |
 | `/api/stock/{ticker}/history` | GET | Historical OHLCV data | `ticker`, `period` (optional, default: 1y) |
 | `/api/stock/{ticker}/news` | GET | Company news | `ticker`, `days` (optional, default: 30) |
-| `/api/stock/{ticker}/significant` | GET | Significant price moves | `ticker`, `threshold` (optional, default: 3.0) |
+| `/api/stock/{ticker}/significant` | GET | Significant price moves (no news) | `ticker`, `threshold` (optional, default: 3.0), `period` (optional) |
+| `/api/stock/{ticker}/news/move` | GET | News for specific move (lazy-loaded) | `ticker`, `date`, `change`, `limit` (optional, default: 5) |
 | `/api/stock/{ticker}/analysis` | GET | Performance metrics + MAs | `ticker`, `period` (optional) |
 | `/api/search` | GET | Ticker search | `q`: Search query (min 2 chars) |
 | `/api/trending` | GET | Trending stocks | `count` (optional, default: 10) |
