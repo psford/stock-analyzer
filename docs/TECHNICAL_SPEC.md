@@ -1,6 +1,6 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.12
+**Version:** 2.13
 **Last Updated:** 2026-01-22
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
@@ -427,7 +427,18 @@ public record BollingerData
 }
 ```
 
-### 4.8 CompanyProfile
+### 4.8 StochasticData
+
+```csharp
+public record StochasticData
+{
+    public required DateTime Date { get; init; }
+    public decimal? K { get; init; }    // %K line (0-100), null when insufficient data
+    public decimal? D { get; init; }    // %D signal line (SMA of %K), null when insufficient data
+}
+```
+
+### 4.10 CompanyProfile
 
 ```csharp
 public record CompanyProfile
@@ -451,7 +462,7 @@ public record CompanyProfile
 }
 ```
 
-### 4.9 TickerHolding
+### 4.11 TickerHolding
 
 ```csharp
 public record TickerHolding
@@ -462,7 +473,7 @@ public record TickerHolding
 }
 ```
 
-### 4.10 CombinedPortfolioResult
+### 4.12 CombinedPortfolioResult
 
 ```csharp
 public record CombinedPortfolioResult
@@ -636,6 +647,7 @@ Combines news from multiple sources (Finnhub, Marketaux) and applies relevance s
 | `CalculateRsi(data, period)` | Calculate RSI using Wilder's smoothing |
 | `CalculateMacd(data, fast, slow, signal)` | Calculate MACD line, signal line, histogram |
 | `CalculateBollingerBands(data, period, stdDev)` | Calculate Bollinger Bands (upper, middle, lower) |
+| `CalculateStochastic(data, kPeriod, dPeriod)` | Calculate Stochastic Oscillator (%K and %D lines) |
 | `CalculateEma(values, period)` | Private helper for EMA calculation |
 
 **RSI Calculation (Wilder's Smoothing Method):**
@@ -662,6 +674,16 @@ Combines news from multiple sources (Finnhub, Marketaux) and applies relevance s
 2. Standard Deviation = √(Σ(close - SMA)² / period)
 3. Upper Band = Middle Band + (2 × Standard Deviation)
 4. Lower Band = Middle Band - (2 × Standard Deviation)
+```
+
+**Stochastic Oscillator Calculation:**
+```
+1. For each day (starting at kPeriod):
+   - Highest High = max(High) over kPeriod days
+   - Lowest Low = min(Low) over kPeriod days
+   - %K = 100 × (Close - Lowest Low) / (Highest High - Lowest Low)
+2. %D = SMA of %K over dPeriod days
+3. Minimum data required: kPeriod + dPeriod - 1 = 16 points for first valid %D
 ```
 
 **EMA Formula:**
@@ -1309,7 +1331,7 @@ tests/
 | Category | Tests | Description |
 |----------|-------|-------------|
 | AggregatedNewsService | 13 | Multi-source news aggregation, deduplication, scoring |
-| AnalysisService | 14 | Moving averages, significant moves, performance, RSI, MACD calculations |
+| AnalysisService | 19 | Moving averages, significant moves, performance, RSI, MACD, Stochastic calculations |
 | HeadlineRelevanceService | 18 | Relevance scoring, ticker detection, deduplication |
 | MarketauxService | 18 | HTTP mocking, sentiment mapping, API token handling |
 | NewsService | 11 | HTTP mocking, date range handling, JSON parsing |
@@ -1470,7 +1492,7 @@ stock_analyzer_dotnet/
 │       │   ├── SearchResult.cs
 │       │   ├── SignificantMove.cs
 │       │   ├── Watchlist.cs
-│       │   └── TechnicalIndicators.cs    # RsiData, MacdData records
+│       │   └── TechnicalIndicators.cs    # RsiData, MacdData, StochasticData records
 │       └── Services/
 │           ├── StockDataService.cs
 │           ├── NewsService.cs
@@ -2157,6 +2179,7 @@ const [stockInfo, history, analysis, significantMoves, news] = await Promise.all
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.13 | 2026-01-22 | **Stochastic Oscillator:** New StochasticData record in TechnicalIndicators.cs, CalculateStochastic() method in AnalysisService (K=14, D=3 parameters). API /analysis endpoint includes stochastic array. Frontend Stochastic checkbox, charts.js subplot with %K (teal) and %D (orange dashed) lines, overbought/oversold zones at 80/20. 5 new unit tests for CalculateStochastic. |
 | 2.12 | 2026-01-22 | **Client-Side Instant Search:** Symbol data loaded to browser at page load for sub-millisecond search. New symbolSearch.js module fetches /data/symbols.txt (~857KB, ~315KB gzipped) containing ~30K US symbols in pipe-delimited format. SymbolCache.GenerateClientFile() generates static file at startup and after daily Finnhub refresh. Search ranking: exact match > prefix match > description contains. 5-second debounced server fallback for unknown symbols. API.search() uses client-side first, api.js searchServerFallback() method for fallback. Offline-capable once symbols loaded. |
 | 2.11 | 2026-01-22 | **Full-Text Search for Fast Symbol Lookup:** Added SQL Server Full-Text Search to achieve sub-10ms search latency on 30K+ symbols. EF Core migration creates FULLTEXT CATALOG and INDEX on Description column. SqlSymbolRepository uses CONTAINS() predicate for production (SQL Server), with automatic fallback to LINQ for testing (InMemory) or SQL Server Express without FTS installed. Provider detection via `IsSqlServer()`, error handling for FTS unavailability (SQL Error 7601/7609). |
 | 2.10 | 2026-01-22 | **Persistent Image Cache:** Database-backed image cache replaces in-memory ConcurrentQueue for persistence across restarts. CachedImageEntity model with EF Core migration, ICachedImageRepository interface with SqlCachedImageRepository (random selection via `ORDER BY NEWID()`). ImageCacheService refactored to use IServiceScopeFactory for scoped DbContext access. Cache increased to 1000 images per type. Status page fixed: dynamic maxSize from API, added TwelveData/FMP health check cards. |

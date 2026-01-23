@@ -598,4 +598,160 @@ public class AnalysisServiceTests
     }
 
     #endregion
+
+    #region CalculateStochastic Tests
+
+    [Fact]
+    public void CalculateStochastic_WithSufficientData_ReturnsValidValues()
+    {
+        // Arrange - Create 30 data points (more than 14 + 3 - 1 = 16 minimum)
+        var data = TestDataFactory.CreateOhlcvDataList(30);
+
+        // Act
+        var result = _sut.CalculateStochastic(data);
+
+        // Assert
+        result.Should().HaveCount(30);
+
+        // First 13 values should have null K (not enough data for 14-period lookback)
+        for (int i = 0; i < 13; i++)
+        {
+            result[i].K.Should().BeNull($"index {i} should not have enough data for %K");
+        }
+
+        // Index 13 (14th point) should have K value but null D
+        result[13].K.Should().NotBeNull("index 13 should have %K value");
+        result[13].D.Should().BeNull("index 13 should not have %D value yet");
+
+        // Index 15 (16th point) should have both K and D values (14 + 3 - 1 = 16 minimum for D)
+        result[15].K.Should().NotBeNull("index 15 should have %K value");
+        result[15].D.Should().NotBeNull("index 15 should have %D value");
+    }
+
+    [Fact]
+    public void CalculateStochastic_WithInsufficientData_ReturnsAllNulls()
+    {
+        // Arrange - Only 10 data points (less than 14 period)
+        var data = TestDataFactory.CreateOhlcvDataList(10);
+
+        // Act
+        var result = _sut.CalculateStochastic(data);
+
+        // Assert
+        result.Should().HaveCount(10);
+        result.Should().AllSatisfy(s =>
+        {
+            s.K.Should().BeNull();
+            s.D.Should().BeNull();
+        });
+    }
+
+    [Fact]
+    public void CalculateStochastic_ValuesAreInValidRange()
+    {
+        // Arrange - Create data with various price movements
+        var data = new List<OhlcvData>();
+        var basePrice = 100m;
+
+        // Create 30 days with varying prices
+        for (int i = 0; i < 30; i++)
+        {
+            var variance = (i % 5) * 2m - 4m; // -4, -2, 0, +2, +4 pattern
+            var close = basePrice + variance;
+            data.Add(TestDataFactory.CreateOhlcvData(
+                date: DateTime.Today.AddDays(-30 + i),
+                open: basePrice,
+                high: basePrice + 5m,
+                low: basePrice - 5m,
+                close: close
+            ));
+        }
+
+        // Act
+        var result = _sut.CalculateStochastic(data);
+
+        // Assert - All non-null K and D values should be between 0 and 100
+        var validKValues = result.Where(r => r.K.HasValue).Select(r => r.K!.Value);
+        validKValues.Should().AllSatisfy(k =>
+        {
+            k.Should().BeGreaterOrEqualTo(0);
+            k.Should().BeLessOrEqualTo(100);
+        });
+
+        var validDValues = result.Where(r => r.D.HasValue).Select(r => r.D!.Value);
+        validDValues.Should().AllSatisfy(d =>
+        {
+            d.Should().BeGreaterOrEqualTo(0);
+            d.Should().BeLessOrEqualTo(100);
+        });
+    }
+
+    [Fact]
+    public void CalculateStochastic_WhenCloseEqualsHigh_KIsHundred()
+    {
+        // Arrange - Create data where close always equals high (strongest possible)
+        var data = new List<OhlcvData>();
+        for (int i = 0; i < 20; i++)
+        {
+            data.Add(TestDataFactory.CreateOhlcvData(
+                date: DateTime.Today.AddDays(-20 + i),
+                open: 100m,
+                high: 110m,
+                low: 90m,
+                close: 110m  // Close equals high
+            ));
+        }
+
+        // Act
+        var result = _sut.CalculateStochastic(data);
+
+        // Assert - K should be 100 when close equals the highest high in the lookback period
+        var kValues = result.Where(r => r.K.HasValue).Select(r => r.K!.Value).ToList();
+        kValues.Should().NotBeEmpty();
+        kValues.Last().Should().Be(100m, "%K should be 100 when close equals highest high");
+    }
+
+    [Fact]
+    public void CalculateStochastic_WhenCloseEqualsLow_KIsZero()
+    {
+        // Arrange - Create data where close always equals low (weakest possible)
+        var data = new List<OhlcvData>();
+        for (int i = 0; i < 20; i++)
+        {
+            data.Add(TestDataFactory.CreateOhlcvData(
+                date: DateTime.Today.AddDays(-20 + i),
+                open: 100m,
+                high: 110m,
+                low: 90m,
+                close: 90m  // Close equals low
+            ));
+        }
+
+        // Act
+        var result = _sut.CalculateStochastic(data);
+
+        // Assert - K should be 0 when close equals the lowest low in the lookback period
+        var kValues = result.Where(r => r.K.HasValue).Select(r => r.K!.Value).ToList();
+        kValues.Should().NotBeEmpty();
+        kValues.Last().Should().Be(0m, "%K should be 0 when close equals lowest low");
+    }
+
+    [Fact]
+    public void CalculateStochastic_DatesMatchInput()
+    {
+        // Arrange
+        var data = TestDataFactory.CreateOhlcvDataList(20);
+
+        // Act
+        var result = _sut.CalculateStochastic(data);
+
+        // Assert
+        result.Should().HaveCount(20);
+        for (int i = 0; i < 20; i++)
+        {
+            result[i].Date.Should().Be(data[i].Date);
+        }
+    }
+
+    #endregion
 }

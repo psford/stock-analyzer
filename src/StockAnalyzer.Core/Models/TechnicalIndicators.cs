@@ -71,3 +71,26 @@ public record BollingerData
     /// </summary>
     public decimal? LowerBand { get; init; }
 }
+
+/// <summary>
+/// Stochastic Oscillator data point.
+/// Compares a stock's closing price to its price range over a period.
+/// Values above 80 typically indicate overbought conditions.
+/// Values below 20 typically indicate oversold conditions.
+/// </summary>
+public record StochasticData
+{
+    public required DateTime Date { get; init; }
+
+    /// <summary>
+    /// %K line (fast stochastic) = 100 × (Close - Lowest Low) / (Highest High - Lowest Low).
+    /// Value ranges from 0-100. Null when insufficient data for calculation.
+    /// </summary>
+    public decimal? K { get; init; }
+
+    /// <summary>
+    /// %D line (signal line) = Simple Moving Average of %K over D period.
+    /// Value ranges from 0-100. Null when insufficient data for calculation.
+    /// </summary>
+    public decimal? D { get; init; }
+}

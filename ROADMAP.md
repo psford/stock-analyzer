@@ -19,7 +19,8 @@ Planned features and improvements for the Stock Analyzer .NET application.
 | Chart markers | Triangle markers for significant price moves | 01/16/2026 |
 | Wikipedia-style popups | Hover popups with news headlines and thumbnails | 01/16/2026 |
 | Configurable threshold | Slider to adjust significant move threshold (3-10%) | 01/16/2026 |
-| Technical indicators | RSI, MACD, and Bollinger Bands with toggle checkboxes | 01/17/2026 |
+| Technical indicators | RSI, MACD, Bollinger Bands, and Stochastic Oscillator with toggle checkboxes | 01/17/2026 |
+| Stochastic Oscillator | %K/%D lines with 14,3 parameters, overbought/oversold zones | 01/22/2026 |
 | Stock comparison | Normalized % change comparison with benchmark buttons | 01/17/2026 |
 | Dark mode | Full dark mode support with localStorage persistence | 01/16/2026 |
 | Watchlist | Multiple watchlists with ticker management, JSON storage, multi-user ready | 01/17/2026 |
@@ -92,7 +93,6 @@ Planned features and improvements for the Stock Analyzer .NET application.
 |---------|-------------|--------|
 | Staging environment | Azure staging slot for pre-production testing (separate DB, same infra) | Planned |
 | Fix AAPL news mismatch | News headlines can be misleading vs actual price movement | Planned |
-| Stochastic Oscillator | Add Stochastic to technical indicators | Planned |
 | Brinson attribution analysis | Major feature for mutual fund performance evaluation | Planned |
 
 ### Medium Priority
@@ -163,6 +163,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 
 | Date | Change |
 |------|--------|
+| 01/22/2026 | **v2.13** - Stochastic Oscillator: %K/%D lines with 14,3 parameters, overbought (80) / oversold (20) zones, subplot rendering, 6 new unit tests |
 | 01/22/2026 | **v2.12** - Client-side instant search: ~30K symbols (315KB gzipped) loaded to browser at page load, sub-millisecond search latency, 5-second debounced server fallback for unknown symbols, symbolSearch.js module |
 | 01/21/2026 | **v2.10** - Local symbol database for fast ticker search: ~30K US symbols cached in Azure SQL, sub-10ms search latency, daily Finnhub sync, 18 new unit tests |
 | 01/21/2026 | Cold start optimization: deferred ImageCacheService prefill, fixed chart markers to match selected time period |
