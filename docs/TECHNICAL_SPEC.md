@@ -1,6 +1,6 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.13
+**Version:** 2.14
 **Last Updated:** 2026-01-22
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
@@ -1008,24 +1008,45 @@ const API = {
 - Import watchlists from JSON file
 - Storage usage tracking
 
-**symbolSearch.js** - Client-side instant search (v2.12+):
+**symbolSearch.js** - Client-side instant search with weighted relevance (v2.14+):
 ```javascript
 const SymbolSearch = {
     symbols: [],        // Array of {symbol, description}
     symbolMap: {},      // O(1) exact match lookup
+    popularTickers: {}, // Popularity boost map (~100 well-known tickers)
     isLoaded: false,
 
-    async load() { ... },     // Fetch /data/symbols.txt at page load
-    search(query, limit) { ... },  // Instant prefix + description search
-    exists(symbol) { ... },   // Check if symbol exists
-    get(symbol) { ... }       // Get symbol info by exact match
+    async load() { ... },           // Fetch /data/symbols.txt at page load
+    search(query, limit) { ... },   // Weighted relevance scoring
+    scoreMatch(entry, query) { ... }, // Calculate relevance score
+    exists(symbol) { ... },         // Check if symbol exists
+    get(symbol) { ... }             // Get symbol info by exact match
 };
 ```
 - Loads ~30K symbols (~315KB gzipped) at page load
 - Sub-millisecond search latency (no network calls)
-- Ranking: exact match > prefix match > description contains
 - Offline-capable once loaded
 - 5-second debounced server fallback for unknown symbols
+
+**Relevance Scoring Algorithm (v2.14+):**
+
+| Match Type | Base Score | Example |
+|------------|------------|---------|
+| Exact ticker match | 1000 | Query "F" → "F" (Ford) |
+| Ticker starts with query | 200 | Query "FORD" → "FORD..." |
+| Description word starts with query | 100 | Query "ford" → "FORD Motor" |
+| Description contains query | 25 | Query "ford" → "BedFORD" |
+
+**Popularity Boost (added to base score):**
+
+| Tier | Boost | Examples |
+|------|-------|----------|
+| Mega-cap / Household | +50 | AAPL, MSFT, F, TSLA |
+| Major indices / ETFs | +40 | SPY, QQQ, ^DJI |
+| Large-cap well-known | +30 | JPM, WMT, XOM, BA |
+| Common tickers | +10 | USB, NEE, TSM |
+
+Results sorted by score descending, then alphabetically for ties.
 
 **watchlist.js** - Watchlist sidebar and combined view:
 - Watchlist CRUD operations
@@ -2179,6 +2200,7 @@ const [stockInfo, history, analysis, significantMoves, news] = await Promise.all
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.14 | 2026-01-22 | **Weighted Relevance Search:** symbolSearch.js updated with scoreMatch() method and popularTickers map. Scoring: exact ticker (1000) > ticker prefix (200) > word start (100) > substring (25). Popularity boost (+10 to +50) for ~100 well-known tickers (AAPL, F, SPY, etc.). Results sorted by score descending. Ford Motor Co (F) now surfaces above "Bedford" substring matches when searching "ford". |
 | 2.13 | 2026-01-22 | **Stochastic Oscillator:** New StochasticData record in TechnicalIndicators.cs, CalculateStochastic() method in AnalysisService (K=14, D=3 parameters). API /analysis endpoint includes stochastic array. Frontend Stochastic checkbox, charts.js subplot with %K (teal) and %D (orange dashed) lines, overbought/oversold zones at 80/20. 5 new unit tests for CalculateStochastic. |
 | 2.12 | 2026-01-22 | **Client-Side Instant Search:** Symbol data loaded to browser at page load for sub-millisecond search. New symbolSearch.js module fetches /data/symbols.txt (~857KB, ~315KB gzipped) containing ~30K US symbols in pipe-delimited format. SymbolCache.GenerateClientFile() generates static file at startup and after daily Finnhub refresh. Search ranking: exact match > prefix match > description contains. 5-second debounced server fallback for unknown symbols. API.search() uses client-side first, api.js searchServerFallback() method for fallback. Offline-capable once symbols loaded. |
 | 2.11 | 2026-01-22 | **Full-Text Search for Fast Symbol Lookup:** Added SQL Server Full-Text Search to achieve sub-10ms search latency on 30K+ symbols. EF Core migration creates FULLTEXT CATALOG and INDEX on Description column. SqlSymbolRepository uses CONTAINS() predicate for production (SQL Server), with automatic fallback to LINQ for testing (InMemory) or SQL Server Express without FTS installed. Provider detection via `IsSqlServer()`, error handling for FTS unavailability (SQL Error 7601/7609). |

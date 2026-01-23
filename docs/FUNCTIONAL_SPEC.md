@@ -1,6 +1,6 @@
 # Functional Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.5
+**Version:** 2.6
 **Last Updated:** 2026-01-22
 **Author:** Claude (AI Assistant)
 **Status:** Production
@@ -77,8 +77,22 @@ The Stock Analyzer Dashboard allows users to:
 | FR-001.12 | If client-side search returns no results, the system must wait 5 seconds then query the server |
 | FR-001.13 | The 5-second server fallback must be debounced (resets if user keeps typing) |
 | FR-001.14 | When no local results found, the system must display "No local results. Checking server in a few seconds..." |
+| FR-001.15 | The system must rank search results by relevance, not alphabetically |
+| FR-001.16 | Exact ticker matches must appear first in search results |
+| FR-001.17 | Well-known stocks must be boosted over obscure substring matches |
+| FR-001.18 | Results where the company name starts with the query must rank higher than substring matches |
 
 **User Story:** *As an investor, I want to search for stocks by company name so that I don't need to memorize ticker symbols.*
+
+**Relevance Scoring:**
+
+| Match Type | Score | Example |
+|------------|-------|---------|
+| Exact ticker match | 1000 | Query "F" → symbol "F" |
+| Ticker starts with query | 200 | Query "FORD" → symbol "FORD..." |
+| Company name word starts with query | 100 | Query "ford" → "FORD Motor Company" |
+| Company name contains query (substring) | 25 | Query "ford" → "BedFORD..." |
+| Popularity boost | +10 to +50 | Well-known tickers (AAPL, F, etc.) |
 
 **Client-Side Search Architecture:**
 
@@ -946,6 +960,7 @@ The dashboard is fully responsive and adapts to mobile devices.
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
+| 2.6 | 2026-01-22 | Weighted relevance scoring for search (FR-001.15-18): Results ranked by match type + popularity boost, Ford/Apple surface before substring matches | Claude |
 | 2.5 | 2026-01-22 | Stochastic Oscillator (FR-011.18-23): %K and %D lines with 14,3 parameters, overbought/oversold zones at 80/20, separate panel below price chart | Claude |
 | 2.4 | 2026-01-22 | Client-side instant search (FR-001.8-14): Symbol data loaded to browser at startup (~315KB gzipped), sub-millisecond search, 5-second debounced server fallback for unknown symbols | Claude |
 | 2.3 | 2026-01-21 | Added fast search performance requirement (FR-001.8): Sub-10ms search latency via local symbol database | Claude |

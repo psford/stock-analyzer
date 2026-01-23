@@ -26,6 +26,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 | Watchlist | Multiple watchlists with ticker management, JSON storage, multi-user ready | 01/17/2026 |
 | Fast ticker search | Local symbol database (~30K US symbols) with sub-10ms search latency | 01/21/2026 |
 | Client-side instant search | Symbol data loaded to browser for sub-millisecond search, 5s server fallback | 01/22/2026 |
+| Weighted relevance search | Results ranked by match type + popularity boost; Ford/Apple surface before substring matches | 01/22/2026 |
 
 ### Image System
 
@@ -163,6 +164,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 
 | Date | Change |
 |------|--------|
+| 01/22/2026 | **v2.14** - Weighted relevance search: scoreMatch() with popularity boost, Ford/Apple now surface before substring matches |
 | 01/22/2026 | **v2.13** - Stochastic Oscillator: %K/%D lines with 14,3 parameters, overbought (80) / oversold (20) zones, subplot rendering, 6 new unit tests |
 | 01/22/2026 | **v2.12** - Client-side instant search: ~30K symbols (315KB gzipped) loaded to browser at page load, sub-millisecond search latency, 5-second debounced server fallback for unknown symbols, symbolSearch.js module |
 | 01/21/2026 | **v2.10** - Local symbol database for fast ticker search: ~30K US symbols cached in Azure SQL, sub-10ms search latency, daily Finnhub sync, 18 new unit tests |
