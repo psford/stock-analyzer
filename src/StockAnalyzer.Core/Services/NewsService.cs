@@ -84,6 +84,114 @@ public class NewsService
     }
 
     /// <summary>
+    /// Get news for a specific date, filtered and ranked by sentiment match to price movement.
+    /// Falls back to market news if no sentiment-appropriate company news is found.
+    /// </summary>
+    /// <param name="symbol">Stock symbol</param>
+    /// <param name="date">Date of the price move</param>
+    /// <param name="priceChangePercent">The price change percentage (positive = up, negative = down)</param>
+    /// <param name="maxArticles">Maximum number of articles to return</param>
+    /// <returns>List of news items ranked by sentiment match</returns>
+    public async Task<List<NewsItem>> GetNewsForDateWithSentimentAsync(
+        string symbol,
+        DateTime date,
+        decimal priceChangePercent,
+        int maxArticles = 5)
+    {
+        // Get company-specific news
+        var companyNews = await GetNewsForDateAsync(symbol, date);
+
+        // Score and rank by sentiment match
+        var scoredNews = companyNews
+            .Select(article =>
+            {
+                var (sentiment, sentimentScore) = SentimentAnalyzer.Analyze(article.Headline);
+                var matchScore = SentimentAnalyzer.CalculateMatchScore(article.Headline, priceChangePercent);
+
+                // Enrich article with sentiment data
+                var enrichedArticle = article with
+                {
+                    Sentiment = sentiment.ToString().ToLower(),
+                    SentimentScore = sentimentScore
+                };
+
+                return new { Article = enrichedArticle, MatchScore = matchScore };
+            })
+            .OrderByDescending(x => x.MatchScore)
+            .ThenByDescending(x => x.Article.PublishedAt)
+            .ToList();
+
+        // Filter to only include sentiment-appropriate articles (score > 25 means not a strong mismatch)
+        var filteredNews = scoredNews
+            .Where(x => x.MatchScore > 25)
+            .Select(x => x.Article)
+            .Take(maxArticles)
+            .ToList();
+
+        // If we found sentiment-matched company news, return it
+        if (filteredNews.Count > 0)
+        {
+            return filteredNews;
+        }
+
+        // Fallback: try to get any company news (even if sentiment doesn't match perfectly)
+        var anyCompanyNews = scoredNews
+            .Select(x => x.Article)
+            .Take(maxArticles)
+            .ToList();
+
+        if (anyCompanyNews.Count > 0)
+        {
+            return anyCompanyNews;
+        }
+
+        // Final fallback: get market news for this date
+        // This handles cases where the move was due to broader market conditions
+        var marketNews = await GetMarketNewsForDateAsync(date, priceChangePercent, maxArticles);
+        return marketNews;
+    }
+
+    /// <summary>
+    /// Get market news for a specific date, filtered by sentiment match.
+    /// </summary>
+    private async Task<List<NewsItem>> GetMarketNewsForDateAsync(
+        DateTime date,
+        decimal priceChangePercent,
+        int maxArticles)
+    {
+        var marketResult = await GetMarketNewsAsync("general");
+
+        // Filter to news around the target date (within 2 days)
+        var relevantNews = marketResult.Articles
+            .Where(a => Math.Abs((a.PublishedAt - date).TotalDays) <= 2)
+            .ToList();
+
+        // Score by sentiment match
+        var scoredNews = relevantNews
+            .Select(article =>
+            {
+                var (sentiment, sentimentScore) = SentimentAnalyzer.Analyze(article.Headline);
+                var matchScore = SentimentAnalyzer.CalculateMatchScore(article.Headline, priceChangePercent);
+
+                var enrichedArticle = article with
+                {
+                    Sentiment = sentiment.ToString().ToLower(),
+                    SentimentScore = sentimentScore
+                };
+
+                return new { Article = enrichedArticle, MatchScore = matchScore };
+            })
+            .Where(x => x.MatchScore > 25)
+            .OrderByDescending(x => x.MatchScore)
+            .ThenByDescending(x => x.Article.PublishedAt)
+            .Select(x => x.Article)
+            .Take(maxArticles)
+            .ToList();
+
+        return scoredNews;
+    }
+
+    /// <summary>
     /// Get general market news (not stock-specific).
     /// Uses Finnhub's /news endpoint for broad market coverage.
     /// </summary>

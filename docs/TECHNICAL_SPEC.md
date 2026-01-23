@@ -1,6 +1,6 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.14
+**Version:** 2.15
 **Last Updated:** 2026-01-22
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
@@ -540,6 +540,8 @@ https://query2.finance.yahoo.com/v1/finance/search?q={query}&quotesCount=8&newsC
 | Method | Description |
 |--------|-------------|
 | `GetCompanyNewsAsync(symbol, fromDate)` | Fetch news from Finnhub |
+| `GetNewsForDateAsync(symbol, date)` | Fetch news for specific date (±1 day range) |
+| `GetNewsForDateWithSentimentAsync(symbol, date, priceChange, maxArticles)` | Fetch sentiment-filtered news matching price direction |
 | `GetCompanyProfileAsync(symbol)` | Fetch company profile with identifiers from Finnhub |
 | `GetSedolFromIsinAsync(isin)` | Look up SEDOL via OpenFIGI API |
 | `GetMarketNewsAsync(category)` | Fetch general market news from Finnhub |
@@ -567,6 +569,65 @@ Used to look up SEDOL for UK/Irish securities from ISIN.
 GET https://finnhub.io/api/v1/news?category={category}&token={api_key}
 ```
 Returns general market news. Categories: `general`, `forex`, `crypto`, `merger`.
+
+### 5.2.1 SentimentAnalyzer
+
+**File:** `StockAnalyzer.Core/Services/SentimentAnalyzer.cs`
+
+Static utility class for keyword-based sentiment analysis of news headlines. Used to filter news articles so they match price movement direction.
+
+| Method | Description |
+|--------|-------------|
+| `Analyze(headline)` | Returns (Sentiment, decimal score) for a headline |
+| `MatchesPriceDirection(headline, priceChange)` | Returns true if headline sentiment matches price direction |
+| `CalculateMatchScore(headline, priceChange)` | Returns 0-100 relevance score for sentiment-price alignment |
+
+**Sentiment Classification:**
+
+```csharp
+public enum Sentiment { Positive, Negative, Neutral }
+```
+
+**Keyword Lists (~50 each):**
+
+| Category | Examples |
+|----------|----------|
+| **Positive** | soars, surges, rallies, jumps, beats, upgrade, bullish, strong, record, boost |
+| **Negative** | plunges, crashes, tumbles, downgrade, bearish, warning, miss, drops, falls, weak |
+
+**Scoring Algorithm:**
+
+```
+sentiment_score = (positive_count - negative_count) / total_words
+                  clamped to [-1.0, +1.0]
+
+match_score (0-100):
+  - Neutral headline → 50 (base)
+  - Matching direction → 50 + (sentiment_score * 50 * direction_factor)
+  - Mismatching direction (≥5% move) → max(0, 50 - mismatch_penalty)
+  - Small price moves (< 5%) → lenient scoring (less strict matching)
+```
+
+**Usage in NewsService:**
+
+```csharp
+public async Task<List<NewsItem>> GetNewsForDateWithSentimentAsync(
+    string symbol, DateTime date, decimal priceChangePercent, int maxArticles = 5)
+{
+    // 1. Fetch company news
+    // 2. Score each headline with SentimentAnalyzer
+    // 3. Filter to articles with matchScore > 25
+    // 4. Fallback cascade: matched company → any company → market news
+}
+```
+
+**Fallback Cascade:**
+
+| Priority | Condition | Source |
+|----------|-----------|--------|
+| 1 | Sentiment-matched company news exists | Company news (filtered) |
+| 2 | Any company news exists | Company news (unfiltered, top 2) |
+| 3 | No company news | Market news matching price direction |
 
 ### 5.3 MarketauxService
 
@@ -2200,6 +2261,7 @@ const [stockInfo, history, analysis, significantMoves, news] = await Promise.all
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.15 | 2026-01-22 | **Sentiment-Filtered News:** SentimentAnalyzer.cs static utility with keyword-based sentiment analysis (~50 positive/negative keywords). NewsService.GetNewsForDateWithSentimentAsync() filters headlines to match price direction. AnalysisService.DetectSignificantMovesAsync() uses sentiment-aware news. Fallback cascade: sentiment-matched company news → any company news → market news. SentimentAnalyzerTests.cs (32 tests) covers positive/negative/neutral headlines, price matching, real-world Ford "Soars" bug scenario. |
 | 2.14 | 2026-01-22 | **Weighted Relevance Search:** symbolSearch.js updated with scoreMatch() method and popularTickers map. Scoring: exact ticker (1000) > ticker prefix (200) > word start (100) > substring (25). Popularity boost (+10 to +50) for ~100 well-known tickers (AAPL, F, SPY, etc.). Results sorted by score descending. Ford Motor Co (F) now surfaces above "Bedford" substring matches when searching "ford". |
 | 2.13 | 2026-01-22 | **Stochastic Oscillator:** New StochasticData record in TechnicalIndicators.cs, CalculateStochastic() method in AnalysisService (K=14, D=3 parameters). API /analysis endpoint includes stochastic array. Frontend Stochastic checkbox, charts.js subplot with %K (teal) and %D (orange dashed) lines, overbought/oversold zones at 80/20. 5 new unit tests for CalculateStochastic. |
 | 2.12 | 2026-01-22 | **Client-Side Instant Search:** Symbol data loaded to browser at page load for sub-millisecond search. New symbolSearch.js module fetches /data/symbols.txt (~857KB, ~315KB gzipped) containing ~30K US symbols in pipe-delimited format. SymbolCache.GenerateClientFile() generates static file at startup and after daily Finnhub refresh. Search ranking: exact match > prefix match > description contains. 5-second debounced server fallback for unknown symbols. API.search() uses client-side first, api.js searchServerFallback() method for fallback. Offline-capable once symbols loaded. |
