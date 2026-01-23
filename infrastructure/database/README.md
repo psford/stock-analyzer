@@ -100,7 +100,7 @@ After initial deployment, the following should run automatically:
 
 The BACPAC file is NOT committed to git (too large). Store in:
 
-- **Azure Blob Storage** (recommended) - `stockanalyzerbackups` container
+- **Azure Blob Storage** (current) - `https://stockanalyzerblob.blob.core.windows.net/backups/StockAnalyzer.bacpac`
 - **GitHub Releases** - As a release artifact
 - **Local backup** - `C:\Backups\StockAnalyzer\`
 
