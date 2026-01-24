@@ -99,6 +99,15 @@ public interface IPriceRepository
     /// <param name="securityAlias">The security's internal alias.</param>
     /// <returns>Number of price records for the security.</returns>
     Task<int> GetCountForSecurityAsync(int securityAlias);
+
+    /// <summary>
+    /// Get all distinct dates that have price data within a date range.
+    /// Useful for identifying gaps in coverage.
+    /// </summary>
+    /// <param name="startDate">Start of date range (inclusive).</param>
+    /// <param name="endDate">End of date range (inclusive).</param>
+    /// <returns>List of dates that have at least one price record.</returns>
+    Task<List<DateTime>> GetDistinctDatesAsync(DateTime startDate, DateTime endDate);
 }
 
 /// <summary>

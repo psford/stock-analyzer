@@ -256,4 +256,16 @@ public class SqlPriceRepository : IPriceRepository
     {
         return await _context.Prices.CountAsync(p => p.SecurityAlias == securityAlias);
     }
+
+    /// <inheritdoc />
+    public async Task<List<DateTime>> GetDistinctDatesAsync(DateTime startDate, DateTime endDate)
+    {
+        return await _context.Prices
+            .AsNoTracking()
+            .Where(p => p.EffectiveDate >= startDate.Date && p.EffectiveDate <= endDate.Date)
+            .Select(p => p.EffectiveDate)
+            .Distinct()
+            .OrderBy(d => d)
+            .ToListAsync();
+    }
 }
