@@ -24,7 +24,9 @@ var shortSuffix = substring(uniqueString(resourceGroup().id), 0, 6)
 var appServicePlanName = 'asp-${appName}'
 var appServiceName = 'app-${appName}-${shortSuffix}'
 var sqlServerName = 'sql-${appName}-${shortSuffix}'
-var sqlDatabaseName = '${appName}db'
+// IMPORTANT: This database contains pre-loaded BACPAC data (3.5M+ price records).
+// DO NOT change this name or recreate the database - it would destroy production data.
+var sqlDatabaseName = 'stockanalyzer-db'
 var keyVaultName = 'kv-stk-${shortSuffix}' // Must be 3-24 chars
 
 // App Service Plan (Linux, F1 Free tier for quota limits)
@@ -97,22 +99,10 @@ resource sqlServer 'Microsoft.Sql/servers@2023-05-01-preview' = {
   }
 }
 
-// SQL Database (Basic tier - 5 DTU)
-resource sqlDatabase 'Microsoft.Sql/servers/databases@2023-05-01-preview' = {
-  parent: sqlServer
-  name: sqlDatabaseName
-  location: location
-  sku: {
-    name: 'Basic'
-    tier: 'Basic'
-    capacity: 5
-  }
-  properties: {
-    collation: 'SQL_Latin1_General_CP1_CI_AS'
-    maxSizeBytes: 2147483648 // 2GB
-    requestedBackupStorageRedundancy: 'Local'
-  }
-}
+// SQL Database - NOT MANAGED BY BICEP
+// The database 'stockanalyzer-db' was created via BACPAC import and contains 3.5M+ price records.
+// DO NOT add a database resource here - it would recreate/overwrite production data.
+// If you need to recreate infrastructure, export the database to BACPAC first!
 
 // SQL Firewall - Allow Azure services
 resource sqlFirewallAzure 'Microsoft.Sql/servers/firewallRules@2023-05-01-preview' = {
