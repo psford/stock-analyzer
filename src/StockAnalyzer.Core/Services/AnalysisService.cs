@@ -275,7 +275,7 @@ public class AnalysisService
         for (int i = 0; i < closes.Count; i++)
         {
             if (emaFast[i].HasValue && emaSlow[i].HasValue)
-                macdLine.Add(emaFast[i]!.Value - emaSlow[i]!.Value);
+                macdLine.Add(emaFast[i].Value - emaSlow[i].Value);
             else
                 macdLine.Add(null);
         }
