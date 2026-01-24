@@ -959,6 +959,191 @@ app.MapPost("/api/admin/prices/load-tickers", async (
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status500InternalServerError);
 
+// ============================================================================
+// Data Export Endpoints (for syncing production data to local development)
+// ============================================================================
+
+// GET /api/admin/data/securities - Export all active securities from SecurityMaster
+app.MapGet("/api/admin/data/securities", async (IServiceProvider serviceProvider) =>
+{
+    using var scope = serviceProvider.CreateScope();
+    var securityRepo = scope.ServiceProvider.GetService<ISecurityMasterRepository>();
+
+    if (securityRepo == null)
+        return Results.BadRequest(new { error = "Security repository not configured" });
+
+    try
+    {
+        Log.Information("Exporting securities for data sync");
+        var securities = await securityRepo.GetAllActiveAsync();
+
+        return Results.Ok(new
+        {
+            success = true,
+            count = securities.Count,
+            securities = securities.Select(s => new
+            {
+                securityAlias = s.SecurityAlias,
+                tickerSymbol = s.TickerSymbol,
+                issueName = s.IssueName,
+                exchange = s.Exchange,
+                securityType = s.SecurityType,
+                country = s.Country,
+                currency = s.Currency,
+                isin = s.Isin,
+                isActive = s.IsActive
+            })
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Security export failed");
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("ExportSecurities")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status500InternalServerError);
+
+// GET /api/admin/data/prices - Export prices with pagination (for large datasets)
+app.MapGet("/api/admin/data/prices", async (
+    IServiceProvider serviceProvider,
+    DateTime? startDate,
+    DateTime? endDate,
+    int page = 1,
+    int pageSize = 10000) =>
+{
+    using var scope = serviceProvider.CreateScope();
+    var context = scope.ServiceProvider.GetService<StockAnalyzerDbContext>();
+
+    if (context == null)
+        return Results.BadRequest(new { error = "Database context not configured" });
+
+    try
+    {
+        // Default to last 2 years if no dates specified
+        var end = endDate ?? DateTime.Today;
+        var start = startDate ?? end.AddYears(-2);
+
+        // Clamp page size to prevent abuse
+        pageSize = Math.Min(pageSize, 50000);
+        var skip = (page - 1) * pageSize;
+
+        Log.Information("Exporting prices: {Start:yyyy-MM-dd} to {End:yyyy-MM-dd}, page {Page}, pageSize {PageSize}",
+            start, end, page, pageSize);
+
+        // Get total count for pagination info
+        var totalCount = await context.Prices
+            .AsNoTracking()
+            .Where(p => p.EffectiveDate >= start.Date && p.EffectiveDate <= end.Date)
+            .CountAsync();
+
+        var totalPages = (int)Math.Ceiling((double)totalCount / pageSize);
+
+        // Get paginated prices
+        var prices = await context.Prices
+            .AsNoTracking()
+            .Where(p => p.EffectiveDate >= start.Date && p.EffectiveDate <= end.Date)
+            .OrderBy(p => p.EffectiveDate)
+            .ThenBy(p => p.SecurityAlias)
+            .Skip(skip)
+            .Take(pageSize)
+            .Select(p => new
+            {
+                securityAlias = p.SecurityAlias,
+                effectiveDate = p.EffectiveDate.ToString("yyyy-MM-dd"),
+                open = p.Open,
+                high = p.High,
+                low = p.Low,
+                close = p.Close,
+                volume = p.Volume,
+                adjustedClose = p.AdjustedClose
+            })
+            .ToListAsync();
+
+        return Results.Ok(new
+        {
+            success = true,
+            startDate = start.ToString("yyyy-MM-dd"),
+            endDate = end.ToString("yyyy-MM-dd"),
+            page,
+            pageSize,
+            totalPages,
+            totalCount,
+            count = prices.Count,
+            hasMore = page < totalPages,
+            prices
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Price export failed");
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("ExportPrices")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status500InternalServerError);
+
+// GET /api/admin/data/prices/summary - Get summary of available price data
+app.MapGet("/api/admin/data/prices/summary", async (IServiceProvider serviceProvider) =>
+{
+    using var scope = serviceProvider.CreateScope();
+    var context = scope.ServiceProvider.GetService<StockAnalyzerDbContext>();
+
+    if (context == null)
+        return Results.BadRequest(new { error = "Database context not configured" });
+
+    try
+    {
+        var dateRange = await context.Prices
+            .AsNoTracking()
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                MinDate = g.Min(p => p.EffectiveDate),
+                MaxDate = g.Max(p => p.EffectiveDate),
+                TotalRecords = g.Count(),
+                DistinctSecurities = g.Select(p => p.SecurityAlias).Distinct().Count()
+            })
+            .FirstOrDefaultAsync();
+
+        if (dateRange == null)
+        {
+            return Results.Ok(new
+            {
+                success = true,
+                hasData = false,
+                message = "No price data in database"
+            });
+        }
+
+        return Results.Ok(new
+        {
+            success = true,
+            hasData = true,
+            startDate = dateRange.MinDate.ToString("yyyy-MM-dd"),
+            endDate = dateRange.MaxDate.ToString("yyyy-MM-dd"),
+            totalRecords = dateRange.TotalRecords,
+            distinctSecurities = dateRange.DistinctSecurities
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Price summary failed");
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("PriceSummary")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status500InternalServerError);
+
 // GET /api/admin/prices/holidays/analyze - Analyze holidays missing price data
 app.MapGet("/api/admin/prices/holidays/analyze", async (IServiceProvider serviceProvider) =>
 {

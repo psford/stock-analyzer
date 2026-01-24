@@ -1,0 +1,126 @@
+<UserControl x:Class="EodhdLoader.Views.DashboardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:EodhdLoader"
+             xmlns:vm="clr-namespace:EodhdLoader.ViewModels">
+    <UserControl.Resources>
+        <local:InverseBoolConverter x:Key="InverseBoolConverter"/>
+        <local:BoolToColorConverter x:Key="BoolToColorConverter"/>
+    </UserControl.Resources>
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,20">
+            <TextBlock Text="Data Coverage Dashboard" FontSize="24" FontWeight="Bold"/>
+            <TextBlock Text="{Binding ApiKeyStatus}" Foreground="Gray"/>
+            <TextBlock Text="{Binding EnvPath}" Foreground="Gray" FontSize="11"/>
+        </StackPanel>
+
+        <!-- Stats Cards -->
+        <Grid Grid.Row="1" Margin="0,0,0,20">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Securities Card -->
+            <Border Grid.Column="0" BorderBrush="LightGray" BorderThickness="1" CornerRadius="5" Padding="15" Margin="0,0,10,0">
+                <StackPanel>
+                    <TextBlock Text="Securities" FontWeight="SemiBold" Foreground="Gray"/>
+                    <TextBlock Text="{Binding Stats.ActiveSecurities, StringFormat=N0, FallbackValue=--}" FontSize="28" FontWeight="Bold"/>
+                    <TextBlock Text="active in database" Foreground="Gray" FontSize="11"/>
+                </StackPanel>
+            </Border>
+
+            <!-- With Prices Card -->
+            <Border Grid.Column="1" BorderBrush="LightGray" BorderThickness="1" CornerRadius="5" Padding="15" Margin="5,0">
+                <StackPanel>
+                    <TextBlock Text="With Prices" FontWeight="SemiBold" Foreground="Green"/>
+                    <TextBlock Text="{Binding Stats.SecuritiesWithPrices, StringFormat=N0, FallbackValue=--}" FontSize="28" FontWeight="Bold" Foreground="Green"/>
+                    <TextBlock Text="have price data" Foreground="Gray" FontSize="11"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Without Prices Card -->
+            <Border Grid.Column="2" BorderBrush="LightGray" BorderThickness="1" CornerRadius="5" Padding="15" Margin="5,0">
+                <StackPanel>
+                    <TextBlock Text="Missing Prices" FontWeight="SemiBold" Foreground="Orange"/>
+                    <TextBlock Text="{Binding Stats.SecuritiesWithoutPrices, StringFormat=N0, FallbackValue=--}" FontSize="28" FontWeight="Bold" Foreground="Orange"/>
+                    <TextBlock Text="need backfill" Foreground="Gray" FontSize="11"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Total Prices Card -->
+            <Border Grid.Column="3" BorderBrush="LightGray" BorderThickness="1" CornerRadius="5" Padding="15" Margin="10,0,0,0">
+                <StackPanel>
+                    <TextBlock Text="Price Records" FontWeight="SemiBold" Foreground="Gray"/>
+                    <TextBlock Text="{Binding Stats.TotalPriceRecords, StringFormat=N0, FallbackValue=--}" FontSize="28" FontWeight="Bold"/>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding Stats.EarliestPriceDate, StringFormat=d, FallbackValue=--}" Foreground="Gray" FontSize="11"/>
+                        <TextBlock Text=" - " Foreground="Gray" FontSize="11"/>
+                        <TextBlock Text="{Binding Stats.LatestPriceDate, StringFormat=d, FallbackValue=--}" Foreground="Gray" FontSize="11"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Main Content - Split View -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Gaps List -->
+            <GroupBox Grid.Column="0" Header="Recent Gaps (Securities Missing Recent Data)" Margin="0,0,10,0">
+                <DataGrid ItemsSource="{Binding Gaps}"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          HeadersVisibility="Column"
+                          GridLinesVisibility="Horizontal"
+                          CanUserAddRows="False">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Ticker" Binding="{Binding Ticker}" Width="80"/>
+                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*"/>
+                        <DataGridTextColumn Header="Last Price" Binding="{Binding LastPriceDate, StringFormat=d}" Width="90"/>
+                        <DataGridTextColumn Header="Days" Binding="{Binding DaysMissing}" Width="50"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </GroupBox>
+
+            <!-- Coverage by Type -->
+            <GroupBox Grid.Column="1" Header="Coverage by Security Type" Margin="10,0,0,0">
+                <DataGrid ItemsSource="{Binding TypeCoverage}"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          HeadersVisibility="Column"
+                          GridLinesVisibility="Horizontal"
+                          CanUserAddRows="False">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Type" Binding="{Binding SecurityType}" Width="*"/>
+                        <DataGridTextColumn Header="Total" Binding="{Binding TotalCount, StringFormat=N0}" Width="80"/>
+                        <DataGridTextColumn Header="With Prices" Binding="{Binding WithPrices, StringFormat=N0}" Width="80"/>
+                        <DataGridTextColumn Header="Coverage" Binding="{Binding CoveragePercent, StringFormat='{}{0:N1}%'}" Width="70"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </GroupBox>
+        </Grid>
+
+        <!-- Footer / Actions -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+            <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Margin="0,0,20,0" Foreground="Gray"/>
+            <TextBlock Text="{Binding ConnectionStatus}" VerticalAlignment="Center" Margin="0,0,20,0"
+                       Foreground="{Binding IsConnected, Converter={StaticResource BoolToColorConverter}}"/>
+            <Button Content="Refresh" Command="{Binding RefreshCommand}" Width="100" Height="30"
+                    IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBoolConverter}}"/>
+        </StackPanel>
+    </Grid>
+</UserControl>

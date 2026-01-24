@@ -1,0 +1,74 @@
+using System.Windows;
+using EodhdLoader.Services;
+using EodhdLoader.ViewModels;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using StockAnalyzer.Core.Data;
+using StockAnalyzer.Core.Services;
+
+namespace EodhdLoader;
+
+public partial class App : Application
+{
+    private readonly IServiceProvider _serviceProvider;
+
+    public App()
+    {
+        var services = new ServiceCollection();
+        ConfigureServices(services);
+        _serviceProvider = services.BuildServiceProvider();
+    }
+
+    private static void ConfigureServices(IServiceCollection services)
+    {
+        // Configuration
+        services.AddSingleton<ConfigurationService>();
+
+        // Local services
+        services.AddSingleton<DataAnalysisService>();
+        services.AddSingleton<BulkCopyService>();
+        services.AddHttpClient<IndexService>();
+
+        // These services use IHttpClientFactory directly so they can switch environments
+        services.AddHttpClient();
+        services.AddSingleton<StockAnalyzerApiClient>();
+        services.AddSingleton<BorisService>();
+        services.AddSingleton<PriceCoverageAnalyzer>();
+        services.AddSingleton<HolidayForwardFillService>();
+        services.AddSingleton<ProdSyncService>();
+
+        // StockAnalyzer.Core services
+        services.AddDbContext<StockAnalyzerDbContext>((sp, options) =>
+        {
+            var config = sp.GetRequiredService<ConfigurationService>();
+            options.UseSqlServer(config.LocalConnectionString);
+        });
+
+        services.AddHttpClient<EodhdService>();
+        services.AddScoped<ISecurityMasterRepository, SqlSecurityMasterRepository>();
+        services.AddScoped<IPriceRepository, SqlPriceRepository>();
+        services.AddScoped<PriceRefreshService>();
+
+        // Add logging for Core services
+        services.AddLogging();
+
+        // ViewModels
+        services.AddTransient<BorisViewModel>();
+        services.AddTransient<DashboardViewModel>();
+        services.AddTransient<LoaderViewModel>();
+        services.AddTransient<MigrationViewModel>();
+        services.AddTransient<IndexManagerViewModel>();
+        services.AddTransient<MainViewModel>();
+
+        // Main Window
+        services.AddTransient<MainWindow>();
+    }
+
+    protected override void OnStartup(StartupEventArgs e)
+    {
+        base.OnStartup(e);
+
+        var mainWindow = _serviceProvider.GetRequiredService<MainWindow>();
+        mainWindow.Show();
+    }
+}
