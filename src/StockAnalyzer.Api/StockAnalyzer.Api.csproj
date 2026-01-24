@@ -1,9 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
-  <!-- Updated: 2026-01-19 -->
+  <!-- Updated: 2026-01-24 -->
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Application version - single source of truth for footer, API, and cache-busting -->
+    <Version>3.0.3</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -53,6 +55,18 @@
     <Exec Command="node node_modules/tailwindcss/lib/cli.js -i src/input.css -o wwwroot/css/styles.css --minify"
           WorkingDirectory="$(ProjectDir)"
           Condition="!Exists('$(ProgramFiles)\nodejs\node.exe')" />
+  </Target>
+
+  <!-- Inject version into index.html cache-busting strings at build time -->
+  <!-- Replaces ?v=X.X.X patterns with the current Version from csproj -->
+  <Target Name="InjectVersion" BeforeTargets="Build">
+    <Message Text="Injecting version $(Version) into index.html..." Importance="high" />
+    <Exec Command="powershell -NoProfile -Command &quot;$utf8 = New-Object System.Text.UTF8Encoding $false; $content = (Get-Content '$(ProjectDir)wwwroot\index.html' -Raw -Encoding UTF8) -replace '\?v=[\d\.\-\w]+', '?v=$(Version)'; [IO.File]::WriteAllText('$(ProjectDir)wwwroot\index.html', $content, $utf8)&quot;"
+          WorkingDirectory="$(ProjectDir)"
+          Condition="'$(OS)' == 'Windows_NT'" />
+    <Exec Command="sed -i 's/?v=[0-9a-zA-Z.\-]*/?v=$(Version)/g' wwwroot/index.html"
+          WorkingDirectory="$(ProjectDir)"
+          Condition="'$(OS)' != 'Windows_NT'" />
   </Target>
 
 </Project>
