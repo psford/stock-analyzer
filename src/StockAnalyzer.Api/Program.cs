@@ -811,8 +811,16 @@ app.MapPost("/api/admin/prices/refresh-date", async (
 
     try
     {
-        await refreshService.RefreshDateAsync(date, CancellationToken.None);
-        return Results.Ok(new { message = $"Prices refreshed for {date:yyyy-MM-dd}" });
+        var result = await refreshService.RefreshDateAsync(date, CancellationToken.None);
+        return Results.Ok(new
+        {
+            message = $"Prices refreshed for {date:yyyy-MM-dd}",
+            date = date.ToString("yyyy-MM-dd"),
+            recordsFetched = result.RecordsFetched,
+            recordsMatched = result.RecordsMatched,
+            recordsUnmatched = result.RecordsUnmatched,
+            recordsInserted = result.RecordsInserted
+        });
     }
     catch (Exception ex)
     {

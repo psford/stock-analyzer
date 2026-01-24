@@ -54,10 +54,10 @@ public class PriceCoverageAnalyzer
             report.ActiveSecurities = status.ActiveSecurities;
             report.LatestPriceDate = status.LatestPriceDate;
 
-            // Step 2: Get coverage dates for last 5 years
-            progress?.Report("Analyzing date coverage (5 years)...");
+            // Step 2: Get coverage dates for full history (back to 1980)
+            progress?.Report("Analyzing date coverage (full history)...");
             var endDate = DateTime.Today.AddDays(-1);
-            var startDate = endDate.AddYears(-5);
+            var startDate = new DateTime(1980, 1, 1); // EODHD has data back to early 80s
 
             var coverageDates = await GetCoverageDatesAsync(httpClient, startDate, endDate, ct);
             var existingDates = coverageDates?.DatesWithData?
@@ -115,16 +115,58 @@ public class PriceCoverageAnalyzer
                 MissingDates = tier3Missing.Take(10).Select(d => d.ToString("yyyy-MM-dd")).ToList()
             };
 
-            // Tier 4: Historical (1-5 years)
-            var tier4Expected = expectedTradingDays.Where(d => d < tier3Start).ToList();
+            // Tier 4: 1-5 years ago
+            var tier4End = tier3Start.AddDays(-1);
+            var tier4Start = endDate.AddYears(-5);
+            var tier4Expected = expectedTradingDays.Where(d => d >= tier4Start && d < tier3Start).ToList();
             var tier4Missing = tier4Expected.Where(d => !existingDates.Contains(d)).OrderByDescending(d => d).ToList();
 
             report.Tier4_Historical = new CoverageTier
             {
-                Name = "1-5 Years Ago (Historical)",
+                Name = "1-5 Years Ago",
                 ExpectedDays = tier4Expected.Count,
                 MissingDays = tier4Missing.Count,
                 MissingDates = tier4Missing.Take(10).Select(d => d.ToString("yyyy-MM-dd")).ToList()
+            };
+
+            // Tier 5: 6-10 years ago
+            var tier5End = tier4Start.AddDays(-1);
+            var tier5Start = endDate.AddYears(-10);
+            var tier5Expected = expectedTradingDays.Where(d => d >= tier5Start && d < tier4Start).ToList();
+            var tier5Missing = tier5Expected.Where(d => !existingDates.Contains(d)).OrderByDescending(d => d).ToList();
+
+            report.Tier5_6To10Years = new CoverageTier
+            {
+                Name = "6-10 Years Ago",
+                ExpectedDays = tier5Expected.Count,
+                MissingDays = tier5Missing.Count,
+                MissingDates = tier5Missing.Take(10).Select(d => d.ToString("yyyy-MM-dd")).ToList()
+            };
+
+            // Tier 6: 11-20 years ago
+            var tier6End = tier5Start.AddDays(-1);
+            var tier6Start = endDate.AddYears(-20);
+            var tier6Expected = expectedTradingDays.Where(d => d >= tier6Start && d < tier5Start).ToList();
+            var tier6Missing = tier6Expected.Where(d => !existingDates.Contains(d)).OrderByDescending(d => d).ToList();
+
+            report.Tier6_11To20Years = new CoverageTier
+            {
+                Name = "11-20 Years Ago",
+                ExpectedDays = tier6Expected.Count,
+                MissingDays = tier6Missing.Count,
+                MissingDates = tier6Missing.Take(10).Select(d => d.ToString("yyyy-MM-dd")).ToList()
+            };
+
+            // Tier 7: 21+ years ago (back to 1980)
+            var tier7Expected = expectedTradingDays.Where(d => d < tier6Start).ToList();
+            var tier7Missing = tier7Expected.Where(d => !existingDates.Contains(d)).OrderByDescending(d => d).ToList();
+
+            report.Tier7_21PlusYears = new CoverageTier
+            {
+                Name = "21+ Years Ago (1980-" + (endDate.Year - 20) + ")",
+                ExpectedDays = tier7Expected.Count,
+                MissingDays = tier7Missing.Count,
+                MissingDates = tier7Missing.Take(10).Select(d => d.ToString("yyyy-MM-dd")).ToList()
             };
 
             // Step 5: Calculate coverage percentages
@@ -270,12 +312,18 @@ public class CoverageReport
     public CoverageTier? Tier2_Last90Days { get; set; }
     public CoverageTier? Tier3_LastYear { get; set; }
     public CoverageTier? Tier4_Historical { get; set; }
+    public CoverageTier? Tier5_6To10Years { get; set; }
+    public CoverageTier? Tier6_11To20Years { get; set; }
+    public CoverageTier? Tier7_21PlusYears { get; set; }
 
     public int TotalMissingDays =>
         (Tier1_Last30Days?.MissingDays ?? 0) +
         (Tier2_Last90Days?.MissingDays ?? 0) +
         (Tier3_LastYear?.MissingDays ?? 0) +
-        (Tier4_Historical?.MissingDays ?? 0);
+        (Tier4_Historical?.MissingDays ?? 0) +
+        (Tier5_6To10Years?.MissingDays ?? 0) +
+        (Tier6_11To20Years?.MissingDays ?? 0) +
+        (Tier7_21PlusYears?.MissingDays ?? 0);
 
     public string GetSummary()
     {
@@ -291,7 +339,7 @@ public class CoverageReport
             $"  Active Securities: {ActiveSecurities:N0}",
             $"  Latest Price Date: {LatestPriceDate ?? "N/A"}",
             "",
-            $"Date Coverage (5 years):",
+            $"Date Coverage (since 1980):",
             $"  Days with Data: {DatesWithData:N0} / {ExpectedTradingDays:N0} ({OverallCoveragePercent:F1}%)",
             $"  Missing Days: {TotalMissingDays:N0}",
             ""
@@ -328,6 +376,35 @@ public class CoverageReport
         {
             lines.Add($"📜 {Tier4_Historical.Name}:");
             lines.Add($"   Coverage: {Tier4_Historical.ExpectedDays - Tier4_Historical.MissingDays}/{Tier4_Historical.ExpectedDays} days ({Tier4_Historical.CoveragePercent:F1}%)");
+            if (Tier4_Historical.MissingDays > 0)
+                lines.Add($"   Missing (sample): {string.Join(", ", Tier4_Historical.MissingDates)}");
+            lines.Add("");
+        }
+
+        if (Tier5_6To10Years != null)
+        {
+            lines.Add($"🕰️ {Tier5_6To10Years.Name}:");
+            lines.Add($"   Coverage: {Tier5_6To10Years.ExpectedDays - Tier5_6To10Years.MissingDays}/{Tier5_6To10Years.ExpectedDays} days ({Tier5_6To10Years.CoveragePercent:F1}%)");
+            if (Tier5_6To10Years.MissingDays > 0)
+                lines.Add($"   Missing (sample): {string.Join(", ", Tier5_6To10Years.MissingDates)}");
+            lines.Add("");
+        }
+
+        if (Tier6_11To20Years != null)
+        {
+            lines.Add($"⏳ {Tier6_11To20Years.Name}:");
+            lines.Add($"   Coverage: {Tier6_11To20Years.ExpectedDays - Tier6_11To20Years.MissingDays}/{Tier6_11To20Years.ExpectedDays} days ({Tier6_11To20Years.CoveragePercent:F1}%)");
+            if (Tier6_11To20Years.MissingDays > 0)
+                lines.Add($"   Missing (sample): {string.Join(", ", Tier6_11To20Years.MissingDates)}");
+            lines.Add("");
+        }
+
+        if (Tier7_21PlusYears != null)
+        {
+            lines.Add($"🏛️ {Tier7_21PlusYears.Name}:");
+            lines.Add($"   Coverage: {Tier7_21PlusYears.ExpectedDays - Tier7_21PlusYears.MissingDays}/{Tier7_21PlusYears.ExpectedDays} days ({Tier7_21PlusYears.CoveragePercent:F1}%)");
+            if (Tier7_21PlusYears.MissingDays > 0)
+                lines.Add($"   Missing (sample): {string.Join(", ", Tier7_21PlusYears.MissingDates)}");
             lines.Add("");
         }
 

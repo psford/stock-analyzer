@@ -190,6 +190,7 @@ public class StockAnalyzerApiClient
 
     /// <summary>
     /// Calls POST /api/admin/prices/holidays/forward-fill to forward-fill holiday price data.
+    /// Uses extended timeout (10 minutes) since this can process hundreds of holidays.
     /// </summary>
     public async Task<HolidayForwardFillApiResult> ForwardFillHolidaysAsync(CancellationToken ct = default)
     {
@@ -198,11 +199,21 @@ public class StockAnalyzerApiClient
 
         try
         {
-            var response = await _httpClient.PostAsync("/api/admin/prices/holidays/forward-fill", null, ct);
+            // Create a separate HttpClient with extended timeout for this long-running operation
+            // The default HttpClient.Timeout (100s) is too short for filling hundreds of holidays
+            using var longTimeoutClient = _httpClientFactory.CreateClient();
+            longTimeoutClient.BaseAddress = _httpClient.BaseAddress;
+            longTimeoutClient.Timeout = TimeSpan.FromMinutes(10);
+
+            var response = await longTimeoutClient.PostAsync("/api/admin/prices/holidays/forward-fill", null, ct);
             response.EnsureSuccessStatusCode();
 
             var result = await response.Content.ReadFromJsonAsync<HolidayForwardFillApiResult>(cancellationToken: ct);
             return result ?? new HolidayForwardFillApiResult { Success = false, Error = "Empty response" };
+        }
+        catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException)
+        {
+            return new HolidayForwardFillApiResult { Success = false, Error = "Operation timed out after 10 minutes" };
         }
         catch (Exception ex)
         {

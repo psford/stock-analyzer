@@ -8,13 +8,17 @@
     <UseWPF>true</UseWPF>
     <!-- Allow building Windows project on non-Windows CI (CodeQL scans) -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <ApplicationIcon></ApplicationIcon>
+    <ApplicationIcon>spider.ico</ApplicationIcon>
     <Title>EODHD Data Loader</Title>
     <Description>Standalone tool for loading EODHD price data and migrating to Azure SQL</Description>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\stock-analyzer\src\StockAnalyzer.Core\StockAnalyzer.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="spider.ico" />
   </ItemGroup>
 
   <ItemGroup>

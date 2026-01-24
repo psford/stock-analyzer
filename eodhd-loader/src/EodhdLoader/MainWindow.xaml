@@ -4,7 +4,8 @@
         xmlns:local="clr-namespace:EodhdLoader"
         xmlns:views="clr-namespace:EodhdLoader.Views"
         Title="Boris the Spider - Intelligent Price Data Loader" Height="750" Width="1100" MinWidth="900" MinHeight="650"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="CenterScreen"
+        Icon="/spider.ico">
     <Window.Resources>
         <!-- Converters -->
         <BooleanToVisibilityConverter x:Key="BoolToVisConverter"/>

@@ -140,6 +140,7 @@ public class BorisService
         // Phase 3: Load data using bulk API, respecting budget
         var loaded = 0;
         var totalDays = datesToLoad.Count;
+        var totalPricesInserted = 0;
 
         foreach (var date in datesToLoad)
         {
@@ -161,8 +162,13 @@ public class BorisService
             {
                 _callsUsedToday += BulkApiCost;
                 loaded++;
+                totalPricesInserted += result.RecordsLoaded;
 
-                Log($"✓ {date:yyyy-MM-dd}: {result.RecordsLoaded:N0} prices loaded");
+                // Show detailed breakdown: fetched from EODHD, matched to our securities, actually inserted (new records)
+                var insertInfo = result.RecordsLoaded > 0
+                    ? $"{result.RecordsLoaded:N0} inserted"
+                    : "already up to date";
+                Log($"✓ {date:yyyy-MM-dd}: {result.RecordsFetched:N0} fetched, {result.RecordsMatched:N0} matched, {insertInfo}");
 
                 progress?.Report(new BorisProgress
                 {
@@ -183,7 +189,7 @@ public class BorisService
             await Task.Delay(1000, ct);
         }
 
-        Log($"🎯 Session complete: {loaded} days loaded, {_callsUsedToday} API calls used");
+        Log($"🎯 Session complete: {loaded} days loaded, {totalPricesInserted:N0} prices inserted, {_callsUsedToday} API calls used");
     }
 
     private async Task<CoverageStatus?> GetCoverageStatusAsync(CancellationToken ct)
@@ -207,9 +213,10 @@ public class BorisService
     {
         var dates = new List<DateTime>();
 
-        // Start from yesterday and work backwards
+        // Start from yesterday and work backwards to 1980
+        // EODHD has data back to the early 80s for major indices
         var endDate = DateTime.Today.AddDays(-1);
-        var startDate = endDate.AddYears(-5); // Go back 5 years max
+        var startDate = new DateTime(1980, 1, 1);
 
         // Fetch actual dates that have data from the API
         Log("🔍 Fetching existing coverage dates from database...");
@@ -271,14 +278,11 @@ public class BorisService
             if (_httpClient == null)
                 return new BulkLoadResult { Success = false, Error = "HttpClient not initialized" };
 
-            // Call the Stock Analyzer API's bulk-load endpoint
-            var request = new
-            {
-                StartDate = date.ToString("yyyy-MM-dd"),
-                EndDate = date.ToString("yyyy-MM-dd")
-            };
+            // Use the synchronous refresh-date endpoint which waits for completion
+            // and returns actual record counts (unlike bulk-load which is fire-and-forget)
+            var request = new { Date = date.ToString("yyyy-MM-dd") };
 
-            var response = await _httpClient.PostAsJsonAsync("/api/admin/prices/bulk-load", request, ct);
+            var response = await _httpClient.PostAsJsonAsync("/api/admin/prices/refresh-date", request, ct);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -286,18 +290,42 @@ public class BorisService
                 return new BulkLoadResult { Success = false, Error = error };
             }
 
-            // The bulk-load endpoint runs async, so we can't get exact record count
-            // but we know it succeeded
+            // Parse the response to get actual record counts
+            var result = await response.Content.ReadFromJsonAsync<RefreshDateResponse>(ct);
+
             return new BulkLoadResult
             {
                 Success = true,
-                RecordsLoaded = 0 // Unknown, runs async on server
+                RecordsLoaded = result?.RecordsInserted ?? 0,
+                RecordsFetched = result?.RecordsFetched ?? 0,
+                RecordsMatched = result?.RecordsMatched ?? 0
             };
         }
         catch (Exception ex)
         {
             return new BulkLoadResult { Success = false, Error = ex.Message };
         }
+    }
+
+    private class RefreshDateResponse
+    {
+        [JsonPropertyName("message")]
+        public string? Message { get; set; }
+
+        [JsonPropertyName("date")]
+        public string? Date { get; set; }
+
+        [JsonPropertyName("recordsFetched")]
+        public int RecordsFetched { get; set; }
+
+        [JsonPropertyName("recordsMatched")]
+        public int RecordsMatched { get; set; }
+
+        [JsonPropertyName("recordsUnmatched")]
+        public int RecordsUnmatched { get; set; }
+
+        [JsonPropertyName("recordsInserted")]
+        public int RecordsInserted { get; set; }
     }
 
     private static bool IsTradingDay(DateTime date)
@@ -359,6 +387,8 @@ public class BulkLoadResult
 {
     public bool Success { get; set; }
     public int RecordsLoaded { get; set; }
+    public int RecordsFetched { get; set; }
+    public int RecordsMatched { get; set; }
     public string? Error { get; set; }
 }
 

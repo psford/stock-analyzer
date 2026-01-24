@@ -179,7 +179,8 @@ public class PriceRefreshService : BackgroundService
     /// <summary>
     /// Refresh prices for a specific date.
     /// </summary>
-    public async Task RefreshDateAsync(DateTime date, CancellationToken ct)
+    /// <returns>Result with counts of records processed and inserted</returns>
+    public async Task<RefreshDateResult> RefreshDateAsync(DateTime date, CancellationToken ct)
     {
         _logger.LogInformation("Refreshing prices for {Date}", date.ToString("yyyy-MM-dd"));
 
@@ -188,12 +189,14 @@ public class PriceRefreshService : BackgroundService
         var priceRepo = scope.ServiceProvider.GetRequiredService<IPriceRepository>();
         var securityRepo = scope.ServiceProvider.GetRequiredService<ISecurityMasterRepository>();
 
+        var result = new RefreshDateResult { Date = date };
+
         // Get all active securities
         var securities = await securityRepo.GetAllActiveAsync();
         if (securities.Count == 0)
         {
             _logger.LogWarning("No active securities to refresh");
-            return;
+            return result;
         }
 
         // Build a ticker-to-alias lookup
@@ -203,16 +206,16 @@ public class PriceRefreshService : BackgroundService
 
         // Fetch bulk data from EODHD
         var bulkData = await eodhd.GetBulkEodDataAsync(date, "US", ct);
+        result.RecordsFetched = bulkData.Count;
+
         if (bulkData.Count == 0)
         {
             _logger.LogWarning("No bulk data returned for {Date}", date.ToString("yyyy-MM-dd"));
-            return;
+            return result;
         }
 
         // Convert to price DTOs, matching only securities we track
         var priceDtos = new List<PriceCreateDto>();
-        var matched = 0;
-        var unmatched = 0;
 
         foreach (var record in bulkData)
         {
@@ -230,25 +233,38 @@ public class PriceRefreshService : BackgroundService
                     AdjustedClose = record.AdjustedClose,
                     Volume = record.Volume
                 });
-                matched++;
+                result.RecordsMatched++;
             }
             else
             {
-                unmatched++;
+                result.RecordsUnmatched++;
             }
         }
 
         _logger.LogInformation("Matched {Matched} securities, {Unmatched} not in SecurityMaster",
-            matched, unmatched);
+            result.RecordsMatched, result.RecordsUnmatched);
 
         if (priceDtos.Count > 0)
         {
-            var inserted = await priceRepo.BulkInsertAsync(priceDtos);
+            result.RecordsInserted = await priceRepo.BulkInsertAsync(priceDtos);
             _logger.LogInformation("Inserted {Count} prices for {Date}",
-                inserted, date.ToString("yyyy-MM-dd"));
+                result.RecordsInserted, date.ToString("yyyy-MM-dd"));
         }
 
         _lastRefresh = DateTime.UtcNow;
+        return result;
+    }
+
+    /// <summary>
+    /// Result of refreshing prices for a specific date.
+    /// </summary>
+    public class RefreshDateResult
+    {
+        public DateTime Date { get; set; }
+        public int RecordsFetched { get; set; }
+        public int RecordsMatched { get; set; }
+        public int RecordsUnmatched { get; set; }
+        public int RecordsInserted { get; set; }
     }
 
     /// <summary>
