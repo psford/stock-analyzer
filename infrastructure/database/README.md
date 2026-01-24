@@ -4,6 +4,23 @@
 
 The Stock Analyzer database contains pre-loaded historical price data for S&P 500 stocks (1980-2026). This data should be deployed WITH the application to avoid expensive API calls for bulk historical backfills in production.
 
+## ⚠️ CRITICAL: Database Protection
+
+**Production database name:** `stockanalyzer-db`
+
+The production database is **NOT managed by Bicep**. This is intentional - the database was created via BACPAC import and contains 3.5M+ price records. Bicep managing it would risk recreating/overwriting production data.
+
+**DO NOT:**
+- Add a SQL Database resource to `main.bicep`
+- Change the database name in Bicep
+- Use Azure "Import database" to overwrite existing database
+
+**If you need to recreate infrastructure:**
+1. Export current database to BACPAC first
+2. Deploy Bicep (creates server, not database)
+3. Import BACPAC to new/existing database
+4. Verify connection string points to correct database
+
 ## Database Contents
 
 | Table | Rows | Description |
@@ -44,10 +61,11 @@ sqlpackage /Action:Export `
 ### Option 2: SqlPackage CLI
 
 ```powershell
+# IMPORTANT: Use 'stockanalyzer-db' as the database name (with hyphen)
 sqlpackage /Action:Import `
-    /TargetServerName:"your-server.database.windows.net" `
-    /TargetDatabaseName:"StockAnalyzer" `
-    /TargetUser:"your-admin" `
+    /TargetServerName:"sql-stockanalyzer-xxxxxx.database.windows.net" `
+    /TargetDatabaseName:"stockanalyzer-db" `
+    /TargetUser:"sqladmin" `
     /TargetPassword:"your-password" `  # pragma: allowlist secret
     /SourceFile:"StockAnalyzer.bacpac"
 ```
@@ -62,11 +80,11 @@ az storage blob upload `
     --name StockAnalyzer.bacpac `
     --file StockAnalyzer.bacpac
 
-# Import to Azure SQL
+# Import to Azure SQL (use 'stockanalyzer-db' with hyphen)
 az sql db import `
-    --resource-group your-rg `
-    --server your-server `
-    --name StockAnalyzer `
+    --resource-group rg-stockanalyzer-prod `
+    --server sql-stockanalyzer-xxxxxx `
+    --name stockanalyzer-db `
     --storage-key-type StorageAccessKey `
     --storage-key "your-storage-key" `
     --storage-uri "https://yourstorageaccount.blob.core.windows.net/backups/StockAnalyzer.bacpac" `
@@ -112,3 +130,21 @@ When you add significant new data locally:
 2. Export new BACPAC
 3. Upload to Azure Blob Storage
 4. Import to production (or swap databases)
+
+## Connection String
+
+The App Service connection string is configured in Bicep (`main.bicep`) and points to:
+
+```
+Server=tcp:sql-stockanalyzer-xxxxxx.database.windows.net,1433;Database=stockanalyzer-db;...
+```
+
+If the connection string ever needs updating manually:
+
+```powershell
+az webapp config connection-string set `
+    --resource-group rg-stockanalyzer-prod `
+    --name app-stockanalyzer-xxxxxx `
+    --connection-string-type SQLAzure `
+    --settings DefaultConnection="Server=tcp:sql-stockanalyzer-xxxxxx.database.windows.net,1433;Database=stockanalyzer-db;User ID=sqladmin;Password=xxx;Encrypt=true;TrustServerCertificate=false;Connection Timeout=30;"
+```

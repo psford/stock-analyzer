@@ -1,7 +1,7 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.17
-**Last Updated:** 2026-01-23
+**Version:** 2.18
+**Last Updated:** 2026-01-24
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
 
@@ -1982,6 +1982,9 @@ CREATE TABLE data.SecurityMaster (
     TickerSymbol NVARCHAR(20) NOT NULL,            -- Ticker (e.g., "AAPL")
     Exchange NVARCHAR(50),                          -- Exchange (e.g., "NASDAQ")
     SecurityType NVARCHAR(50),                      -- Common Stock, ETF, ADR, etc.
+    Country NVARCHAR(10),                           -- Country code (e.g., "USA")
+    Currency NVARCHAR(10),                          -- Currency (e.g., "USD")
+    Isin NVARCHAR(20),                              -- International Securities ID Number
     IsActive BIT DEFAULT 1,                         -- Whether actively traded
     CreatedAt DATETIME2 DEFAULT GETUTCDATE(),
     UpdatedAt DATETIME2 DEFAULT GETUTCDATE()
@@ -2027,6 +2030,7 @@ CREATE INDEX IX_Prices_EffectiveDate ON data.Prices(EffectiveDate);
 - `GetPricesAsync(alias, startDate, endDate)` - Date range query
 - `BulkInsertAsync(prices)` - High-performance insert (1000-row batches with progress logging)
 - `GetLatestPricesAsync(aliases)` - Batch latest price lookup
+- `GetDistinctDatesAsync(startDate, endDate)` - Get all dates with price data (for coverage analysis)
 
 **Files:**
 - `Data/Entities/SecurityMasterEntity.cs` - Security master entity
@@ -2078,6 +2082,7 @@ Maintains the historical price database with automatic daily updates.
 | Endpoint | Description |
 |----------|-------------|
 | `GET /api/admin/prices/status` | Database status: counts, latest date, EODHD status |
+| `GET /api/admin/prices/coverage-dates` | Get distinct dates with price data (query: `startDate`, `endDate`) |
 | `POST /api/admin/prices/sync-securities` | Sync SecurityMaster from Symbols table |
 | `POST /api/admin/prices/refresh-date` | Fetch prices for specific date (body: `{Date: "yyyy-MM-dd"}`) |
 | `POST /api/admin/prices/bulk-load` | Start bulk historical load (body: `{StartDate, EndDate}`) |
@@ -2102,8 +2107,13 @@ Maintains the historical price database with automatic daily updates.
 - App Service Plan (B1 Linux)
 - App Service (Docker container)
 - Azure Container Registry (Basic tier)
-- Azure SQL Server + Database (Basic tier, 5 DTU)
+- Azure SQL Server (Basic tier) - **Note: Database NOT managed by Bicep**
 - Azure Key Vault (secrets management)
+
+**Database Management:**
+The production database (`stockanalyzer-db`) is **NOT created or managed by Bicep**. It was created via BACPAC import containing 3.5M+ pre-loaded historical price records. The Bicep template only references the database name in connection strings. This prevents accidental data loss from infrastructure deployments.
+
+**IMPORTANT:** Never add a SQL Database resource to main.bicep - it would create an empty database and overwrite the connection string, breaking the application.
 
 #### CI/CD Pipeline
 
@@ -2477,6 +2487,8 @@ const [stockInfo, history, analysis, significantMoves, news] = await Promise.all
 | Version | Date | Changes |
 |---------|------|---------|
 | 2.15 | 2026-01-22 | **Sentiment-Filtered News:** SentimentAnalyzer.cs static utility with keyword-based sentiment analysis (~50 positive/negative keywords). NewsService.GetNewsForDateWithSentimentAsync() filters headlines to match price direction. AnalysisService.DetectSignificantMovesAsync() uses sentiment-aware news. Fallback cascade: sentiment-matched company news → any company news → market news. SentimentAnalyzerTests.cs (32 tests) covers positive/negative/neutral headlines, price matching, real-world Ford "Soars" bug scenario. |
+| 2.18 | 2026-01-24 | **Database Protection & Coverage API:** Bicep template modified to NOT manage the production database (prevents overwriting 3.5M+ price records from BACPAC import). Database name corrected from `stockanalyzerdb` to `stockanalyzer-db`. New `/api/admin/prices/coverage-dates` endpoint returns distinct dates with price data for coverage analysis. `GetDistinctDatesAsync()` method added to IPriceRepository. SecurityMaster extended with Country, Currency, ISIN columns via EF Core migration. EodhdService extended with `GetExchangeSymbolsAsync()` method to sync EODHD symbol metadata. |
+| 2.17 | 2026-01-23 | **Sentiment-Filtered News & Production Deployment:** Deployed v3.0 to production with database-first price lookup. Fixed image prefetch thread exhaustion (reduced initial load from 50 to 5). |
 | 2.14 | 2026-01-22 | **Weighted Relevance Search:** symbolSearch.js updated with scoreMatch() method and popularTickers map. Scoring: exact ticker (1000) > ticker prefix (200) > word start (100) > substring (25). Popularity boost (+10 to +50) for ~100 well-known tickers (AAPL, F, SPY, etc.). Results sorted by score descending. Ford Motor Co (F) now surfaces above "Bedford" substring matches when searching "ford". |
 | 2.13 | 2026-01-22 | **Stochastic Oscillator:** New StochasticData record in TechnicalIndicators.cs, CalculateStochastic() method in AnalysisService (K=14, D=3 parameters). API /analysis endpoint includes stochastic array. Frontend Stochastic checkbox, charts.js subplot with %K (teal) and %D (orange dashed) lines, overbought/oversold zones at 80/20. 5 new unit tests for CalculateStochastic. |
 | 2.12 | 2026-01-22 | **Client-Side Instant Search:** Symbol data loaded to browser at page load for sub-millisecond search. New symbolSearch.js module fetches /data/symbols.txt (~857KB, ~315KB gzipped) containing ~30K US symbols in pipe-delimited format. SymbolCache.GenerateClientFile() generates static file at startup and after daily Finnhub refresh. Search ranking: exact match > prefix match > description contains. 5-second debounced server fallback for unknown symbols. API.search() uses client-side first, api.js searchServerFallback() method for fallback. Offline-capable once symbols loaded. |
