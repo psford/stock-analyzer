@@ -959,6 +959,95 @@ app.MapPost("/api/admin/prices/load-tickers", async (
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status500InternalServerError);
 
+// GET /api/admin/prices/holidays/analyze - Analyze holidays missing price data
+app.MapGet("/api/admin/prices/holidays/analyze", async (IServiceProvider serviceProvider) =>
+{
+    using var scope = serviceProvider.CreateScope();
+    var priceRepo = scope.ServiceProvider.GetService<IPriceRepository>();
+
+    if (priceRepo == null)
+        return Results.BadRequest(new { error = "Price repository not configured" });
+
+    try
+    {
+        var result = await priceRepo.AnalyzeHolidaysAsync();
+
+        if (!result.Success)
+            return Results.Problem(result.Error ?? "Analysis failed");
+
+        return Results.Ok(new
+        {
+            success = true,
+            dataStartDate = result.DataStartDate.ToString("yyyy-MM-dd"),
+            dataEndDate = result.DataEndDate.ToString("yyyy-MM-dd"),
+            totalDatesWithData = result.TotalDatesWithData,
+            missingHolidayCount = result.MissingHolidays.Count,
+            holidaysWithPriorData = result.HolidaysWithPriorData,
+            holidaysWithoutPriorData = result.HolidaysWithoutPriorData,
+            missingHolidays = result.MissingHolidays.Select(h => new
+            {
+                name = h.HolidayName,
+                date = h.HolidayDate.ToString("yyyy-MM-dd"),
+                priorTradingDay = h.PriorTradingDay.ToString("yyyy-MM-dd"),
+                hasPriorData = h.HasPriorDayData
+            })
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Holiday analysis failed");
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("AnalyzeHolidays")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status500InternalServerError);
+
+// POST /api/admin/prices/holidays/forward-fill - Forward-fill price data for US market holidays
+app.MapPost("/api/admin/prices/holidays/forward-fill", async (IServiceProvider serviceProvider) =>
+{
+    using var scope = serviceProvider.CreateScope();
+    var priceRepo = scope.ServiceProvider.GetService<IPriceRepository>();
+
+    if (priceRepo == null)
+        return Results.BadRequest(new { error = "Price repository not configured" });
+
+    try
+    {
+        Log.Information("Starting holiday forward-fill via API");
+        var result = await priceRepo.ForwardFillHolidaysAsync();
+
+        if (!result.Success)
+            return Results.Problem(result.Error ?? "Forward-fill failed");
+
+        return Results.Ok(new
+        {
+            success = true,
+            message = result.Message,
+            holidaysProcessed = result.HolidaysProcessed,
+            totalRecordsInserted = result.TotalRecordsInserted,
+            holidaysFilled = result.HolidaysFilled.Select(h => new
+            {
+                name = h.HolidayName,
+                date = h.Date.ToString("yyyy-MM-dd"),
+                recordsInserted = h.RecordsInserted
+            })
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Holiday forward-fill failed");
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("ForwardFillHolidays")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status500InternalServerError);
+
 // Health check endpoints
 app.MapHealthChecks("/health", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {

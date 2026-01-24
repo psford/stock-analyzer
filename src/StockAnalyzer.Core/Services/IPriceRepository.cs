@@ -108,6 +108,60 @@ public interface IPriceRepository
     /// <param name="endDate">End of date range (inclusive).</param>
     /// <returns>List of dates that have at least one price record.</returns>
     Task<List<DateTime>> GetDistinctDatesAsync(DateTime startDate, DateTime endDate);
+
+    /// <summary>
+    /// Analyze holidays missing price data in the database.
+    /// Returns holidays that fall on weekdays but have no price records.
+    /// </summary>
+    /// <returns>Analysis result with missing holidays and their prior trading days.</returns>
+    Task<HolidayAnalysisResult> AnalyzeHolidaysAsync();
+
+    /// <summary>
+    /// Forward-fill price data for US market holidays.
+    /// Copies the prior trading day's close price as OHLC with volume=0.
+    /// </summary>
+    /// <returns>Result with count of holidays and records processed.</returns>
+    Task<HolidayForwardFillResult> ForwardFillHolidaysAsync();
+}
+
+/// <summary>
+/// Result of analyzing holidays missing price data.
+/// </summary>
+public class HolidayAnalysisResult
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+    public DateTime DataStartDate { get; set; }
+    public DateTime DataEndDate { get; set; }
+    public int TotalDatesWithData { get; set; }
+    public List<MissingHolidayInfo> MissingHolidays { get; set; } = new();
+
+    public int HolidaysWithPriorData => MissingHolidays.Count(h => h.HasPriorDayData);
+    public int HolidaysWithoutPriorData => MissingHolidays.Count(h => !h.HasPriorDayData);
+}
+
+/// <summary>
+/// Information about a missing holiday in the price database.
+/// </summary>
+public class MissingHolidayInfo
+{
+    public required string HolidayName { get; init; }
+    public required DateTime HolidayDate { get; init; }
+    public DateTime PriorTradingDay { get; init; }
+    public bool HasPriorDayData { get; init; }
+}
+
+/// <summary>
+/// Result of forward-filling holiday price data.
+/// </summary>
+public class HolidayForwardFillResult
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+    public string? Message { get; set; }
+    public int HolidaysProcessed { get; set; }
+    public int TotalRecordsInserted { get; set; }
+    public List<(string HolidayName, DateTime Date, int RecordsInserted)> HolidaysFilled { get; set; } = new();
 }
 
 /// <summary>

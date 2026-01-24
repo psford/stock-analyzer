@@ -268,4 +268,180 @@ public class SqlPriceRepository : IPriceRepository
             .OrderBy(d => d)
             .ToListAsync();
     }
+
+    /// <inheritdoc />
+    public async Task<HolidayAnalysisResult> AnalyzeHolidaysAsync()
+    {
+        var result = new HolidayAnalysisResult();
+
+        try
+        {
+            // Get date range from database
+            var dateRange = await _context.Prices
+                .AsNoTracking()
+                .GroupBy(_ => 1)
+                .Select(g => new
+                {
+                    Min = g.Min(p => p.EffectiveDate),
+                    Max = g.Max(p => p.EffectiveDate)
+                })
+                .FirstOrDefaultAsync();
+
+            if (dateRange == null)
+            {
+                result.Error = "No price data found in database";
+                return result;
+            }
+
+            result.DataStartDate = dateRange.Min;
+            result.DataEndDate = dateRange.Max;
+
+            // Get all distinct dates with data
+            var existingDates = await _context.Prices
+                .AsNoTracking()
+                .Select(p => p.EffectiveDate)
+                .Distinct()
+                .ToListAsync();
+
+            var existingDateSet = existingDates.Select(d => DateOnly.FromDateTime(d)).ToHashSet();
+            result.TotalDatesWithData = existingDateSet.Count;
+
+            // Find holidays in range
+            var startDate = DateOnly.FromDateTime(dateRange.Min);
+            var endDate = DateOnly.FromDateTime(dateRange.Max);
+            var holidays = UsMarketCalendar.GetHolidaysBetween(startDate, endDate).ToList();
+
+            foreach (var holiday in holidays)
+            {
+                // Only consider holidays that fall on weekdays
+                if (!holiday.IsWeekday) continue;
+
+                // Check if we have data for this holiday
+                if (existingDateSet.Contains(holiday.Date)) continue;
+
+                // Find prior trading day
+                var priorDay = UsMarketCalendar.GetPreviousTradingDay(holiday.Date);
+                var hasPriorData = existingDateSet.Contains(priorDay);
+
+                result.MissingHolidays.Add(new MissingHolidayInfo
+                {
+                    HolidayName = holiday.Name,
+                    HolidayDate = holiday.Date.ToDateTime(TimeOnly.MinValue),
+                    PriorTradingDay = priorDay.ToDateTime(TimeOnly.MinValue),
+                    HasPriorDayData = hasPriorData
+                });
+            }
+
+            result.Success = true;
+            _logger.LogInformation("Holiday analysis complete: {Missing} holidays missing data ({WithPrior} with prior data available)",
+                result.MissingHolidays.Count, result.HolidaysWithPriorData);
+        }
+        catch (Exception ex)
+        {
+            result.Error = ex.Message;
+            _logger.LogError(ex, "Holiday analysis failed");
+        }
+
+        return result;
+    }
+
+    /// <inheritdoc />
+    public async Task<HolidayForwardFillResult> ForwardFillHolidaysAsync()
+    {
+        var result = new HolidayForwardFillResult();
+
+        try
+        {
+            // First analyze to find missing holidays
+            var analysis = await AnalyzeHolidaysAsync();
+            if (!analysis.Success)
+            {
+                result.Error = analysis.Error;
+                return result;
+            }
+
+            var toFill = analysis.MissingHolidays.Where(h => h.HasPriorDayData).ToList();
+            if (toFill.Count == 0)
+            {
+                result.Success = true;
+                result.Message = "No holidays need forward-fill";
+                return result;
+            }
+
+            _logger.LogInformation("Forward-filling {Count} holidays with prior data available", toFill.Count);
+
+            int totalInserted = 0;
+
+            foreach (var missing in toFill.OrderBy(h => h.HolidayDate))
+            {
+                _logger.LogInformation("Forward-filling {Holiday} ({Date:yyyy-MM-dd}) from {Prior:yyyy-MM-dd}",
+                    missing.HolidayName, missing.HolidayDate, missing.PriorTradingDay);
+
+                // Get all prices from prior trading day
+                var priorPrices = await _context.Prices
+                    .AsNoTracking()
+                    .Where(p => p.EffectiveDate == missing.PriorTradingDay)
+                    .ToListAsync();
+
+                if (priorPrices.Count == 0)
+                {
+                    _logger.LogWarning("No prior day prices found for {Date}", missing.PriorTradingDay);
+                    continue;
+                }
+
+                // Check which securities already have data for the holiday
+                var existingAliases = await _context.Prices
+                    .AsNoTracking()
+                    .Where(p => p.EffectiveDate == missing.HolidayDate)
+                    .Select(p => p.SecurityAlias)
+                    .ToListAsync();
+
+                var existingSet = existingAliases.ToHashSet();
+
+                // Create new price records for the holiday
+                var newPrices = priorPrices
+                    .Where(p => !existingSet.Contains(p.SecurityAlias))
+                    .Select(p => new PriceEntity
+                    {
+                        SecurityAlias = p.SecurityAlias,
+                        EffectiveDate = missing.HolidayDate,
+                        Open = p.Close,   // Use prior close as OHLC
+                        High = p.Close,
+                        Low = p.Close,
+                        Close = p.Close,
+                        Volume = 0,       // No trading on holidays
+                        AdjustedClose = p.AdjustedClose,
+                        CreatedAt = DateTime.UtcNow
+                    })
+                    .ToList();
+
+                if (newPrices.Count > 0)
+                {
+                    _context.Prices.AddRange(newPrices);
+                    await _context.SaveChangesAsync();
+
+                    totalInserted += newPrices.Count;
+                    result.HolidaysFilled.Add((missing.HolidayName, missing.HolidayDate, newPrices.Count));
+
+                    _logger.LogInformation("  Inserted {Count:N0} records for {Holiday}",
+                        newPrices.Count, missing.HolidayName);
+                }
+            }
+
+            result.Success = true;
+            result.HolidaysProcessed = result.HolidaysFilled.Count;
+            result.TotalRecordsInserted = totalInserted;
+            result.Message = $"Forward-filled {result.HolidaysProcessed} holidays with {totalInserted:N0} total records";
+
+            _logger.LogInformation("Holiday forward-fill complete: {Holidays} holidays, {Records:N0} records",
+                result.HolidaysProcessed, totalInserted);
+        }
+        catch (Exception ex)
+        {
+            result.Error = ex.Message;
+            _logger.LogError(ex, "Holiday forward-fill failed");
+        }
+
+        return result;
+    }
 }
