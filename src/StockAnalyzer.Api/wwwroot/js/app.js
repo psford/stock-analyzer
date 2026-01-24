@@ -38,6 +38,9 @@ const App = {
     lastUserActivity: Date.now(),
     idleImageLoaderId: null,
 
+    // Application version (fetched from API)
+    appVersion: null,
+
     /**
      * Initialize the application
      */
@@ -47,8 +50,29 @@ const App = {
         this.bindEvents();
         this.checkApiHealth();
         this.trackUserActivity();
+        this.fetchAppVersion();
         // Start idle-time image cache building (doesn't block anything)
         this.scheduleIdleImageLoad();
+    },
+
+    /**
+     * Fetch and display application version from API
+     */
+    async fetchAppVersion() {
+        try {
+            const response = await fetch('/api/version');
+            if (response.ok) {
+                const data = await response.json();
+                this.appVersion = data.version;
+                const versionEl = document.getElementById('app-version');
+                if (versionEl) {
+                    versionEl.textContent = `v${data.version}`;
+                }
+            }
+        } catch (e) {
+            // Silent fail - version display is non-critical
+            console.debug('Could not fetch app version:', e);
+        }
     },
 
     /**

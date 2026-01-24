@@ -927,6 +927,26 @@ app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.Health
     Predicate = check => check.Tags.Contains("external")
 });
 
+// GET /api/version - Application version information
+app.MapGet("/api/version", () =>
+{
+    var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+    var version = assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+    var infoAttr = assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+        .FirstOrDefault() as System.Reflection.AssemblyInformationalVersionAttribute;
+    var informationalVersion = infoAttr?.InformationalVersion ?? version;
+
+    return Results.Ok(new
+    {
+        version = informationalVersion.Split('+')[0], // Strip build metadata if present
+        buildDate = File.GetLastWriteTimeUtc(assembly.Location).ToString("yyyy-MM-dd"),
+        environment = app.Environment.EnvironmentName
+    });
+})
+.WithName("GetVersion")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK);
+
 // Watchlist API endpoints
 
 // GET /api/watchlists - List all watchlists
