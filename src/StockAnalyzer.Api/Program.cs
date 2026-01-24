@@ -733,6 +733,39 @@ app.MapGet("/api/admin/prices/status", async (IServiceProvider serviceProvider) 
 .WithOpenApi()
 .Produces(StatusCodes.Status200OK);
 
+// GET /api/admin/prices/test-eodhd - Test EODHD API connectivity (debug endpoint)
+app.MapGet("/api/admin/prices/test-eodhd", async (IServiceProvider serviceProvider, string? date) =>
+{
+    var eodhd = serviceProvider.GetService<EodhdService>();
+    if (eodhd == null)
+        return Results.Ok(new { error = "EodhdService not registered" });
+
+    if (!eodhd.IsAvailable)
+        return Results.Ok(new { error = "EODHD API key not configured", isAvailable = false });
+
+    var testDate = string.IsNullOrEmpty(date)
+        ? DateTime.Today.AddDays(-1)
+        : DateTime.Parse(date);
+
+    try
+    {
+        var data = await eodhd.GetBulkEodDataAsync(testDate, "US", CancellationToken.None);
+        return Results.Ok(new
+        {
+            isAvailable = true,
+            testDate = testDate.ToString("yyyy-MM-dd"),
+            recordsReturned = data.Count,
+            sampleTickers = data.Take(5).Select(r => new { r.Code, r.Close, r.Date }).ToList()
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.Ok(new { error = ex.Message, stackTrace = ex.StackTrace });
+    }
+})
+.WithName("TestEodhd")
+.WithOpenApi();
+
 // POST /api/admin/prices/sync-securities - Sync SecurityMaster from Symbols table
 app.MapPost("/api/admin/prices/sync-securities", async (PriceRefreshService? refreshService) =>
 {
