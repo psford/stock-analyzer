@@ -125,8 +125,9 @@ public class EodhdService
                       $"date={date:yyyy-MM-dd}&" +
                       $"filter=extended";
 
-            _logger.LogInformation("Fetching EODHD bulk data for {Exchange} on {Date}",
-                exchange, date.ToString("yyyy-MM-dd"));
+            // Log the URL (mask API key for security)
+            var maskedUrl = url.Replace(_apiKey, "***");
+            _logger.LogInformation("Fetching EODHD bulk data: {Url}", maskedUrl);
 
             var response = await _httpClient.GetAsync(url, ct);
 
@@ -138,12 +139,31 @@ public class EodhdService
                 return new List<EodhdBulkRecord>();
             }
 
-            var data = await response.Content.ReadFromJsonAsync<List<EodhdBulkRecord>>(ct);
+            // Read raw content first to see what we're getting
+            var rawContent = await response.Content.ReadAsStringAsync(ct);
+            _logger.LogInformation("EODHD bulk API raw response length: {Length} bytes for {Date}",
+                rawContent.Length, date.ToString("yyyy-MM-dd"));
 
-            _logger.LogInformation("EODHD bulk API returned {Count} records for {Date}",
-                data?.Count ?? 0, date.ToString("yyyy-MM-dd"));
+            if (string.IsNullOrEmpty(rawContent) || rawContent == "[]")
+            {
+                _logger.LogWarning("EODHD bulk API returned empty response for {Date}", date.ToString("yyyy-MM-dd"));
+                return new List<EodhdBulkRecord>();
+            }
 
-            return data ?? new List<EodhdBulkRecord>();
+            // Parse records individually to handle malformed data gracefully
+            // A single bad record shouldn't take down the entire bulk import
+            var (data, skipped) = ParseBulkRecordsWithFallback(rawContent, date);
+
+            if (skipped > 0)
+            {
+                _logger.LogWarning("EODHD bulk API: Skipped {Skipped} malformed records for {Date}",
+                    skipped, date.ToString("yyyy-MM-dd"));
+            }
+
+            _logger.LogInformation("EODHD bulk API returned {Count} valid records for {Date}",
+                data.Count, date.ToString("yyyy-MM-dd"));
+
+            return data;
         }
         catch (Exception ex)
         {
@@ -259,6 +279,111 @@ public class EodhdService
             return new List<EodhdSymbolRecord>();
         }
     }
+
+    /// <summary>
+    /// Parse bulk records individually to handle malformed data gracefully.
+    /// Returns tuple of (valid records, count of skipped records).
+    /// </summary>
+    private (List<EodhdBulkRecord> Records, int Skipped) ParseBulkRecordsWithFallback(string rawContent, DateTime date)
+    {
+        var records = new List<EodhdBulkRecord>();
+        int skipped = 0;
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(rawContent);
+            var root = doc.RootElement;
+
+            if (root.ValueKind != System.Text.Json.JsonValueKind.Array)
+            {
+                _logger.LogWarning("EODHD bulk API response is not an array for {Date}", date.ToString("yyyy-MM-dd"));
+                return (records, 0);
+            }
+
+            foreach (var element in root.EnumerateArray())
+            {
+                try
+                {
+                    var record = ParseBulkRecord(element);
+                    if (record != null)
+                    {
+                        records.Add(record);
+                    }
+                    else
+                    {
+                        skipped++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    skipped++;
+                    // Log first few skipped records for debugging, then just count
+                    if (skipped <= 5)
+                    {
+                        var code = element.TryGetProperty("code", out var codeProp) ? codeProp.GetString() : "unknown";
+                        _logger.LogDebug(ex, "Skipping malformed EODHD record for {Code} on {Date}",
+                            code, date.ToString("yyyy-MM-dd"));
+                    }
+                }
+            }
+        }
+        catch (System.Text.Json.JsonException jsonEx)
+        {
+            _logger.LogError(jsonEx, "Failed to parse EODHD bulk response as JSON array for {Date}. First 500 chars: {Sample}",
+                date.ToString("yyyy-MM-dd"), rawContent.Substring(0, Math.Min(500, rawContent.Length)));
+        }
+
+        return (records, skipped);
+    }
+
+    /// <summary>
+    /// Parse a single bulk record from a JsonElement, handling type mismatches gracefully.
+    /// </summary>
+    private static EodhdBulkRecord? ParseBulkRecord(System.Text.Json.JsonElement element)
+    {
+        // Required fields - if these fail, skip the record
+        if (!element.TryGetProperty("code", out var codeProp) || codeProp.ValueKind != System.Text.Json.JsonValueKind.String)
+            return null;
+
+        if (!element.TryGetProperty("date", out var dateProp) || dateProp.ValueKind != System.Text.Json.JsonValueKind.String)
+            return null;
+
+        var record = new EodhdBulkRecord
+        {
+            Code = codeProp.GetString() ?? string.Empty,
+            Date = dateProp.GetString() ?? string.Empty,
+            Exchange = GetStringOrDefault(element, "exchange_short_name"),
+            Name = GetStringOrDefault(element, "name"),
+            Open = GetDecimalOrDefault(element, "open"),
+            High = GetDecimalOrDefault(element, "high"),
+            Low = GetDecimalOrDefault(element, "low"),
+            Close = GetDecimalOrDefault(element, "close"),
+            AdjustedClose = GetDecimalOrDefault(element, "adjusted_close"),
+            Volume = GetDecimalOrDefault(element, "volume")
+        };
+
+        return record;
+    }
+
+    private static string GetStringOrDefault(System.Text.Json.JsonElement element, string propertyName)
+    {
+        if (element.TryGetProperty(propertyName, out var prop) && prop.ValueKind == System.Text.Json.JsonValueKind.String)
+            return prop.GetString() ?? string.Empty;
+        return string.Empty;
+    }
+
+    private static decimal GetDecimalOrDefault(System.Text.Json.JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var prop))
+            return 0m;
+
+        return prop.ValueKind switch
+        {
+            System.Text.Json.JsonValueKind.Number => prop.GetDecimal(),
+            System.Text.Json.JsonValueKind.String when decimal.TryParse(prop.GetString(), out var d) => d,
+            _ => 0m
+        };
+    }
 }
 
 /// <summary>
@@ -317,7 +442,7 @@ public class EodhdPriceRecord
     public decimal AdjustedClose { get; set; }
 
     [JsonPropertyName("volume")]
-    public long Volume { get; set; }
+    public decimal Volume { get; set; }
 
     /// <summary>
     /// Parse the date string to DateTime.
@@ -355,7 +480,7 @@ public class EodhdBulkRecord
     public decimal AdjustedClose { get; set; }
 
     [JsonPropertyName("volume")]
-    public long Volume { get; set; }
+    public decimal Volume { get; set; }
 
     [JsonPropertyName("name")]
     public string? Name { get; set; }

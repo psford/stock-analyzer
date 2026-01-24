@@ -231,7 +231,7 @@ public class PriceRefreshService : BackgroundService
                     Low = record.Low,
                     Close = record.Close,
                     AdjustedClose = record.AdjustedClose,
-                    Volume = record.Volume
+                    Volume = (long)record.Volume
                 });
                 result.RecordsMatched++;
             }
@@ -398,7 +398,7 @@ public class PriceRefreshService : BackgroundService
                     Low = record.Low,
                     Close = record.Close,
                     AdjustedClose = record.AdjustedClose,
-                    Volume = record.Volume
+                    Volume = (long)record.Volume
                 }).ToList();
 
                 // Insert prices
