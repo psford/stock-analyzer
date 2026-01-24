@@ -448,6 +448,61 @@ public class PriceRefreshService : BackgroundService
     }
 
     /// <summary>
+    /// Sync SecurityMaster from EODHD exchange symbol list.
+    /// Fetches all available securities from EODHD and adds them to SecurityMaster.
+    /// </summary>
+    /// <param name="exchange">Exchange code (default: "US")</param>
+    /// <param name="ct">Cancellation token</param>
+    /// <returns>Number of securities upserted</returns>
+    public async Task<EodhdSyncResult> SyncSecurityMasterFromEodhdAsync(
+        string exchange = "US",
+        CancellationToken ct = default)
+    {
+        var result = new EodhdSyncResult { Exchange = exchange };
+
+        using var scope = _serviceProvider.CreateScope();
+        var eodhd = scope.ServiceProvider.GetRequiredService<EodhdService>();
+        var securityRepo = scope.ServiceProvider.GetRequiredService<ISecurityMasterRepository>();
+
+        _logger.LogInformation("Fetching symbol list from EODHD for {Exchange}", exchange);
+
+        // Fetch all symbols from EODHD
+        var symbols = await eodhd.GetExchangeSymbolsAsync(exchange, ct);
+
+        if (symbols.Count == 0)
+        {
+            _logger.LogWarning("No symbols returned from EODHD for {Exchange}", exchange);
+            result.ErrorMessage = $"No symbols returned for exchange {exchange}";
+            return result;
+        }
+
+        result.TotalSymbols = symbols.Count;
+        _logger.LogInformation("Retrieved {Count} symbols from EODHD for {Exchange}", symbols.Count, exchange);
+
+        // Convert to SecurityMaster DTOs
+        var dtos = symbols.Select(s => new SecurityMasterCreateDto
+        {
+            TickerSymbol = s.Ticker,
+            IssueName = s.Name,
+            Exchange = s.Exchange,
+            SecurityType = s.Type,
+            Country = s.Country,
+            Currency = s.Currency,
+            Isin = s.Isin
+        }).ToList();
+
+        _logger.LogInformation("Upserting {Count} securities to SecurityMaster", dtos.Count);
+
+        // Batch upsert to SecurityMaster
+        result.SecuritiesUpserted = await securityRepo.UpsertManyAsync(dtos);
+
+        _logger.LogInformation("Successfully upserted {Count} securities from EODHD {Exchange}",
+            result.SecuritiesUpserted, exchange);
+
+        return result;
+    }
+
+    /// <summary>
     /// Get the last trading day before or on the given date.
     /// </summary>
     private static DateTime GetLastTradingDay(DateTime date)
@@ -544,4 +599,23 @@ public record TickerLoadRequest
     public string[]? Tickers { get; init; }
     public string? StartDate { get; init; }
     public string? EndDate { get; init; }
+}
+
+/// <summary>
+/// Request body for syncing SecurityMaster from EODHD exchange symbols.
+/// </summary>
+public record EodhdSyncRequest
+{
+    public string? Exchange { get; init; }
+}
+
+/// <summary>
+/// Result of syncing SecurityMaster from EODHD exchange symbols.
+/// </summary>
+public class EodhdSyncResult
+{
+    public string Exchange { get; set; } = string.Empty;
+    public int TotalSymbols { get; set; }
+    public int SecuritiesUpserted { get; set; }
+    public string? ErrorMessage { get; set; }
 }

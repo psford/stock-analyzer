@@ -43,6 +43,21 @@ public class SecurityMasterEntity
     public string? SecurityType { get; set; }
 
     /// <summary>
+    /// Country where the security is domiciled (e.g., "USA", "Canada").
+    /// </summary>
+    public string? Country { get; set; }
+
+    /// <summary>
+    /// Currency in which the security is traded (e.g., "USD", "CAD", "EUR").
+    /// </summary>
+    public string? Currency { get; set; }
+
+    /// <summary>
+    /// International Securities Identification Number (ISIN) - a globally recognized identifier.
+    /// </summary>
+    public string? Isin { get; set; }
+
+    /// <summary>
     /// Whether this security is actively traded.
     /// Used for soft deletes - delisted securities are marked inactive rather than deleted.
     /// </summary>

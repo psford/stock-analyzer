@@ -73,6 +73,9 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
             PrimaryAssetId = dto.PrimaryAssetId?.Trim(),
             Exchange = dto.Exchange?.Trim(),
             SecurityType = dto.SecurityType?.Trim(),
+            Country = dto.Country?.Trim(),
+            Currency = dto.Currency?.Trim(),
+            Isin = dto.Isin?.Trim(),
             IsActive = true,
             CreatedAt = now,
             UpdatedAt = now
@@ -103,6 +106,12 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
             entity.Exchange = dto.Exchange.Trim();
         if (dto.SecurityType != null)
             entity.SecurityType = dto.SecurityType.Trim();
+        if (dto.Country != null)
+            entity.Country = dto.Country.Trim();
+        if (dto.Currency != null)
+            entity.Currency = dto.Currency.Trim();
+        if (dto.Isin != null)
+            entity.Isin = dto.Isin.Trim();
         if (dto.IsActive.HasValue)
             entity.IsActive = dto.IsActive.Value;
 
@@ -156,6 +165,12 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
                         existing.Exchange = dto.Exchange.Trim();
                     if (dto.SecurityType != null)
                         existing.SecurityType = dto.SecurityType.Trim();
+                    if (dto.Country != null)
+                        existing.Country = dto.Country.Trim();
+                    if (dto.Currency != null)
+                        existing.Currency = dto.Currency.Trim();
+                    if (dto.Isin != null)
+                        existing.Isin = dto.Isin.Trim();
                     existing.IsActive = true;
                     existing.UpdatedAt = now;
                     updated++;
@@ -170,6 +185,9 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
                         PrimaryAssetId = dto.PrimaryAssetId?.Trim(),
                         Exchange = dto.Exchange?.Trim(),
                         SecurityType = dto.SecurityType?.Trim(),
+                        Country = dto.Country?.Trim(),
+                        Currency = dto.Currency?.Trim(),
+                        Isin = dto.Isin?.Trim(),
                         IsActive = true,
                         CreatedAt = now,
                         UpdatedAt = now

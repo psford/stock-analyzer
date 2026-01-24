@@ -756,6 +756,44 @@ app.MapPost("/api/admin/prices/sync-securities", async (PriceRefreshService? ref
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status500InternalServerError);
 
+// POST /api/admin/prices/sync-eodhd - Sync SecurityMaster from EODHD exchange symbols
+app.MapPost("/api/admin/prices/sync-eodhd", async (
+    PriceRefreshService? refreshService,
+    HttpRequest request) =>
+{
+    if (refreshService == null)
+        return Results.BadRequest(new { error = "Price refresh service not configured" });
+
+    var body = await request.ReadFromJsonAsync<EodhdSyncRequest>();
+    var exchange = body?.Exchange ?? "US";
+
+    try
+    {
+        var result = await refreshService.SyncSecurityMasterFromEodhdAsync(exchange);
+
+        if (!string.IsNullOrEmpty(result.ErrorMessage))
+            return Results.Problem(result.ErrorMessage);
+
+        return Results.Ok(new
+        {
+            message = $"EODHD sync complete for {exchange}",
+            exchange = result.Exchange,
+            totalSymbols = result.TotalSymbols,
+            securitiesUpserted = result.SecuritiesUpserted
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "EODHD sync failed for {Exchange}", exchange);
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("SyncEodhd")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status500InternalServerError);
+
 // POST /api/admin/prices/refresh-date - Refresh prices for a specific date
 app.MapPost("/api/admin/prices/refresh-date", async (
     PriceRefreshService? refreshService,

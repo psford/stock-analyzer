@@ -210,6 +210,87 @@ public class EodhdService
             return new List<EodhdBulkRecord>();
         }
     }
+
+    /// <summary>
+    /// Get all symbols for a specific exchange.
+    /// Uses the exchange-symbol-list endpoint to fetch all available securities.
+    /// </summary>
+    /// <param name="exchange">Exchange code (e.g., "US", "LSE", "TO")</param>
+    /// <param name="ct">Cancellation token</param>
+    /// <returns>List of symbol records for the exchange</returns>
+    public async Task<List<EodhdSymbolRecord>> GetExchangeSymbolsAsync(
+        string exchange = "US",
+        CancellationToken ct = default)
+    {
+        if (!IsAvailable)
+        {
+            _logger.LogWarning("EODHD API key not configured");
+            return new List<EodhdSymbolRecord>();
+        }
+
+        try
+        {
+            var url = $"{BaseUrl}/exchange-symbol-list/{exchange}?" +
+                      $"api_token={_apiKey}&" +
+                      $"fmt=json";
+
+            _logger.LogInformation("Fetching EODHD symbol list for {Exchange}", exchange);
+
+            var response = await _httpClient.GetAsync(url, ct);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var content = await response.Content.ReadAsStringAsync(ct);
+                _logger.LogWarning("EODHD exchange symbols API returned {StatusCode}: {Content}",
+                    response.StatusCode, content);
+                return new List<EodhdSymbolRecord>();
+            }
+
+            var data = await response.Content.ReadFromJsonAsync<List<EodhdSymbolRecord>>(ct);
+
+            _logger.LogInformation("EODHD exchange symbols API returned {Count} records for {Exchange}",
+                data?.Count ?? 0, exchange);
+
+            return data ?? new List<EodhdSymbolRecord>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching EODHD exchange symbols for {Exchange}", exchange);
+            return new List<EodhdSymbolRecord>();
+        }
+    }
+}
+
+/// <summary>
+/// Symbol record from EODHD exchange-symbol-list endpoint.
+/// </summary>
+public class EodhdSymbolRecord
+{
+    [JsonPropertyName("Code")]
+    public string Code { get; set; } = string.Empty;
+
+    [JsonPropertyName("Name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("Country")]
+    public string? Country { get; set; }
+
+    [JsonPropertyName("Exchange")]
+    public string Exchange { get; set; } = string.Empty;
+
+    [JsonPropertyName("Currency")]
+    public string? Currency { get; set; }
+
+    [JsonPropertyName("Type")]
+    public string? Type { get; set; }
+
+    [JsonPropertyName("Isin")]
+    public string? Isin { get; set; }
+
+    /// <summary>
+    /// Get the ticker symbol without exchange suffix.
+    /// </summary>
+    public string Ticker => Code.Contains('.') ? Code.Split('.')[0] : Code;
 }
 
 /// <summary>

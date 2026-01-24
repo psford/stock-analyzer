@@ -108,6 +108,21 @@ public record SecurityMasterCreateDto
     /// Optional security type (e.g., "Common Stock", "ETF").
     /// </summary>
     public string? SecurityType { get; init; }
+
+    /// <summary>
+    /// Optional country where the security is domiciled.
+    /// </summary>
+    public string? Country { get; init; }
+
+    /// <summary>
+    /// Optional currency in which the security is traded.
+    /// </summary>
+    public string? Currency { get; init; }
+
+    /// <summary>
+    /// Optional ISIN (International Securities Identification Number).
+    /// </summary>
+    public string? Isin { get; init; }
 }
 
 /// <summary>
@@ -135,6 +150,21 @@ public record SecurityMasterUpdateDto
     /// Updated security type.
     /// </summary>
     public string? SecurityType { get; init; }
+
+    /// <summary>
+    /// Updated country.
+    /// </summary>
+    public string? Country { get; init; }
+
+    /// <summary>
+    /// Updated currency.
+    /// </summary>
+    public string? Currency { get; init; }
+
+    /// <summary>
+    /// Updated ISIN.
+    /// </summary>
+    public string? Isin { get; init; }
 
     /// <summary>
     /// Updated active status.
