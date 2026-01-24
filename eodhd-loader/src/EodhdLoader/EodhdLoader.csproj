@@ -6,6 +6,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <!-- Allow building Windows project on non-Windows CI (CodeQL scans) -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ApplicationIcon></ApplicationIcon>
     <Title>EODHD Data Loader</Title>
     <Description>Standalone tool for loading EODHD price data and migrating to Azure SQL</Description>
