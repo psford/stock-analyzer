@@ -270,6 +270,10 @@ public class SqlPriceRepository : IPriceRepository
     }
 
     /// <inheritdoc />
+    /// <summary>
+    /// Analyzes ALL non-business days (weekends AND holidays) that need price data.
+    /// Reports which days need forward-fill from prior business days.
+    /// </summary>
     public async Task<HolidayAnalysisResult> AnalyzeHolidaysAsync()
     {
         var result = new HolidayAnalysisResult();
@@ -303,143 +307,208 @@ public class SqlPriceRepository : IPriceRepository
                 .Distinct()
                 .ToListAsync();
 
-            var existingDateSet = existingDates.Select(d => DateOnly.FromDateTime(d)).ToHashSet();
+            var existingDateSet = existingDates.ToHashSet();
             result.TotalDatesWithData = existingDateSet.Count;
 
-            // Find holidays in range
-            var startDate = DateOnly.FromDateTime(dateRange.Min);
-            var endDate = DateOnly.FromDateTime(dateRange.Max);
-            var holidays = UsMarketCalendar.GetHolidaysBetween(startDate, endDate).ToList();
+            // Query ALL non-business days (weekends + holidays) from BusinessCalendar
+            var nonBusinessDays = await _context.BusinessCalendar
+                .AsNoTracking()
+                .Where(bc => bc.SourceId == 1  // US calendar
+                    && bc.EffectiveDate >= dateRange.Min
+                    && bc.EffectiveDate <= dateRange.Max
+                    && !bc.IsBusinessDay)  // All non-business days
+                .OrderBy(bc => bc.EffectiveDate)
+                .Select(bc => new { bc.EffectiveDate, bc.IsHoliday })
+                .ToListAsync();
 
-            foreach (var holiday in holidays)
+            foreach (var nonBD in nonBusinessDays)
             {
-                // Only consider holidays that fall on weekdays
-                if (!holiday.IsWeekday) continue;
+                // Find prior business day from calendar table
+                var priorBusinessDay = await _context.BusinessCalendar
+                    .AsNoTracking()
+                    .Where(bc => bc.SourceId == 1
+                        && bc.EffectiveDate < nonBD.EffectiveDate
+                        && bc.IsBusinessDay)
+                    .OrderByDescending(bc => bc.EffectiveDate)
+                    .Select(bc => bc.EffectiveDate)
+                    .FirstOrDefaultAsync();
 
-                // Check if we have data for this holiday
-                if (existingDateSet.Contains(holiday.Date)) continue;
+                var hasPriorData = priorBusinessDay != default && existingDateSet.Contains(priorBusinessDay);
+                var hasExistingData = existingDateSet.Contains(nonBD.EffectiveDate);
 
-                // Find prior trading day
-                var priorDay = UsMarketCalendar.GetPreviousTradingDay(holiday.Date);
-                var hasPriorData = existingDateSet.Contains(priorDay);
-
+                var dayType = nonBD.IsHoliday ? "Holiday" : "Weekend";
                 result.MissingHolidays.Add(new MissingHolidayInfo
                 {
-                    HolidayName = holiday.Name,
-                    HolidayDate = holiday.Date.ToDateTime(TimeOnly.MinValue),
-                    PriorTradingDay = priorDay.ToDateTime(TimeOnly.MinValue),
-                    HasPriorDayData = hasPriorData
+                    HolidayName = $"{dayType} {nonBD.EffectiveDate:yyyy-MM-dd}",
+                    HolidayDate = nonBD.EffectiveDate,
+                    PriorTradingDay = priorBusinessDay,
+                    HasPriorDayData = hasPriorData,
+                    HasExistingData = hasExistingData
                 });
             }
 
             result.Success = true;
-            _logger.LogInformation("Holiday analysis complete: {Missing} holidays missing data ({WithPrior} with prior data available)",
-                result.MissingHolidays.Count, result.HolidaysWithPriorData);
+            _logger.LogInformation("Non-business day analysis complete: {Total} days ({WithPrior} with prior data, {WithExisting} already have data)",
+                result.MissingHolidays.Count, result.HolidaysWithPriorData, result.MissingHolidays.Count(h => h.HasExistingData));
         }
         catch (Exception ex)
         {
             result.Error = ex.Message;
-            _logger.LogError(ex, "Holiday analysis failed");
+            _logger.LogError(ex, "Non-business day analysis failed");
         }
 
         return result;
     }
 
     /// <inheritdoc />
+    /// <summary>
+    /// Forward-fills price data to ALL non-business days (weekends AND holidays).
+    /// Creates a continuous 7-day calendar where non-business days have stale data (Volume=0)
+    /// copied from the prior business day's close.
+    /// </summary>
     public async Task<HolidayForwardFillResult> ForwardFillHolidaysAsync()
     {
         var result = new HolidayForwardFillResult();
 
         try
         {
-            // First analyze to find missing holidays
-            var analysis = await AnalyzeHolidaysAsync();
-            if (!analysis.Success)
+            // Get all business days that have price data (using calendar table)
+            var businessDaysWithPriceData = await _context.Prices
+                .AsNoTracking()
+                .Select(p => p.EffectiveDate)
+                .Distinct()
+                .Join(
+                    _context.BusinessCalendar.AsNoTracking().Where(bc => bc.SourceId == 1 && bc.IsBusinessDay),
+                    priceDate => priceDate,
+                    bc => bc.EffectiveDate,
+                    (priceDate, bc) => priceDate)
+                .OrderBy(d => d)
+                .ToListAsync();
+
+            if (businessDaysWithPriceData.Count == 0)
             {
-                result.Error = analysis.Error;
+                result.Error = "No price data found for business days";
                 return result;
             }
 
-            var toFill = analysis.MissingHolidays.Where(h => h.HasPriorDayData).ToList();
-            if (toFill.Count == 0)
-            {
-                result.Success = true;
-                result.Message = "No holidays need forward-fill";
-                return result;
-            }
+            var minDate = businessDaysWithPriceData.Min();
+            var maxDate = businessDaysWithPriceData.Max();
 
-            _logger.LogInformation("Forward-filling {Count} holidays with prior data available", toFill.Count);
+            _logger.LogInformation("Forward-filling non-business days from {Start:yyyy-MM-dd} to {End:yyyy-MM-dd}",
+                minDate, maxDate);
 
             int totalInserted = 0;
+            int totalUpdated = 0;
+            int daysProcessed = 0;
 
-            foreach (var missing in toFill.OrderBy(h => h.HolidayDate))
+            // Process each business day with data
+            for (int i = 0; i < businessDaysWithPriceData.Count; i++)
             {
-                _logger.LogInformation("Forward-filling {Holiday} ({Date:yyyy-MM-dd}) from {Prior:yyyy-MM-dd}",
-                    missing.HolidayName, missing.HolidayDate, missing.PriorTradingDay);
+                var businessDay = businessDaysWithPriceData[i];
 
-                // Get all prices from prior trading day
-                var priorPrices = await _context.Prices
+                // Find the next business day (to know where non-business days end)
+                var nextBusinessDay = (i + 1 < businessDaysWithPriceData.Count)
+                    ? businessDaysWithPriceData[i + 1]
+                    : maxDate.AddDays(1); // For the last business day, just process up to maxDate
+
+                // Get all non-business days between this business day and the next one
+                var nonBusinessDays = await _context.BusinessCalendar
                     .AsNoTracking()
-                    .Where(p => p.EffectiveDate == missing.PriorTradingDay)
+                    .Where(bc => bc.SourceId == 1
+                        && bc.EffectiveDate > businessDay
+                        && bc.EffectiveDate < nextBusinessDay
+                        && !bc.IsBusinessDay)
+                    .OrderBy(bc => bc.EffectiveDate)
+                    .Select(bc => new { bc.EffectiveDate, bc.IsHoliday })
                     .ToListAsync();
 
-                if (priorPrices.Count == 0)
+                if (nonBusinessDays.Count == 0)
+                    continue;
+
+                // Get prices from the business day to copy forward
+                var businessDayPrices = await _context.Prices
+                    .AsNoTracking()
+                    .Where(p => p.EffectiveDate == businessDay)
+                    .ToListAsync();
+
+                if (businessDayPrices.Count == 0)
                 {
-                    _logger.LogWarning("No prior day prices found for {Date}", missing.PriorTradingDay);
+                    _logger.LogWarning("No prices found for business day {Date:yyyy-MM-dd}", businessDay);
                     continue;
                 }
 
-                // Check which securities already have data for the holiday
-                var existingAliases = await _context.Prices
-                    .AsNoTracking()
-                    .Where(p => p.EffectiveDate == missing.HolidayDate)
-                    .Select(p => p.SecurityAlias)
-                    .ToListAsync();
-
-                var existingSet = existingAliases.ToHashSet();
-
-                // Create new price records for the holiday
-                var newPrices = priorPrices
-                    .Where(p => !existingSet.Contains(p.SecurityAlias))
-                    .Select(p => new PriceEntity
-                    {
-                        SecurityAlias = p.SecurityAlias,
-                        EffectiveDate = missing.HolidayDate,
-                        Open = p.Close,   // Use prior close as OHLC
-                        High = p.Close,
-                        Low = p.Close,
-                        Close = p.Close,
-                        Volume = 0,       // No trading on holidays
-                        AdjustedClose = p.AdjustedClose,
-                        CreatedAt = DateTime.UtcNow
-                    })
-                    .ToList();
-
-                if (newPrices.Count > 0)
+                // Process each non-business day after this business day
+                foreach (var nonBD in nonBusinessDays)
                 {
-                    _context.Prices.AddRange(newPrices);
+                    // Get existing records for the non-business day (for UPSERT)
+                    var existingPrices = await _context.Prices
+                        .Where(p => p.EffectiveDate == nonBD.EffectiveDate)
+                        .ToDictionaryAsync(p => p.SecurityAlias);
+
+                    int dayInserted = 0;
+                    int dayUpdated = 0;
+
+                    foreach (var prior in businessDayPrices)
+                    {
+                        if (existingPrices.TryGetValue(prior.SecurityAlias, out var existing))
+                        {
+                            // UPDATE: Overwrite with stale data from prior BD
+                            existing.Open = prior.Close;
+                            existing.High = prior.Close;
+                            existing.Low = prior.Close;
+                            existing.Close = prior.Close;
+                            existing.Volume = 0; // Mark as stale/non-business day
+                            existing.AdjustedClose = prior.AdjustedClose;
+                            dayUpdated++;
+                        }
+                        else
+                        {
+                            // INSERT: Create new stale record
+                            _context.Prices.Add(new PriceEntity
+                            {
+                                SecurityAlias = prior.SecurityAlias,
+                                EffectiveDate = nonBD.EffectiveDate,
+                                Open = prior.Close,
+                                High = prior.Close,
+                                Low = prior.Close,
+                                Close = prior.Close,
+                                Volume = 0, // Mark as stale/non-business day
+                                AdjustedClose = prior.AdjustedClose,
+                                CreatedAt = DateTime.UtcNow
+                            });
+                            dayInserted++;
+                        }
+                    }
+
                     await _context.SaveChangesAsync();
 
-                    totalInserted += newPrices.Count;
-                    result.HolidaysFilled.Add((missing.HolidayName, missing.HolidayDate, newPrices.Count));
+                    totalInserted += dayInserted;
+                    totalUpdated += dayUpdated;
+                    daysProcessed++;
 
-                    _logger.LogInformation("  Inserted {Count:N0} records for {Holiday}",
-                        newPrices.Count, missing.HolidayName);
+                    var dayType = nonBD.IsHoliday ? "Holiday" : "Weekend";
+                    result.HolidaysFilled.Add(($"{dayType} {nonBD.EffectiveDate:yyyy-MM-dd}", nonBD.EffectiveDate, dayInserted + dayUpdated));
+
+                    if (daysProcessed % 100 == 0)
+                    {
+                        _logger.LogInformation("Progress: {Days} non-business days processed, {Inserted:N0} inserted, {Updated:N0} updated",
+                            daysProcessed, totalInserted, totalUpdated);
+                    }
                 }
             }
 
             result.Success = true;
-            result.HolidaysProcessed = result.HolidaysFilled.Count;
+            result.HolidaysProcessed = daysProcessed;
             result.TotalRecordsInserted = totalInserted;
-            result.Message = $"Forward-filled {result.HolidaysProcessed} holidays with {totalInserted:N0} total records";
+            result.Message = $"Forward-filled {daysProcessed} non-business days: {totalInserted:N0} inserted, {totalUpdated:N0} updated";
 
-            _logger.LogInformation("Holiday forward-fill complete: {Holidays} holidays, {Records:N0} records",
-                result.HolidaysProcessed, totalInserted);
+            _logger.LogInformation("Non-business day forward-fill complete: {Days} days, {Inserted:N0} inserted, {Updated:N0} updated",
+                daysProcessed, totalInserted, totalUpdated);
         }
         catch (Exception ex)
         {
             result.Error = ex.Message;
-            _logger.LogError(ex, "Holiday forward-fill failed");
+            _logger.LogError(ex, "Non-business day forward-fill failed");
         }
 
         return result;

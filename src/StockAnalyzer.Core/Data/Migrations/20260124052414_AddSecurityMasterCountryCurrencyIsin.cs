@@ -10,26 +10,27 @@ namespace StockAnalyzer.Core.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<string>(
-                name: "Country",
-                schema: "data",
-                table: "SecurityMaster",
-                type: "nvarchar(max)",
-                nullable: true);
+            // Add columns only if they don't exist (idempotent migration)
+            migrationBuilder.Sql(@"
+                IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('[data].[SecurityMaster]') AND name = 'Country')
+                BEGIN
+                    ALTER TABLE [data].[SecurityMaster] ADD [Country] nvarchar(max) NULL;
+                END
+            ");
 
-            migrationBuilder.AddColumn<string>(
-                name: "Currency",
-                schema: "data",
-                table: "SecurityMaster",
-                type: "nvarchar(max)",
-                nullable: true);
+            migrationBuilder.Sql(@"
+                IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('[data].[SecurityMaster]') AND name = 'Currency')
+                BEGIN
+                    ALTER TABLE [data].[SecurityMaster] ADD [Currency] nvarchar(max) NULL;
+                END
+            ");
 
-            migrationBuilder.AddColumn<string>(
-                name: "Isin",
-                schema: "data",
-                table: "SecurityMaster",
-                type: "nvarchar(max)",
-                nullable: true);
+            migrationBuilder.Sql(@"
+                IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('[data].[SecurityMaster]') AND name = 'Isin')
+                BEGIN
+                    ALTER TABLE [data].[SecurityMaster] ADD [Isin] nvarchar(max) NULL;
+                END
+            ");
         }
 
         /// <inheritdoc />

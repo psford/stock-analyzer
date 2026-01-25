@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using Serilog.Events;
 using StockAnalyzer.Core.Data;
+using StockAnalyzer.Core.Data.Entities;
 using StockAnalyzer.Core.Models;
 using StockAnalyzer.Core.Services;
 
@@ -1299,6 +1300,141 @@ app.MapPost("/api/admin/prices/holidays/forward-fill", async (IServiceProvider s
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status500InternalServerError);
+
+// POST /api/admin/calendar/populate-us - Populate US business calendar
+app.MapPost("/api/admin/calendar/populate-us", async (
+    StockAnalyzerDbContext dbContext,
+    string? startDate,
+    string? endDate) =>
+{
+    try
+    {
+        // Default range: 1980-01-01 to 2030-12-31
+        var start = DateTime.TryParse(startDate, out var s) ? DateOnly.FromDateTime(s) : new DateOnly(1980, 1, 1);
+        var end = DateTime.TryParse(endDate, out var e) ? DateOnly.FromDateTime(e) : new DateOnly(2030, 12, 31);
+
+        Log.Information("Populating US business calendar from {Start} to {End}", start, end);
+
+        // Ensure US source exists
+        var usSource = await dbContext.Sources.FirstOrDefaultAsync(s => s.SourceId == 1);
+        if (usSource == null)
+        {
+            dbContext.Sources.Add(new SourceEntity
+            {
+                SourceId = 1,
+                SourceShortName = "US",
+                SourceLongName = "US Business Day Calendar"
+            });
+            await dbContext.SaveChangesAsync();
+        }
+
+        // Delete existing entries in range (for re-population)
+        var existingCount = await dbContext.BusinessCalendar
+            .Where(bc => bc.SourceId == 1 && bc.EffectiveDate >= start.ToDateTime(TimeOnly.MinValue) && bc.EffectiveDate <= end.ToDateTime(TimeOnly.MinValue))
+            .ExecuteDeleteAsync();
+
+        Log.Information("Deleted {Count} existing calendar entries", existingCount);
+
+        // Generate all dates in range
+        var entries = new List<BusinessCalendarEntity>();
+        var currentMonth = new DateOnly(start.Year, start.Month, 1);
+
+        for (var date = start; date <= end; date = date.AddDays(1))
+        {
+            var isWeekday = date.DayOfWeek != DayOfWeek.Saturday && date.DayOfWeek != DayOfWeek.Sunday;
+            var isBusinessDay = UsMarketCalendar.IsTradingDay(date);
+            var isHoliday = isWeekday && !isBusinessDay; // Weekday non-trading day = holiday
+            var isMonthEnd = date == new DateOnly(date.Year, date.Month, DateTime.DaysInMonth(date.Year, date.Month));
+
+            entries.Add(new BusinessCalendarEntity
+            {
+                SourceId = 1,
+                EffectiveDate = date.ToDateTime(TimeOnly.MinValue),
+                IsBusinessDay = isBusinessDay,
+                IsHoliday = isHoliday,
+                IsMonthEnd = isMonthEnd,
+                IsLastBusinessDayMonthEnd = false // Will calculate in second pass
+            });
+        }
+
+        // Calculate last business day of each month
+        var entriesByMonth = entries.GroupBy(e => new { e.EffectiveDate.Year, e.EffectiveDate.Month });
+        foreach (var month in entriesByMonth)
+        {
+            var lastBusinessDay = month
+                .Where(e => e.IsBusinessDay)
+                .OrderByDescending(e => e.EffectiveDate)
+                .FirstOrDefault();
+
+            if (lastBusinessDay != null)
+            {
+                lastBusinessDay.IsLastBusinessDayMonthEnd = true;
+            }
+        }
+
+        // Batch insert
+        dbContext.BusinessCalendar.AddRange(entries);
+        await dbContext.SaveChangesAsync();
+
+        var businessDays = entries.Count(e => e.IsBusinessDay);
+        var holidays = entries.Count(e => e.IsHoliday);
+
+        Log.Information("Populated US calendar: {Total} dates, {BusinessDays} business days, {Holidays} holidays",
+            entries.Count, businessDays, holidays);
+
+        return Results.Ok(new
+        {
+            success = true,
+            startDate = start.ToString("yyyy-MM-dd"),
+            endDate = end.ToString("yyyy-MM-dd"),
+            totalDates = entries.Count,
+            businessDays,
+            weekends = entries.Count - businessDays - holidays,
+            holidays,
+            monthEndDates = entries.Count(e => e.IsMonthEnd),
+            lastBusinessDayMonthEnds = entries.Count(e => e.IsLastBusinessDayMonthEnd)
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Failed to populate US business calendar");
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("PopulateUsBusinessCalendar")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status500InternalServerError);
+
+// GET /api/admin/calendar/us - Get US business calendar info
+app.MapGet("/api/admin/calendar/us", async (
+    StockAnalyzerDbContext dbContext,
+    string? startDate,
+    string? endDate) =>
+{
+    var start = DateTime.TryParse(startDate, out var s) ? s : DateTime.Today.AddYears(-1);
+    var end = DateTime.TryParse(endDate, out var e) ? e : DateTime.Today;
+
+    var entries = await dbContext.BusinessCalendar
+        .Where(bc => bc.SourceId == 1 && bc.EffectiveDate >= start && bc.EffectiveDate <= end)
+        .OrderBy(bc => bc.EffectiveDate)
+        .ToListAsync();
+
+    return Results.Ok(new
+    {
+        startDate = start.ToString("yyyy-MM-dd"),
+        endDate = end.ToString("yyyy-MM-dd"),
+        totalDates = entries.Count,
+        businessDays = entries.Count(e => e.IsBusinessDay),
+        nonBusinessDays = entries.Count(e => !e.IsBusinessDay),
+        holidays = entries.Where(e => !e.IsBusinessDay && e.EffectiveDate.DayOfWeek != DayOfWeek.Saturday && e.EffectiveDate.DayOfWeek != DayOfWeek.Sunday)
+            .Select(e => e.EffectiveDate.ToString("yyyy-MM-dd"))
+            .ToList()
+    });
+})
+.WithName("GetUsBusinessCalendar")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK);
 
 // Health check endpoints
 app.MapHealthChecks("/health", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions

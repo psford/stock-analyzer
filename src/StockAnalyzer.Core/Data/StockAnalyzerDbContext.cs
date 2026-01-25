@@ -25,6 +25,8 @@ public class StockAnalyzerDbContext : DbContext
     // Domain data tables (data schema)
     public DbSet<SecurityMasterEntity> SecurityMaster => Set<SecurityMasterEntity>();
     public DbSet<PriceEntity> Prices => Set<PriceEntity>();
+    public DbSet<SourceEntity> Sources => Set<SourceEntity>();
+    public DbSet<BusinessCalendarEntity> BusinessCalendar => Set<BusinessCalendarEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -202,6 +204,44 @@ public class StockAnalyzerDbContext : DbContext
             // Index for batch date lookups (e.g., "all prices for 2025-01-15")
             entity.HasIndex(e => e.EffectiveDate)
                 .HasDatabaseName("IX_Prices_EffectiveDate");
+        });
+
+        // Sources configuration (dictionary table for business calendars)
+        modelBuilder.Entity<SourceEntity>(entity =>
+        {
+            entity.ToTable("Sources", "data");
+            entity.HasKey(e => e.SourceId);
+            entity.Property(e => e.SourceId).ValueGeneratedNever(); // Manually assigned IDs
+            entity.Property(e => e.SourceShortName).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.SourceLongName).HasMaxLength(200).IsRequired();
+
+            // Unique index on short name
+            entity.HasIndex(e => e.SourceShortName)
+                .IsUnique()
+                .HasDatabaseName("IX_Sources_SourceShortName");
+
+            // One-to-many: Source -> BusinessCalendar
+            entity.HasMany(e => e.BusinessCalendarEntries)
+                .WithOne(b => b.Source)
+                .HasForeignKey(b => b.SourceId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // BusinessCalendar configuration
+        modelBuilder.Entity<BusinessCalendarEntity>(entity =>
+        {
+            entity.ToTable("BusinessCalendar", "data");
+            // Composite primary key: SourceId + EffectiveDate
+            entity.HasKey(e => new { e.SourceId, e.EffectiveDate });
+            entity.Property(e => e.EffectiveDate).HasColumnType("date"); // DATE only, no time
+            entity.Property(e => e.IsBusinessDay).HasDefaultValue(true);
+            entity.Property(e => e.IsHoliday).HasDefaultValue(false);
+            entity.Property(e => e.IsMonthEnd).HasDefaultValue(false);
+            entity.Property(e => e.IsLastBusinessDayMonthEnd).HasDefaultValue(false);
+
+            // Index for filtering business days within a date range
+            entity.HasIndex(e => new { e.SourceId, e.IsBusinessDay, e.EffectiveDate })
+                .HasDatabaseName("IX_BusinessCalendar_SourceId_IsBusinessDay_EffectiveDate");
         });
     }
 }

@@ -141,7 +141,8 @@ public class HolidayAnalysisResult
 }
 
 /// <summary>
-/// Information about a missing holiday in the price database.
+/// Information about a holiday in the price database.
+/// Used for both analysis and forward-fill operations.
 /// </summary>
 public class MissingHolidayInfo
 {
@@ -149,6 +150,10 @@ public class MissingHolidayInfo
     public required DateTime HolidayDate { get; init; }
     public DateTime PriorTradingDay { get; init; }
     public bool HasPriorDayData { get; init; }
+    /// <summary>
+    /// Whether this holiday already has price data (will be updated via UPSERT).
+    /// </summary>
+    public bool HasExistingData { get; init; }
 }
 
 /// <summary>
