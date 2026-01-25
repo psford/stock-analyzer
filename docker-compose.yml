@@ -9,4 +9,5 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - Finnhub__ApiKey=${FINNHUB_API_KEY}
+      - Eodhd__ApiKey=${EODHD_API_KEY}
     restart: unless-stopped

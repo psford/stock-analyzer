@@ -18,6 +18,10 @@ param sqlAdminPassword string
 @secure()
 param finnhubApiKey string
 
+@description('EODHD API key')
+@secure()
+param eodhdApiKey string
+
 // Resource naming - shortened for Azure constraints
 var appName = 'stockanalyzer'
 var shortSuffix = substring(uniqueString(resourceGroup().id), 0, 6)
@@ -72,6 +76,10 @@ resource appService 'Microsoft.Web/sites@2023-01-01' = {
         {
           name: 'Finnhub__ApiKey'
           value: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=FinnhubApiKey)'
+        }
+        {
+          name: 'Eodhd__ApiKey'
+          value: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=EodhdApiKey)'
         }
       ]
       connectionStrings: [
@@ -136,6 +144,15 @@ resource finnhubSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   name: 'FinnhubApiKey'
   properties: {
     value: finnhubApiKey
+  }
+}
+
+// Store EODHD API key in Key Vault
+resource eodhdSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'EodhdApiKey'
+  properties: {
+    value: eodhdApiKey
   }
 }
 
