@@ -1533,21 +1533,23 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
         var securitiesWithGaps = new List<object>();
         int totalMissingDays = 0;
 
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        using (var reader = await cmd.ExecuteReaderAsync())
         {
-            var missingDays = reader.GetInt32(6);
-            totalMissingDays += missingDays;
-            securitiesWithGaps.Add(new
+            while (await reader.ReadAsync())
             {
-                securityAlias = reader.GetInt32(0),
-                ticker = reader.GetString(1),
-                firstDate = reader.GetDateTime(2).ToString("yyyy-MM-dd"),
-                lastDate = reader.GetDateTime(3).ToString("yyyy-MM-dd"),
-                actualDays = reader.GetInt32(4),
-                expectedDays = reader.GetInt32(5),
-                missingDays
-            });
+                var missingDays = reader.GetInt32(6);
+                totalMissingDays += missingDays;
+                securitiesWithGaps.Add(new
+                {
+                    securityAlias = reader.GetInt32(0),
+                    ticker = reader.GetString(1),
+                    firstDate = reader.GetDateTime(2).ToString("yyyy-MM-dd"),
+                    lastDate = reader.GetDateTime(3).ToString("yyyy-MM-dd"),
+                    actualDays = reader.GetInt32(4),
+                    expectedDays = reader.GetInt32(5),
+                    missingDays
+                });
+            }
         }
 
         // Get summary stats (only for tracked securities)
