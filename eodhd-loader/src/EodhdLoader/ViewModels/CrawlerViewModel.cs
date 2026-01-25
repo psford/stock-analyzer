@@ -7,140 +7,81 @@ using EodhdLoader.Services;
 namespace EodhdLoader.ViewModels;
 
 /// <summary>
-/// ViewModel for Crawler Mode - a production data monitoring dashboard.
-/// Shows live stats about how much historical price data has been loaded,
-/// with animated counters, progress bars by decade, and activity feed.
+/// ViewModel for the Crawler - an autonomous gap-filling agent.
+/// Finds missing trading days and loads price data from EODHD.
+/// Paced at ~52 API calls/minute (75,000/day budget).
 /// </summary>
 public partial class CrawlerViewModel : ViewModelBase
 {
     private readonly StockAnalyzerApiClient _apiClient;
-    private readonly DispatcherTimer _refreshTimer;
-    private readonly DispatcherTimer _animationTimer;
-    private CancellationTokenSource? _cancellationTokenSource;
+    private readonly DispatcherTimer _crawlTimer;
+    private CancellationTokenSource? _cts;
 
-    // Animation state
-    private int _targetTotalRecords;
-    private int _targetDistinctSecurities;
-    private int _targetDistinctDates;
-    private int _animatedTotalRecords;
-    private int _animatedDistinctSecurities;
-    private int _animatedDistinctDates;
+    // Rate limiting: 75,000 calls/day = 52/min = ~1.15 seconds between calls
+    // Using 1.2s to be safe
+    private const int CallIntervalMs = 1200;
+    private const int BatchSize = 10; // Dates to fetch per gaps query
 
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(ToggleMonitoringCommand))]
-    private bool _isMonitoring;
+    [NotifyCanExecuteChangedFor(nameof(StartCrawlCommand))]
+    [NotifyCanExecuteChangedFor(nameof(StopCrawlCommand))]
+    private bool _isCrawling;
 
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(ToggleMonitoringCommand))]
+    [NotifyCanExecuteChangedFor(nameof(StartCrawlCommand))]
     private bool _isConnected;
 
     [ObservableProperty]
     private string _connectionStatus = "Not Connected";
 
     [ObservableProperty]
-    private string _statusText = "Click Test Connection, then Start to begin monitoring.";
-
-    // Animated counters (these animate toward targets)
-    [ObservableProperty]
-    private string _totalRecordsDisplay = "—";
+    private string _statusText = "Click Test to connect, then Start to begin crawling.";
 
     [ObservableProperty]
-    private string _distinctSecuritiesDisplay = "—";
+    private TargetEnvironment _selectedEnvironment = TargetEnvironment.Production;
+
+    // Progress tracking
+    [ObservableProperty]
+    private int _totalMissingDays;
 
     [ObservableProperty]
-    private string _distinctDatesDisplay = "—";
-
-    // Static stats
-    [ObservableProperty]
-    private string _dateRange = "—";
+    private int _daysWithData;
 
     [ObservableProperty]
-    private int _yearsOfData;
+    private int _daysLoadedThisSession;
 
     [ObservableProperty]
-    private int _avgRecordsPerDay;
-
-    // Decade progress
-    [ObservableProperty]
-    private ObservableCollection<DecadeProgress> _decades = [];
-
-    // Activity feed
-    [ObservableProperty]
-    private ObservableCollection<ActivityItem> _activityFeed = [];
+    private double _completionPercent;
 
     [ObservableProperty]
-    private int _refreshIntervalSeconds = 30;
+    private string _currentAction = "Idle";
 
     [ObservableProperty]
-    private string _lastRefresh = "Never";
+    private string _currentDate = "—";
 
     [ObservableProperty]
-    private TargetEnvironment _selectedEnvironment = TargetEnvironment.Local;
+    private int _recordsLoadedThisSession;
+
+    [ObservableProperty]
+    private int _errorsThisSession;
+
+    // Activity log
+    [ObservableProperty]
+    private ObservableCollection<CrawlActivity> _activityLog = [];
+
+    // Queue of dates to process
+    private Queue<string> _dateQueue = new();
 
     public CrawlerViewModel(StockAnalyzerApiClient apiClient)
     {
         _apiClient = apiClient;
 
-        // Set up auto-refresh timer
-        _refreshTimer = new DispatcherTimer
+        // Timer for paced API calls
+        _crawlTimer = new DispatcherTimer
         {
-            Interval = TimeSpan.FromSeconds(30)
+            Interval = TimeSpan.FromMilliseconds(CallIntervalMs)
         };
-        _refreshTimer.Tick += async (s, e) => await RefreshStatsAsync();
-
-        // Set up animation timer (smooth counter updates)
-        _animationTimer = new DispatcherTimer
-        {
-            Interval = TimeSpan.FromMilliseconds(50)
-        };
-        _animationTimer.Tick += AnimateCounters;
-    }
-
-    private void AnimateCounters(object? sender, EventArgs e)
-    {
-        var changed = false;
-
-        // Animate total records
-        if (_animatedTotalRecords != _targetTotalRecords)
-        {
-            var diff = _targetTotalRecords - _animatedTotalRecords;
-            var step = Math.Max(1, Math.Abs(diff) / 20);
-            _animatedTotalRecords += diff > 0 ? step : -step;
-            if (Math.Abs(_targetTotalRecords - _animatedTotalRecords) < step)
-                _animatedTotalRecords = _targetTotalRecords;
-            TotalRecordsDisplay = _animatedTotalRecords.ToString("N0");
-            changed = true;
-        }
-
-        // Animate securities
-        if (_animatedDistinctSecurities != _targetDistinctSecurities)
-        {
-            var diff = _targetDistinctSecurities - _animatedDistinctSecurities;
-            var step = Math.Max(1, Math.Abs(diff) / 20);
-            _animatedDistinctSecurities += diff > 0 ? step : -step;
-            if (Math.Abs(_targetDistinctSecurities - _animatedDistinctSecurities) < step)
-                _animatedDistinctSecurities = _targetDistinctSecurities;
-            DistinctSecuritiesDisplay = _animatedDistinctSecurities.ToString("N0");
-            changed = true;
-        }
-
-        // Animate dates
-        if (_animatedDistinctDates != _targetDistinctDates)
-        {
-            var diff = _targetDistinctDates - _animatedDistinctDates;
-            var step = Math.Max(1, Math.Abs(diff) / 20);
-            _animatedDistinctDates += diff > 0 ? step : -step;
-            if (Math.Abs(_targetDistinctDates - _animatedDistinctDates) < step)
-                _animatedDistinctDates = _targetDistinctDates;
-            DistinctDatesDisplay = _animatedDistinctDates.ToString("N0");
-            changed = true;
-        }
-
-        // Stop animation when done
-        if (!changed)
-        {
-            _animationTimer.Stop();
-        }
+        _crawlTimer.Tick += async (s, e) => await ProcessNextDateAsync();
     }
 
     [RelayCommand]
@@ -149,7 +90,7 @@ public partial class CrawlerViewModel : ViewModelBase
         IsBusy = true;
         ConnectionStatus = "Testing...";
         var envName = SelectedEnvironment == TargetEnvironment.Production ? "Production" : "Local";
-        StatusText = $"Testing connection to {envName} API...";
+        StatusText = $"Testing connection to {envName}...";
 
         try
         {
@@ -160,13 +101,16 @@ public partial class CrawlerViewModel : ViewModelBase
             {
                 IsConnected = true;
                 ConnectionStatus = $"Connected ({envName})";
-                StatusText = $"Connected to {envName}. Click Start to begin monitoring.";
+
+                // Fetch initial gap status
+                await RefreshGapsAsync();
+                StatusText = $"Connected. {TotalMissingDays:N0} missing days found. Click Start to begin.";
             }
             else
             {
                 IsConnected = false;
                 ConnectionStatus = "Failed";
-                StatusText = $"Could not connect to {envName} API.";
+                StatusText = $"Could not connect to {envName}.";
             }
         }
         catch (Exception ex)
@@ -181,132 +125,159 @@ public partial class CrawlerViewModel : ViewModelBase
         }
     }
 
-    private bool CanToggleMonitoring() => IsConnected || IsMonitoring;
-
-    [RelayCommand(CanExecute = nameof(CanToggleMonitoring))]
-    private async Task ToggleMonitoringAsync()
+    private async Task RefreshGapsAsync()
     {
-        if (IsMonitoring)
+        var gaps = await _apiClient.GetPriceGapsAsync("US", BatchSize, _cts?.Token ?? default);
+        if (gaps.Success)
         {
-            // Stop
-            _refreshTimer.Stop();
-            _animationTimer.Stop();
-            _cancellationTokenSource?.Cancel();
-            IsMonitoring = false;
-            StatusText = "Monitoring stopped.";
-        }
-        else
-        {
-            // Start
-            IsMonitoring = true;
-            _cancellationTokenSource = new CancellationTokenSource();
-            StatusText = "Starting monitor...";
+            TotalMissingDays = gaps.TotalMissingDays;
+            DaysWithData = gaps.DaysWithData;
+            CompletionPercent = gaps.CompletionPercent;
 
-            // Initial fetch
-            await RefreshStatsAsync();
-
-            // Start auto-refresh
-            _refreshTimer.Interval = TimeSpan.FromSeconds(RefreshIntervalSeconds);
-            _refreshTimer.Start();
+            // Queue up the missing dates
+            _dateQueue.Clear();
+            foreach (var date in gaps.MissingDates)
+            {
+                _dateQueue.Enqueue(date);
+            }
         }
     }
 
-    [RelayCommand]
-    private async Task RefreshNowAsync()
-    {
-        await RefreshStatsAsync();
-    }
+    private bool CanStartCrawl() => IsConnected && !IsCrawling;
 
-    private async Task RefreshStatsAsync()
+    [RelayCommand(CanExecute = nameof(CanStartCrawl))]
+    private async Task StartCrawlAsync()
     {
-        if (_cancellationTokenSource?.Token.IsCancellationRequested == true)
+        IsCrawling = true;
+        _cts = new CancellationTokenSource();
+        DaysLoadedThisSession = 0;
+        RecordsLoadedThisSession = 0;
+        ErrorsThisSession = 0;
+
+        CurrentAction = "Starting...";
+        StatusText = "Crawler starting...";
+
+        // Get initial batch of missing dates
+        await RefreshGapsAsync();
+
+        if (_dateQueue.Count == 0)
+        {
+            CurrentAction = "Complete!";
+            StatusText = "No missing dates found. Coverage is complete!";
+            IsCrawling = false;
             return;
+        }
+
+        // Start the paced timer
+        _crawlTimer.Start();
+        CurrentAction = "Crawling";
+        StatusText = $"Crawling... {_dateQueue.Count} dates queued";
+    }
+
+    private bool CanStopCrawl() => IsCrawling;
+
+    [RelayCommand(CanExecute = nameof(CanStopCrawl))]
+    private void StopCrawl()
+    {
+        _crawlTimer.Stop();
+        _cts?.Cancel();
+        IsCrawling = false;
+        CurrentAction = "Stopped";
+        StatusText = $"Stopped. Loaded {DaysLoadedThisSession} days this session.";
+    }
+
+    private async Task ProcessNextDateAsync()
+    {
+        if (_cts?.Token.IsCancellationRequested == true)
+        {
+            _crawlTimer.Stop();
+            return;
+        }
+
+        // If queue is empty, refresh from API
+        if (_dateQueue.Count == 0)
+        {
+            CurrentAction = "Refreshing gaps...";
+            await RefreshGapsAsync();
+
+            if (_dateQueue.Count == 0)
+            {
+                // No more gaps - we're done!
+                _crawlTimer.Stop();
+                IsCrawling = false;
+                CurrentAction = "Complete!";
+                StatusText = $"All gaps filled! Loaded {DaysLoadedThisSession} days.";
+                AddActivity("✓", "Complete", "All trading days have price data");
+                return;
+            }
+        }
+
+        // Get next date to process
+        var dateStr = _dateQueue.Dequeue();
+        CurrentDate = dateStr;
+        CurrentAction = $"Loading {dateStr}";
 
         try
         {
-            StatusText = "Fetching stats...";
-            _apiClient.CurrentEnvironment = SelectedEnvironment;
-
-            var result = await _apiClient.GetPriceMonitorStatsAsync(_cancellationTokenSource?.Token ?? default);
-
-            if (!result.Success)
+            // Parse date and call refresh API
+            if (DateTime.TryParse(dateStr, out var date))
             {
-                StatusText = $"Error: {result.Error}";
-                return;
-            }
+                var result = await _apiClient.RefreshDateAsync(date, _cts?.Token ?? default);
 
-            if (!result.HasData)
-            {
-                StatusText = "No data in production database yet.";
-                return;
-            }
-
-            // Update targets (animation will smooth the transition)
-            _targetTotalRecords = result.TotalRecords;
-            _targetDistinctSecurities = result.DistinctSecurities;
-            _targetDistinctDates = result.DistinctDates;
-            _animationTimer.Start();
-
-            // Update static stats
-            DateRange = $"{result.StartDate} to {result.EndDate}";
-            YearsOfData = result.YearsOfData;
-            AvgRecordsPerDay = result.AvgRecordsPerDay;
-
-            // Update decade progress
-            System.Windows.Application.Current.Dispatcher.Invoke(() =>
-            {
-                Decades.Clear();
-                var maxRecords = result.CoverageByDecade.Count > 0
-                    ? result.CoverageByDecade.Max(d => d.Records)
-                    : 1;
-
-                foreach (var decade in result.CoverageByDecade)
+                if (result.Success && result.Data != null)
                 {
-                    Decades.Add(new DecadeProgress
-                    {
-                        Label = decade.Decade,
-                        Records = decade.Records,
-                        TradingDays = decade.TradingDays,
-                        Progress = maxRecords > 0 ? (decade.Records * 100.0) / maxRecords : 0
-                    });
-                }
+                    DaysLoadedThisSession++;
+                    RecordsLoadedThisSession += result.Data.PricesLoaded;
+                    DaysWithData++;
+                    TotalMissingDays = Math.Max(0, TotalMissingDays - 1);
+                    CompletionPercent = (DaysWithData + TotalMissingDays) > 0
+                        ? Math.Round(DaysWithData * 100.0 / (DaysWithData + TotalMissingDays), 1)
+                        : 100;
 
-                // Update activity feed
-                ActivityFeed.Clear();
-                foreach (var activity in result.RecentActivity)
+                    AddActivity("✓", dateStr, $"{result.Data.PricesLoaded} records");
+                    StatusText = $"Loaded {dateStr}: {result.Data.PricesLoaded} records. {_dateQueue.Count} queued.";
+                }
+                else
                 {
-                    ActivityFeed.Add(new ActivityItem
-                    {
-                        Date = activity.Date,
-                        LoadedAt = activity.LoadedAt
-                    });
+                    ErrorsThisSession++;
+                    AddActivity("✗", dateStr, result.Error ?? "Failed");
+                    StatusText = $"Error on {dateStr}: {result.Error}";
                 }
-            });
-
-            LastRefresh = DateTime.Now.ToString("HH:mm:ss");
-            StatusText = $"Last updated: {LastRefresh}. Auto-refresh every {RefreshIntervalSeconds}s.";
-        }
-        catch (OperationCanceledException)
-        {
-            StatusText = "Refresh cancelled.";
+            }
         }
         catch (Exception ex)
         {
+            ErrorsThisSession++;
+            AddActivity("✗", dateStr, ex.Message);
             StatusText = $"Error: {ex.Message}";
         }
     }
+
+    private void AddActivity(string icon, string date, string details)
+    {
+        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+        {
+            ActivityLog.Insert(0, new CrawlActivity
+            {
+                Icon = icon,
+                Date = date,
+                Details = details,
+                Timestamp = DateTime.Now.ToString("HH:mm:ss")
+            });
+
+            // Keep log manageable
+            while (ActivityLog.Count > 50)
+            {
+                ActivityLog.RemoveAt(ActivityLog.Count - 1);
+            }
+        });
+    }
 }
 
-public class DecadeProgress
+public class CrawlActivity
 {
-    public string Label { get; set; } = "";
-    public int Records { get; set; }
-    public int TradingDays { get; set; }
-    public double Progress { get; set; }
-}
-
-public class ActivityItem
-{
+    public string Icon { get; set; } = "";
     public string Date { get; set; } = "";
-    public string LoadedAt { get; set; } = "";
+    public string Details { get; set; } = "";
+    public string Timestamp { get; set; } = "";
 }

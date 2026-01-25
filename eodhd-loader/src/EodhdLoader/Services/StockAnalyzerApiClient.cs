@@ -227,6 +227,42 @@ public class StockAnalyzerApiClient
     }
 
     // ============================================================================
+    // ============================================================================
+    // Crawler Methods (gap detection and loading)
+    // ============================================================================
+
+    /// <summary>
+    /// Gets trading days missing price data. Uses BusinessCalendar for efficient lookup.
+    /// </summary>
+    public async Task<PriceGapsResult> GetPriceGapsAsync(string? market = null, int? limit = null, CancellationToken ct = default)
+    {
+        if (_httpClient == null)
+            return new PriceGapsResult { Success = false, Error = "HttpClient not configured" };
+
+        try
+        {
+            var url = "/api/admin/prices/gaps";
+            var queryParams = new List<string>();
+            if (!string.IsNullOrEmpty(market))
+                queryParams.Add($"market={market}");
+            if (limit.HasValue)
+                queryParams.Add($"limit={limit.Value}");
+            if (queryParams.Count > 0)
+                url += "?" + string.Join("&", queryParams);
+
+            var response = await _httpClient.GetAsync(url, ct);
+            response.EnsureSuccessStatusCode();
+
+            var result = await response.Content.ReadFromJsonAsync<PriceGapsResult>(cancellationToken: ct);
+            return result ?? new PriceGapsResult { Success = false, Error = "Empty response" };
+        }
+        catch (Exception ex)
+        {
+            return new PriceGapsResult { Success = false, Error = ex.Message };
+        }
+    }
+
+    // ============================================================================
     // Data Sync Methods (for pulling production data to local)
     // ============================================================================
 
@@ -472,6 +508,18 @@ public class PriceExportInfo
 // ============================================================================
 // Price Monitor DTOs (for Crawler display)
 // ============================================================================
+
+public class PriceGapsResult
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+    public string Market { get; set; } = "";
+    public int TotalMissingDays { get; set; }
+    public int DaysWithData { get; set; }
+    public int TotalTradingDays { get; set; }
+    public double CompletionPercent { get; set; }
+    public List<string> MissingDates { get; set; } = [];
+}
 
 public class PriceMonitorResult
 {

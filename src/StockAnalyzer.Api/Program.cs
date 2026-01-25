@@ -1213,6 +1213,7 @@ app.MapGet("/api/admin/data/prices/summary", async (IServiceProvider serviceProv
 .Produces(StatusCodes.Status500InternalServerError);
 
 // GET /api/admin/data/prices/monitor - Rich monitoring stats for crawler display
+// Uses efficient SQL queries instead of EF LINQ to avoid full table scans
 app.MapGet("/api/admin/data/prices/monitor", async (IServiceProvider serviceProvider) =>
 {
     using var scope = serviceProvider.CreateScope();
@@ -1223,21 +1224,37 @@ app.MapGet("/api/admin/data/prices/monitor", async (IServiceProvider serviceProv
 
     try
     {
-        // Basic stats
-        var basicStats = await context.Prices
-            .AsNoTracking()
-            .GroupBy(_ => 1)
-            .Select(g => new
-            {
-                MinDate = g.Min(p => p.EffectiveDate),
-                MaxDate = g.Max(p => p.EffectiveDate),
-                TotalRecords = g.Count(),
-                DistinctSecurities = g.Select(p => p.SecurityAlias).Distinct().Count(),
-                DistinctDates = g.Select(p => p.EffectiveDate).Distinct().Count()
-            })
-            .FirstOrDefaultAsync();
+        var connection = context.Database.GetDbConnection();
+        await connection.OpenAsync();
 
-        if (basicStats == null)
+        // Use simple, efficient queries that leverage indexes
+        // Query 1: Basic counts (uses clustered index scan, but COUNT is optimized)
+        int totalRecords = 0;
+        DateTime? minDate = null;
+        DateTime? maxDate = null;
+
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = @"
+                SELECT COUNT(*) as TotalRecords,
+                       MIN(EffectiveDate) as MinDate,
+                       MAX(EffectiveDate) as MaxDate
+                FROM data.Prices WITH (NOLOCK)";
+            cmd.CommandTimeout = 30;
+
+            using var reader = await cmd.ExecuteReaderAsync();
+            if (await reader.ReadAsync())
+            {
+                totalRecords = reader.GetInt32(0);
+                if (!reader.IsDBNull(1))
+                {
+                    minDate = reader.GetDateTime(1);
+                    maxDate = reader.GetDateTime(2);
+                }
+            }
+        }
+
+        if (totalRecords == 0 || minDate == null)
         {
             return Results.Ok(new
             {
@@ -1247,67 +1264,88 @@ app.MapGet("/api/admin/data/prices/monitor", async (IServiceProvider serviceProv
             });
         }
 
-        // Coverage by decade
-        var coverageByDecade = await context.Prices
-            .AsNoTracking()
-            .GroupBy(p => (p.EffectiveDate.Year / 10) * 10)
-            .Select(g => new
+        // Query 2: Distinct counts (separate queries are faster than one big GROUP BY)
+        int distinctSecurities = 0;
+        int distinctDates = 0;
+
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(DISTINCT SecurityAlias) FROM data.Prices WITH (NOLOCK)";
+            cmd.CommandTimeout = 30;
+            distinctSecurities = (int)(await cmd.ExecuteScalarAsync() ?? 0);
+        }
+
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(DISTINCT EffectiveDate) FROM data.Prices WITH (NOLOCK)";
+            cmd.CommandTimeout = 30;
+            distinctDates = (int)(await cmd.ExecuteScalarAsync() ?? 0);
+        }
+
+        // Query 3: Coverage by decade (efficient grouping)
+        var coverageByDecade = new List<object>();
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = @"
+                SELECT (YEAR(EffectiveDate) / 10) * 10 as Decade,
+                       COUNT(*) as Records,
+                       COUNT(DISTINCT SecurityAlias) as Securities,
+                       COUNT(DISTINCT EffectiveDate) as TradingDays
+                FROM data.Prices WITH (NOLOCK)
+                GROUP BY (YEAR(EffectiveDate) / 10) * 10
+                ORDER BY Decade";
+            cmd.CommandTimeout = 60;
+
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
             {
-                Decade = g.Key,
-                Records = g.Count(),
-                Securities = g.Select(p => p.SecurityAlias).Distinct().Count(),
-                Days = g.Select(p => p.EffectiveDate).Distinct().Count()
-            })
-            .OrderBy(x => x.Decade)
-            .ToListAsync();
+                coverageByDecade.Add(new
+                {
+                    decade = $"{reader.GetInt32(0)}s",
+                    records = reader.GetInt32(1),
+                    securities = reader.GetInt32(2),
+                    tradingDays = reader.GetInt32(3)
+                });
+            }
+        }
 
-        // Recent activity (last 10 dates loaded)
-        var recentDates = await context.Prices
-            .AsNoTracking()
-            .OrderByDescending(p => p.CreatedAt)
-            .Select(p => new { p.EffectiveDate, p.CreatedAt })
-            .Take(100)
-            .ToListAsync();
+        // Query 4: Recent activity - just get the 10 most recent distinct dates
+        var recentActivity = new List<object>();
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = @"
+                SELECT TOP 10 EffectiveDate, MAX(CreatedAt) as LoadedAt
+                FROM data.Prices WITH (NOLOCK)
+                GROUP BY EffectiveDate
+                ORDER BY MAX(CreatedAt) DESC";
+            cmd.CommandTimeout = 30;
 
-        var recentActivity = recentDates
-            .GroupBy(p => p.EffectiveDate)
-            .Select(g => new
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
             {
-                Date = g.Key.ToString("yyyy-MM-dd"),
-                LoadedAt = g.Max(x => x.CreatedAt).ToString("yyyy-MM-dd HH:mm:ss")
-            })
-            .OrderByDescending(x => x.LoadedAt)
-            .Take(10)
-            .ToList();
+                recentActivity.Add(new
+                {
+                    date = reader.GetDateTime(0).ToString("yyyy-MM-dd"),
+                    loadedAt = reader.GetDateTime(1).ToString("yyyy-MM-dd HH:mm:ss")
+                });
+            }
+        }
 
-        // Calculate years of coverage
-        var yearsOfData = basicStats.MaxDate.Year - basicStats.MinDate.Year + 1;
-        var avgRecordsPerDay = basicStats.DistinctDates > 0
-            ? basicStats.TotalRecords / basicStats.DistinctDates
-            : 0;
+        var yearsOfData = maxDate!.Value.Year - minDate!.Value.Year + 1;
+        var avgRecordsPerDay = distinctDates > 0 ? totalRecords / distinctDates : 0;
 
         return Results.Ok(new
         {
             success = true,
             hasData = true,
-            // Core metrics
-            totalRecords = basicStats.TotalRecords,
-            distinctSecurities = basicStats.DistinctSecurities,
-            distinctDates = basicStats.DistinctDates,
-            // Date range
-            startDate = basicStats.MinDate.ToString("yyyy-MM-dd"),
-            endDate = basicStats.MaxDate.ToString("yyyy-MM-dd"),
+            totalRecords,
+            distinctSecurities,
+            distinctDates,
+            startDate = minDate!.Value.ToString("yyyy-MM-dd"),
+            endDate = maxDate!.Value.ToString("yyyy-MM-dd"),
             yearsOfData,
             avgRecordsPerDay,
-            // Breakdown
-            coverageByDecade = coverageByDecade.Select(d => new
-            {
-                decade = $"{d.Decade}s",
-                records = d.Records,
-                securities = d.Securities,
-                tradingDays = d.Days
-            }),
-            // Recent activity
+            coverageByDecade,
             recentActivity
         });
     }
@@ -1318,6 +1356,104 @@ app.MapGet("/api/admin/data/prices/monitor", async (IServiceProvider serviceProv
     }
 })
 .WithName("PriceMonitor")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status500InternalServerError);
+
+// GET /api/admin/prices/gaps - Find trading days with missing price data
+// Uses BusinessCalendar to efficiently find gaps without scanning Prices table
+app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, string? market, int? limit) =>
+{
+    using var scope = serviceProvider.CreateScope();
+    var context = scope.ServiceProvider.GetService<StockAnalyzerDbContext>();
+
+    if (context == null)
+        return Results.BadRequest(new { error = "Database context not configured" });
+
+    try
+    {
+        var connection = context.Database.GetDbConnection();
+        await connection.OpenAsync();
+
+        var marketFilter = market?.ToUpperInvariant() ?? "US";
+        var maxResults = limit ?? 100;
+
+        // Efficient anti-join query using BusinessCalendar
+        // Gets trading days that have no price data
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"
+            SELECT TOP (@limit) bc.CalendarDate
+            FROM data.BusinessCalendar bc WITH (NOLOCK)
+            WHERE bc.IsBusinessDay = 1
+              AND bc.CalendarDate <= CAST(GETDATE() AS DATE)
+              AND bc.CalendarDate >= '1980-01-01'
+              AND NOT EXISTS (
+                SELECT 1 FROM data.Prices p WITH (NOLOCK)
+                WHERE p.EffectiveDate = bc.CalendarDate
+              )
+            ORDER BY bc.CalendarDate DESC";
+
+        var limitParam = cmd.CreateParameter();
+        limitParam.ParameterName = "@limit";
+        limitParam.Value = maxResults;
+        cmd.Parameters.Add(limitParam);
+        cmd.CommandTimeout = 30;
+
+        var missingDates = new List<string>();
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            missingDates.Add(reader.GetDateTime(0).ToString("yyyy-MM-dd"));
+        }
+
+        // Get total count of missing days (for progress display)
+        int totalMissing = 0;
+        using (var countCmd = connection.CreateCommand())
+        {
+            countCmd.CommandText = @"
+                SELECT COUNT(*)
+                FROM data.BusinessCalendar bc WITH (NOLOCK)
+                WHERE bc.IsBusinessDay = 1
+                  AND bc.CalendarDate <= CAST(GETDATE() AS DATE)
+                  AND bc.CalendarDate >= '1980-01-01'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM data.Prices p WITH (NOLOCK)
+                    WHERE p.EffectiveDate = bc.CalendarDate
+                  )";
+            countCmd.CommandTimeout = 60;
+            totalMissing = (int)(await countCmd.ExecuteScalarAsync() ?? 0);
+        }
+
+        // Get count of days WITH data (for progress calculation)
+        int daysWithData = 0;
+        using (var dataCmd = connection.CreateCommand())
+        {
+            dataCmd.CommandText = "SELECT COUNT(DISTINCT EffectiveDate) FROM data.Prices WITH (NOLOCK)";
+            dataCmd.CommandTimeout = 30;
+            daysWithData = (int)(await dataCmd.ExecuteScalarAsync() ?? 0);
+        }
+
+        return Results.Ok(new
+        {
+            success = true,
+            market = marketFilter,
+            totalMissingDays = totalMissing,
+            daysWithData,
+            totalTradingDays = totalMissing + daysWithData,
+            completionPercent = (totalMissing + daysWithData) > 0
+                ? Math.Round(daysWithData * 100.0 / (totalMissing + daysWithData), 1)
+                : 0,
+            missingDates
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Price gaps query failed");
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("PriceGaps")
 .WithOpenApi()
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest)
