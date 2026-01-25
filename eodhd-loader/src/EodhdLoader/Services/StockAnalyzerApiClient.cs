@@ -190,22 +190,27 @@ public class StockAnalyzerApiClient
 
     /// <summary>
     /// Calls POST /api/admin/prices/holidays/forward-fill to forward-fill holiday price data.
-    /// Uses extended timeout (10 minutes) since this can process hundreds of holidays.
+    /// Supports batching via limit parameter to avoid Cloudflare timeouts.
     /// </summary>
-    public async Task<HolidayForwardFillApiResult> ForwardFillHolidaysAsync(CancellationToken ct = default)
+    /// <param name="limit">Max days to process per batch. Null = all (use with caution on large datasets).</param>
+    /// <param name="ct">Cancellation token.</param>
+    public async Task<HolidayForwardFillApiResult> ForwardFillHolidaysAsync(int? limit = null, CancellationToken ct = default)
     {
         if (_httpClient == null)
             return new HolidayForwardFillApiResult { Success = false, Error = "HttpClient not configured" };
 
         try
         {
-            // Create a separate HttpClient with extended timeout for this long-running operation
-            // The default HttpClient.Timeout (100s) is too short for filling hundreds of holidays
-            using var longTimeoutClient = _httpClientFactory.CreateClient();
-            longTimeoutClient.BaseAddress = _httpClient.BaseAddress;
-            longTimeoutClient.Timeout = TimeSpan.FromMinutes(10);
+            // Use shorter timeout since we're batching - each batch should complete quickly
+            using var batchClient = _httpClientFactory.CreateClient();
+            batchClient.BaseAddress = _httpClient.BaseAddress;
+            batchClient.Timeout = TimeSpan.FromMinutes(2);
 
-            var response = await longTimeoutClient.PostAsync("/api/admin/prices/holidays/forward-fill", null, ct);
+            var url = "/api/admin/prices/holidays/forward-fill";
+            if (limit.HasValue)
+                url += $"?limit={limit.Value}";
+
+            var response = await batchClient.PostAsync(url, null, ct);
             response.EnsureSuccessStatusCode();
 
             var result = await response.Content.ReadFromJsonAsync<HolidayForwardFillApiResult>(cancellationToken: ct);
@@ -213,7 +218,7 @@ public class StockAnalyzerApiClient
         }
         catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException)
         {
-            return new HolidayForwardFillApiResult { Success = false, Error = "Operation timed out after 10 minutes" };
+            return new HolidayForwardFillApiResult { Success = false, Error = "Operation timed out after 2 minutes" };
         }
         catch (Exception ex)
         {
@@ -224,6 +229,28 @@ public class StockAnalyzerApiClient
     // ============================================================================
     // Data Sync Methods (for pulling production data to local)
     // ============================================================================
+
+    /// <summary>
+    /// Gets rich monitoring stats for the crawler display.
+    /// </summary>
+    public async Task<PriceMonitorResult> GetPriceMonitorStatsAsync(CancellationToken ct = default)
+    {
+        if (_httpClient == null)
+            return new PriceMonitorResult { Success = false, Error = "HttpClient not configured" };
+
+        try
+        {
+            var response = await _httpClient.GetAsync("/api/admin/data/prices/monitor", ct);
+            response.EnsureSuccessStatusCode();
+
+            var result = await response.Content.ReadFromJsonAsync<PriceMonitorResult>(cancellationToken: ct);
+            return result ?? new PriceMonitorResult { Success = false, Error = "Empty response" };
+        }
+        catch (Exception ex)
+        {
+            return new PriceMonitorResult { Success = false, Error = ex.Message };
+        }
+    }
 
     /// <summary>
     /// Gets summary of price data available on the remote database.
@@ -367,6 +394,7 @@ public class HolidayForwardFillApiResult
     public string? Message { get; set; }
     public int HolidaysProcessed { get; set; }
     public int TotalRecordsInserted { get; set; }
+    public int RemainingDays { get; set; }
     public List<HolidayFilledApiInfo> HolidaysFilled { get; set; } = [];
 }
 
@@ -439,4 +467,43 @@ public class PriceExportInfo
     public decimal Close { get; set; }
     public long? Volume { get; set; }
     public decimal? AdjustedClose { get; set; }
+}
+
+// ============================================================================
+// Price Monitor DTOs (for Crawler display)
+// ============================================================================
+
+public class PriceMonitorResult
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+    public bool HasData { get; set; }
+    public string? Message { get; set; }
+    // Core metrics
+    public int TotalRecords { get; set; }
+    public int DistinctSecurities { get; set; }
+    public int DistinctDates { get; set; }
+    // Date range
+    public string StartDate { get; set; } = "";
+    public string EndDate { get; set; } = "";
+    public int YearsOfData { get; set; }
+    public int AvgRecordsPerDay { get; set; }
+    // Breakdown by decade
+    public List<DecadeCoverage> CoverageByDecade { get; set; } = [];
+    // Recent activity
+    public List<RecentActivityItem> RecentActivity { get; set; } = [];
+}
+
+public class DecadeCoverage
+{
+    public string Decade { get; set; } = "";
+    public int Records { get; set; }
+    public int Securities { get; set; }
+    public int TradingDays { get; set; }
+}
+
+public class RecentActivityItem
+{
+    public string Date { get; set; } = "";
+    public string LoadedAt { get; set; } = "";
 }

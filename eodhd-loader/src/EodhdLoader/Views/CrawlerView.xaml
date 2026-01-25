@@ -1,0 +1,219 @@
+<UserControl x:Class="EodhdLoader.Views.CrawlerView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:EodhdLoader">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisConverter"/>
+        <local:InverseBoolConverter x:Key="InverseBoolConverter"/>
+        <local:BoolToColorConverter x:Key="BoolToColorConverter"/>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <Border Background="#1a1a2e" Padding="20">
+            <StackPanel>
+                <!-- Header -->
+                <Grid Margin="0,0,0,20">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="📊" FontSize="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <StackPanel>
+                            <TextBlock Text="Production Data Monitor" FontSize="20" FontWeight="Bold" Foreground="White"/>
+                            <TextBlock Text="Live stats from psfordtaurus.com" FontSize="11" Foreground="#888"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <Button Content="⧉ Pop Out" Click="PopOutButton_Click"
+                            HorizontalAlignment="Right" VerticalAlignment="Center"
+                            Padding="10,5" FontSize="11" Background="#333" Foreground="White" BorderBrush="#555"/>
+                </Grid>
+
+                <!-- Connection + Controls -->
+                <Border Background="#16213e" CornerRadius="8" Padding="16" Margin="0,0,0,16">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Orientation="Horizontal">
+                            <Ellipse Width="12" Height="12" Margin="0,0,8,0">
+                                <Ellipse.Style>
+                                    <Style TargetType="Ellipse">
+                                        <Setter Property="Fill" Value="#f44336"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsConnected}" Value="True">
+                                                <Setter Property="Fill" Value="#4CAF50"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Ellipse.Style>
+                            </Ellipse>
+                            <TextBlock Text="{Binding ConnectionStatus}" Foreground="White" VerticalAlignment="Center" FontSize="12"/>
+                        </StackPanel>
+
+                        <Button Grid.Column="2" Content="Test" Command="{Binding TestConnectionCommand}"
+                                Width="60" Height="30" Margin="0,0,10,0"
+                                Background="#0f3460" Foreground="White" BorderBrush="#1a508b"/>
+
+                        <Button Grid.Column="3" Command="{Binding ToggleMonitoringCommand}"
+                                Width="90" Height="30">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Content" Value="▶ START"/>
+                                    <Setter Property="Background" Value="#4CAF50"/>
+                                    <Setter Property="Foreground" Value="White"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                    <Setter Property="BorderBrush" Value="#388E3C"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsMonitoring}" Value="True">
+                                            <Setter Property="Content" Value="■ STOP"/>
+                                            <Setter Property="Background" Value="#f44336"/>
+                                            <Setter Property="BorderBrush" Value="#d32f2f"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                    </Grid>
+                </Border>
+
+                <!-- Big Animated Counters -->
+                <Grid Margin="0,0,0,20">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Total Records -->
+                    <Border Grid.Column="0" Background="#0f3460" CornerRadius="8" Padding="16" Margin="0,0,8,0">
+                        <StackPanel HorizontalAlignment="Center">
+                            <TextBlock Text="📈 RECORDS" FontSize="10" Foreground="#888" HorizontalAlignment="Center" FontWeight="Bold"/>
+                            <TextBlock Text="{Binding TotalRecordsDisplay}" FontSize="28" FontWeight="Bold"
+                                       Foreground="#00d4ff" HorizontalAlignment="Center" FontFamily="Consolas"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Distinct Securities -->
+                    <Border Grid.Column="1" Background="#0f3460" CornerRadius="8" Padding="16" Margin="4,0">
+                        <StackPanel HorizontalAlignment="Center">
+                            <TextBlock Text="🏢 SECURITIES" FontSize="10" Foreground="#888" HorizontalAlignment="Center" FontWeight="Bold"/>
+                            <TextBlock Text="{Binding DistinctSecuritiesDisplay}" FontSize="28" FontWeight="Bold"
+                                       Foreground="#ff6b6b" HorizontalAlignment="Center" FontFamily="Consolas"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Distinct Dates -->
+                    <Border Grid.Column="2" Background="#0f3460" CornerRadius="8" Padding="16" Margin="8,0,0,0">
+                        <StackPanel HorizontalAlignment="Center">
+                            <TextBlock Text="📅 TRADING DAYS" FontSize="10" Foreground="#888" HorizontalAlignment="Center" FontWeight="Bold"/>
+                            <TextBlock Text="{Binding DistinctDatesDisplay}" FontSize="28" FontWeight="Bold"
+                                       Foreground="#feca57" HorizontalAlignment="Center" FontFamily="Consolas"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- Date Range + Stats -->
+                <Border Background="#16213e" CornerRadius="8" Padding="16" Margin="0,0,0,16">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="DATE RANGE" FontSize="10" Foreground="#888" FontWeight="Bold"/>
+                            <TextBlock Text="{Binding DateRange}" FontSize="14" Foreground="White" FontFamily="Consolas"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1" Margin="20,0">
+                            <TextBlock Text="YEARS" FontSize="10" Foreground="#888" HorizontalAlignment="Center" FontWeight="Bold"/>
+                            <TextBlock Text="{Binding YearsOfData}" FontSize="18" FontWeight="Bold" Foreground="#54a0ff" HorizontalAlignment="Center"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="AVG/DAY" FontSize="10" Foreground="#888" HorizontalAlignment="Center" FontWeight="Bold"/>
+                            <TextBlock Text="{Binding AvgRecordsPerDay, StringFormat=N0}" FontSize="18" FontWeight="Bold" Foreground="#5f27cd" HorizontalAlignment="Center"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Decade Progress Bars -->
+                <Border Background="#16213e" CornerRadius="8" Padding="16" Margin="0,0,0,16">
+                    <StackPanel>
+                        <TextBlock Text="📊 COVERAGE BY DECADE" FontSize="12" Foreground="White" FontWeight="Bold" Margin="0,0,0,12"/>
+                        <ItemsControl ItemsSource="{Binding Decades}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="60"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="80"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Grid.Column="0" Text="{Binding Label}" Foreground="#888" FontSize="11" VerticalAlignment="Center"/>
+
+                                        <Border Grid.Column="1" Background="#333" CornerRadius="4" Height="20" Margin="8,0">
+                                            <Border Background="#e94560" CornerRadius="4" HorizontalAlignment="Left"
+                                                    Width="{Binding Progress, Converter={x:Static local:PercentToWidthConverter.Instance}}"/>
+                                        </Border>
+
+                                        <TextBlock Grid.Column="2" Text="{Binding Records, StringFormat=N0}"
+                                                   Foreground="White" FontSize="11" VerticalAlignment="Center"
+                                                   HorizontalAlignment="Right" FontFamily="Consolas"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- Recent Activity Feed -->
+                <Border Background="#16213e" CornerRadius="8" Padding="16" Margin="0,0,0,16">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,12">
+                            <TextBlock Text="🕐 RECENT ACTIVITY" FontSize="12" Foreground="White" FontWeight="Bold"/>
+                            <Button Content="↻ Refresh" Command="{Binding RefreshNowCommand}"
+                                    HorizontalAlignment="Right" Padding="8,4"
+                                    Background="#333" Foreground="White" BorderBrush="#555" FontSize="10"/>
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding ActivityFeed}" MaxHeight="200">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="#0f3460" CornerRadius="4" Padding="10,6" Margin="0,0,0,4">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <TextBlock Grid.Column="0" Foreground="White" FontFamily="Consolas">
+                                                <Run Text="📆 " FontSize="12"/>
+                                                <Run Text="{Binding Date}" FontSize="12"/>
+                                            </TextBlock>
+
+                                            <TextBlock Grid.Column="1" Text="{Binding LoadedAt}" Foreground="#888" FontSize="10" VerticalAlignment="Center"/>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- Status Bar -->
+                <Border Background="#0a0a15" CornerRadius="4" Padding="12,8">
+                    <Grid>
+                        <TextBlock Text="{Binding StatusText}" Foreground="#888" FontSize="11"/>
+                        <TextBlock HorizontalAlignment="Right" Foreground="#555" FontSize="10">
+                            <Run Text="Last: "/>
+                            <Run Text="{Binding LastRefresh}"/>
+                        </TextBlock>
+                    </Grid>
+                </Border>
+            </StackPanel>
+        </Border>
+    </ScrollViewer>
+</UserControl>

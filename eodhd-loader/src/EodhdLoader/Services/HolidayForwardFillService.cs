@@ -208,7 +208,7 @@ public class HolidayForwardFillService
             progress?.Report("Calling API to forward-fill holidays...");
             _apiClient.CurrentEnvironment = TargetEnvironment.Production;
 
-            var apiResult = await _apiClient.ForwardFillHolidaysAsync(cancellationToken);
+            var apiResult = await _apiClient.ForwardFillHolidaysAsync(limit: null, ct: cancellationToken);
 
             if (!apiResult.Success)
             {

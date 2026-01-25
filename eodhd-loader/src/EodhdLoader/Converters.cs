@@ -88,3 +88,28 @@ public class StringToVisibilityConverter : IValueConverter
         throw new NotImplementedException();
     }
 }
+
+/// <summary>
+/// Converts a percentage (0-100) to a width for progress bars.
+/// The parent container's width is assumed to be approximately 400px.
+/// </summary>
+public class PercentToWidthConverter : IValueConverter
+{
+    public static readonly PercentToWidthConverter Instance = new();
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is double percent)
+        {
+            // Return percentage of parent width (will be constrained by parent)
+            // Using a multiplier for the progress bar width
+            return Math.Max(0, percent * 3); // 300px max (100% = 300)
+        }
+        return 0.0;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}

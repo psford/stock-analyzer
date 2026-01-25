@@ -1,0 +1,126 @@
+<Window x:Class="EodhdLoader.CrawlerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:EodhdLoader"
+        Title="Crawler"
+        Width="320" Height="280"
+        MinWidth="280" MinHeight="200"
+        WindowStyle="ToolWindow"
+        Topmost="True"
+        ResizeMode="CanResizeWithGrip"
+        WindowStartupLocation="Manual"
+        Left="50" Top="50">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisConverter"/>
+        <local:InverseBoolConverter x:Key="InverseBoolConverter"/>
+        <local:EnvironmentConverter x:Key="EnvironmentConverter"/>
+        <local:BoolToColorConverter x:Key="BoolToColorConverter"/>
+    </Window.Resources>
+
+    <Border Background="#FAFAFA" Padding="10">
+        <StackPanel>
+            <!-- Environment + Connection -->
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <ComboBox Grid.Column="0"
+                          SelectedIndex="{Binding SelectedEnvironment, Mode=TwoWay, Converter={StaticResource EnvironmentConverter}}"
+                          IsEnabled="{Binding IsRunning, Converter={StaticResource InverseBoolConverter}}"
+                          Width="90" Height="24" FontSize="10">
+                    <ComboBoxItem Content="Local"/>
+                    <ComboBoxItem Content="Production"/>
+                </ComboBox>
+
+                <TextBlock Grid.Column="1"
+                           Text="{Binding ConnectionStatus}"
+                           Foreground="{Binding IsConnected, Converter={StaticResource BoolToColorConverter}}"
+                           VerticalAlignment="Center" HorizontalAlignment="Center"
+                           FontSize="10" FontWeight="SemiBold"/>
+
+                <Button Grid.Column="2" Content="Test"
+                        Command="{Binding TestConnectionCommand}"
+                        IsEnabled="{Binding IsRunning, Converter={StaticResource InverseBoolConverter}}"
+                        Width="40" Height="24" FontSize="10"/>
+            </Grid>
+
+            <!-- Toggle Button -->
+            <Border BorderBrush="#DDD" BorderThickness="1" CornerRadius="4" Padding="10" Margin="0,0,0,8">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                        <TextBlock Text="Forward-Fill" FontWeight="SemiBold" FontSize="11"/>
+                        <TextBlock Text="Non-Business Days" Foreground="Gray" FontSize="9"/>
+                    </StackPanel>
+
+                    <Button Grid.Column="1"
+                            Command="{Binding ToggleCommand}"
+                            Width="60" Height="30" FontSize="11" FontWeight="Bold">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Content" Value="START"/>
+                                <Setter Property="Background" Value="#4CAF50"/>
+                                <Setter Property="Foreground" Value="White"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                        <Setter Property="Content" Value="STOP"/>
+                                        <Setter Property="Background" Value="#f44336"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsConnected}" Value="False">
+                                        <Setter Property="IsEnabled" Value="False"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </Grid>
+            </Border>
+
+            <!-- Progress -->
+            <StackPanel Visibility="{Binding ShowProgress, Converter={StaticResource BoolToVisConverter}}">
+                <ProgressBar Height="6" Value="{Binding Progress}" Maximum="100" Margin="0,0,0,6"/>
+
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                        <TextBlock Text="Days" FontSize="8" Foreground="Gray" HorizontalAlignment="Center"/>
+                        <TextBlock HorizontalAlignment="Center" FontSize="11" FontWeight="Bold">
+                            <Run Text="{Binding DaysProcessed, Mode=OneWay}"/>
+                            <Run Text="/" Foreground="Gray" FontSize="8"/>
+                            <Run Text="{Binding TotalDays, Mode=OneWay}" Foreground="Gray" FontSize="8"/>
+                        </TextBlock>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                        <TextBlock Text="Inserted" FontSize="8" Foreground="Gray" HorizontalAlignment="Center"/>
+                        <TextBlock Text="{Binding RecordsInserted, StringFormat=N0}"
+                                   FontSize="11" FontWeight="Bold" Foreground="#4CAF50" HorizontalAlignment="Center"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                        <TextBlock Text="Date" FontSize="8" Foreground="Gray" HorizontalAlignment="Center"/>
+                        <TextBlock Text="{Binding CurrentDate, StringFormat=MM-dd}"
+                                   FontSize="11" FontWeight="Bold" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+
+            <!-- Status -->
+            <TextBlock Text="{Binding StatusText}"
+                       FontSize="9" Foreground="Gray"
+                       TextWrapping="Wrap"/>
+        </StackPanel>
+    </Border>
+</Window>

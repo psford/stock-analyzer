@@ -366,7 +366,8 @@ public class SqlPriceRepository : IPriceRepository
     /// Creates a continuous 7-day calendar where non-business days have stale data (Volume=0)
     /// copied from the prior business day's close.
     /// </summary>
-    public async Task<HolidayForwardFillResult> ForwardFillHolidaysAsync()
+    /// <param name="limit">Optional limit on number of days to process. Null = all days.</param>
+    public async Task<HolidayForwardFillResult> ForwardFillHolidaysAsync(int? limit = null)
     {
         var result = new HolidayForwardFillResult();
 
@@ -394,16 +395,52 @@ public class SqlPriceRepository : IPriceRepository
             var minDate = businessDaysWithPriceData.Min();
             var maxDate = businessDaysWithPriceData.Max();
 
-            _logger.LogInformation("Forward-filling non-business days from {Start:yyyy-MM-dd} to {End:yyyy-MM-dd}",
-                minDate, maxDate);
+            // Get all non-business days that need forward-filling (don't have price data yet)
+            // We need to count these upfront to track remaining
+            var allNonBusinessDays = await _context.BusinessCalendar
+                .AsNoTracking()
+                .Where(bc => bc.SourceId == 1
+                    && bc.EffectiveDate >= minDate
+                    && bc.EffectiveDate <= maxDate
+                    && !bc.IsBusinessDay)
+                .Select(bc => bc.EffectiveDate)
+                .ToListAsync();
+
+            // Check which non-business days already have price data
+            var datesWithPrices = await _context.Prices
+                .AsNoTracking()
+                .Where(p => allNonBusinessDays.Contains(p.EffectiveDate))
+                .Select(p => p.EffectiveDate)
+                .Distinct()
+                .ToListAsync();
+
+            var nonBusinessDaysNeedingFill = allNonBusinessDays
+                .Except(datesWithPrices)
+                .OrderBy(d => d)
+                .ToList();
+
+            var totalNonBusinessDaysToProcess = nonBusinessDaysNeedingFill.Count;
+
+            _logger.LogInformation("Forward-filling non-business days from {Start:yyyy-MM-dd} to {End:yyyy-MM-dd}. " +
+                "Total needing fill: {Total}, limit: {Limit}",
+                minDate, maxDate, totalNonBusinessDaysToProcess, limit?.ToString() ?? "unlimited");
 
             int totalInserted = 0;
             int totalUpdated = 0;
             int daysProcessed = 0;
 
+            // If limit is specified, only process that many days
+            var daysToProcess = limit.HasValue
+                ? nonBusinessDaysNeedingFill.Take(limit.Value).ToHashSet()
+                : nonBusinessDaysNeedingFill.ToHashSet();
+
             // Process each business day with data
             for (int i = 0; i < businessDaysWithPriceData.Count; i++)
             {
+                // Check if we've hit the limit
+                if (limit.HasValue && daysProcessed >= limit.Value)
+                    break;
+
                 var businessDay = businessDaysWithPriceData[i];
 
                 // Find the next business day (to know where non-business days end)
@@ -411,18 +448,19 @@ public class SqlPriceRepository : IPriceRepository
                     ? businessDaysWithPriceData[i + 1]
                     : maxDate.AddDays(1); // For the last business day, just process up to maxDate
 
-                // Get all non-business days between this business day and the next one
-                var nonBusinessDays = await _context.BusinessCalendar
+                // Get non-business days between this business day and the next that need filling
+                var nonBusinessDaysForThisBD = await _context.BusinessCalendar
                     .AsNoTracking()
                     .Where(bc => bc.SourceId == 1
                         && bc.EffectiveDate > businessDay
                         && bc.EffectiveDate < nextBusinessDay
-                        && !bc.IsBusinessDay)
+                        && !bc.IsBusinessDay
+                        && daysToProcess.Contains(bc.EffectiveDate))
                     .OrderBy(bc => bc.EffectiveDate)
                     .Select(bc => new { bc.EffectiveDate, bc.IsHoliday })
                     .ToListAsync();
 
-                if (nonBusinessDays.Count == 0)
+                if (nonBusinessDaysForThisBD.Count == 0)
                     continue;
 
                 // Get prices from the business day to copy forward
@@ -438,8 +476,12 @@ public class SqlPriceRepository : IPriceRepository
                 }
 
                 // Process each non-business day after this business day
-                foreach (var nonBD in nonBusinessDays)
+                foreach (var nonBD in nonBusinessDaysForThisBD)
                 {
+                    // Check limit again (in case we hit it mid-batch)
+                    if (limit.HasValue && daysProcessed >= limit.Value)
+                        break;
+
                     // Get existing records for the non-business day (for UPSERT)
                     var existingPrices = await _context.Prices
                         .Where(p => p.EffectiveDate == nonBD.EffectiveDate)
@@ -489,10 +531,10 @@ public class SqlPriceRepository : IPriceRepository
                     var dayType = nonBD.IsHoliday ? "Holiday" : "Weekend";
                     result.HolidaysFilled.Add(($"{dayType} {nonBD.EffectiveDate:yyyy-MM-dd}", nonBD.EffectiveDate, dayInserted + dayUpdated));
 
-                    if (daysProcessed % 100 == 0)
+                    if (daysProcessed % 50 == 0)
                     {
-                        _logger.LogInformation("Progress: {Days} non-business days processed, {Inserted:N0} inserted, {Updated:N0} updated",
-                            daysProcessed, totalInserted, totalUpdated);
+                        _logger.LogInformation("Progress: {Days}/{Total} non-business days processed, {Inserted:N0} inserted, {Updated:N0} updated",
+                            daysProcessed, limit ?? totalNonBusinessDaysToProcess, totalInserted, totalUpdated);
                     }
                 }
             }
@@ -500,10 +542,11 @@ public class SqlPriceRepository : IPriceRepository
             result.Success = true;
             result.HolidaysProcessed = daysProcessed;
             result.TotalRecordsInserted = totalInserted;
-            result.Message = $"Forward-filled {daysProcessed} non-business days: {totalInserted:N0} inserted, {totalUpdated:N0} updated";
+            result.RemainingDays = totalNonBusinessDaysToProcess - daysProcessed;
+            result.Message = $"Forward-filled {daysProcessed} non-business days: {totalInserted:N0} inserted, {totalUpdated:N0} updated. Remaining: {result.RemainingDays}";
 
-            _logger.LogInformation("Non-business day forward-fill complete: {Days} days, {Inserted:N0} inserted, {Updated:N0} updated",
-                daysProcessed, totalInserted, totalUpdated);
+            _logger.LogInformation("Non-business day forward-fill batch complete: {Days} days, {Inserted:N0} inserted, {Updated:N0} updated, {Remaining} remaining",
+                daysProcessed, totalInserted, totalUpdated, result.RemainingDays);
         }
         catch (Exception ex)
         {

@@ -120,8 +120,9 @@ public interface IPriceRepository
     /// Forward-fill price data for US market holidays.
     /// Copies the prior trading day's close price as OHLC with volume=0.
     /// </summary>
+    /// <param name="limit">Optional limit on number of days to process (for batching). Null = all.</param>
     /// <returns>Result with count of holidays and records processed.</returns>
-    Task<HolidayForwardFillResult> ForwardFillHolidaysAsync();
+    Task<HolidayForwardFillResult> ForwardFillHolidaysAsync(int? limit = null);
 }
 
 /// <summary>
@@ -166,6 +167,7 @@ public class HolidayForwardFillResult
     public string? Message { get; set; }
     public int HolidaysProcessed { get; set; }
     public int TotalRecordsInserted { get; set; }
+    public int RemainingDays { get; set; }
     public List<(string HolidayName, DateTime Date, int RecordsInserted)> HolidaysFilled { get; set; } = new();
 }
 

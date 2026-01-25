@@ -1212,6 +1212,117 @@ app.MapGet("/api/admin/data/prices/summary", async (IServiceProvider serviceProv
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status500InternalServerError);
 
+// GET /api/admin/data/prices/monitor - Rich monitoring stats for crawler display
+app.MapGet("/api/admin/data/prices/monitor", async (IServiceProvider serviceProvider) =>
+{
+    using var scope = serviceProvider.CreateScope();
+    var context = scope.ServiceProvider.GetService<StockAnalyzerDbContext>();
+
+    if (context == null)
+        return Results.BadRequest(new { error = "Database context not configured" });
+
+    try
+    {
+        // Basic stats
+        var basicStats = await context.Prices
+            .AsNoTracking()
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                MinDate = g.Min(p => p.EffectiveDate),
+                MaxDate = g.Max(p => p.EffectiveDate),
+                TotalRecords = g.Count(),
+                DistinctSecurities = g.Select(p => p.SecurityAlias).Distinct().Count(),
+                DistinctDates = g.Select(p => p.EffectiveDate).Distinct().Count()
+            })
+            .FirstOrDefaultAsync();
+
+        if (basicStats == null)
+        {
+            return Results.Ok(new
+            {
+                success = true,
+                hasData = false,
+                message = "No price data in database"
+            });
+        }
+
+        // Coverage by decade
+        var coverageByDecade = await context.Prices
+            .AsNoTracking()
+            .GroupBy(p => (p.EffectiveDate.Year / 10) * 10)
+            .Select(g => new
+            {
+                Decade = g.Key,
+                Records = g.Count(),
+                Securities = g.Select(p => p.SecurityAlias).Distinct().Count(),
+                Days = g.Select(p => p.EffectiveDate).Distinct().Count()
+            })
+            .OrderBy(x => x.Decade)
+            .ToListAsync();
+
+        // Recent activity (last 10 dates loaded)
+        var recentDates = await context.Prices
+            .AsNoTracking()
+            .OrderByDescending(p => p.CreatedAt)
+            .Select(p => new { p.EffectiveDate, p.CreatedAt })
+            .Take(100)
+            .ToListAsync();
+
+        var recentActivity = recentDates
+            .GroupBy(p => p.EffectiveDate)
+            .Select(g => new
+            {
+                Date = g.Key.ToString("yyyy-MM-dd"),
+                LoadedAt = g.Max(x => x.CreatedAt).ToString("yyyy-MM-dd HH:mm:ss")
+            })
+            .OrderByDescending(x => x.LoadedAt)
+            .Take(10)
+            .ToList();
+
+        // Calculate years of coverage
+        var yearsOfData = basicStats.MaxDate.Year - basicStats.MinDate.Year + 1;
+        var avgRecordsPerDay = basicStats.DistinctDates > 0
+            ? basicStats.TotalRecords / basicStats.DistinctDates
+            : 0;
+
+        return Results.Ok(new
+        {
+            success = true,
+            hasData = true,
+            // Core metrics
+            totalRecords = basicStats.TotalRecords,
+            distinctSecurities = basicStats.DistinctSecurities,
+            distinctDates = basicStats.DistinctDates,
+            // Date range
+            startDate = basicStats.MinDate.ToString("yyyy-MM-dd"),
+            endDate = basicStats.MaxDate.ToString("yyyy-MM-dd"),
+            yearsOfData,
+            avgRecordsPerDay,
+            // Breakdown
+            coverageByDecade = coverageByDecade.Select(d => new
+            {
+                decade = $"{d.Decade}s",
+                records = d.Records,
+                securities = d.Securities,
+                tradingDays = d.Days
+            }),
+            // Recent activity
+            recentActivity
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Price monitor stats failed");
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("PriceMonitor")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status500InternalServerError);
+
 // GET /api/admin/prices/holidays/analyze - Analyze holidays missing price data
 app.MapGet("/api/admin/prices/holidays/analyze", async (IServiceProvider serviceProvider) =>
 {
@@ -1259,7 +1370,8 @@ app.MapGet("/api/admin/prices/holidays/analyze", async (IServiceProvider service
 .Produces(StatusCodes.Status500InternalServerError);
 
 // POST /api/admin/prices/holidays/forward-fill - Forward-fill price data for US market holidays
-app.MapPost("/api/admin/prices/holidays/forward-fill", async (IServiceProvider serviceProvider) =>
+// Add ?limit=N to process in batches (for long-running operations that would timeout)
+app.MapPost("/api/admin/prices/holidays/forward-fill", async (IServiceProvider serviceProvider, int? limit) =>
 {
     using var scope = serviceProvider.CreateScope();
     var priceRepo = scope.ServiceProvider.GetService<IPriceRepository>();
@@ -1269,8 +1381,8 @@ app.MapPost("/api/admin/prices/holidays/forward-fill", async (IServiceProvider s
 
     try
     {
-        Log.Information("Starting holiday forward-fill via API");
-        var result = await priceRepo.ForwardFillHolidaysAsync();
+        Log.Information("Starting holiday forward-fill via API (limit: {Limit})", limit ?? -1);
+        var result = await priceRepo.ForwardFillHolidaysAsync(limit);
 
         if (!result.Success)
             return Results.Problem(result.Error ?? "Forward-fill failed");
@@ -1281,6 +1393,7 @@ app.MapPost("/api/admin/prices/holidays/forward-fill", async (IServiceProvider s
             message = result.Message,
             holidaysProcessed = result.HolidaysProcessed,
             totalRecordsInserted = result.TotalRecordsInserted,
+            remainingDays = result.RemainingDays,
             holidaysFilled = result.HolidaysFilled.Select(h => new
             {
                 name = h.HolidayName,

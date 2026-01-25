@@ -21,17 +21,14 @@
             <TabItem Header="🕷️ Boris">
                 <views:BorisView DataContext="{Binding Boris}"/>
             </TabItem>
+            <TabItem Header="🕸️ Crawler">
+                <views:CrawlerView DataContext="{Binding Crawler}"/>
+            </TabItem>
             <TabItem Header="Index Manager">
                 <views:IndexManagerView DataContext="{Binding IndexManager}"/>
             </TabItem>
             <TabItem Header="Dashboard">
                 <views:DashboardView DataContext="{Binding Dashboard}"/>
-            </TabItem>
-            <TabItem Header="Data Loader (Legacy)">
-                <views:LoaderView DataContext="{Binding Loader}"/>
-            </TabItem>
-            <TabItem Header="Azure Migration (Legacy)">
-                <views:MigrationView DataContext="{Binding Migration}"/>
             </TabItem>
         </TabControl>
     </Grid>

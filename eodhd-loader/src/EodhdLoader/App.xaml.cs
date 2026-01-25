@@ -26,7 +26,6 @@ public partial class App : Application
 
         // Local services
         services.AddSingleton<DataAnalysisService>();
-        services.AddSingleton<BulkCopyService>();
         services.AddHttpClient<IndexService>();
 
         // These services use IHttpClientFactory directly so they can switch environments
@@ -54,9 +53,8 @@ public partial class App : Application
 
         // ViewModels
         services.AddTransient<BorisViewModel>();
+        services.AddTransient<CrawlerViewModel>();
         services.AddTransient<DashboardViewModel>();
-        services.AddTransient<LoaderViewModel>();
-        services.AddTransient<MigrationViewModel>();
         services.AddTransient<IndexManagerViewModel>();
         services.AddTransient<MainViewModel>();
 
