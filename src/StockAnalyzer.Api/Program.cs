@@ -1508,8 +1508,8 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                     sdr.ActualPriceCount,
                     (SELECT COUNT(*) FROM data.BusinessCalendar bc WITH (NOLOCK)
                      WHERE bc.IsBusinessDay = 1
-                       AND bc.CalendarDate >= sdr.FirstDate
-                       AND bc.CalendarDate <= sdr.LastDate) AS ExpectedPriceCount
+                       AND bc.EffectiveDate >= sdr.FirstDate
+                       AND bc.EffectiveDate <= sdr.LastDate) AS ExpectedPriceCount
                 FROM SecurityDateRange sdr
             )
             SELECT TOP (@limit)
@@ -1681,17 +1681,17 @@ app.MapGet("/api/admin/prices/gaps/{securityAlias}", async (IServiceProvider ser
 
         using var cmd = connection.CreateCommand();
         cmd.CommandText = @"
-            SELECT TOP (@limit) bc.CalendarDate
+            SELECT TOP (@limit) bc.EffectiveDate
             FROM data.BusinessCalendar bc WITH (NOLOCK)
             WHERE bc.IsBusinessDay = 1
-              AND bc.CalendarDate >= @firstDate
-              AND bc.CalendarDate <= @lastDate
+              AND bc.EffectiveDate >= @firstDate
+              AND bc.EffectiveDate <= @lastDate
               AND NOT EXISTS (
                 SELECT 1 FROM data.Prices p WITH (NOLOCK)
                 WHERE p.SecurityAlias = @securityAlias
-                  AND p.EffectiveDate = bc.CalendarDate
+                  AND p.EffectiveDate = bc.EffectiveDate
               )
-            ORDER BY bc.CalendarDate DESC";
+            ORDER BY bc.EffectiveDate DESC";
 
         var limitParam = cmd.CreateParameter();
         limitParam.ParameterName = "@limit";
