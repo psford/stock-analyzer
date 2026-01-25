@@ -27,6 +27,7 @@ public class StockAnalyzerDbContext : DbContext
     public DbSet<PriceEntity> Prices => Set<PriceEntity>();
     public DbSet<SourceEntity> Sources => Set<SourceEntity>();
     public DbSet<BusinessCalendarEntity> BusinessCalendar => Set<BusinessCalendarEntity>();
+    public DbSet<TrackedSecurityEntity> TrackedSecurities => Set<TrackedSecurityEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -173,6 +174,14 @@ public class StockAnalyzerDbContext : DbContext
             entity.HasIndex(e => e.IsActive)
                 .HasDatabaseName("IX_SecurityMaster_IsActive");
 
+            // Index for filtering tracked securities (for Crawler)
+            entity.HasIndex(e => e.IsTracked)
+                .HasDatabaseName("IX_SecurityMaster_IsTracked");
+
+            // Composite index for common query: active + tracked
+            entity.HasIndex(e => new { e.IsActive, e.IsTracked })
+                .HasDatabaseName("IX_SecurityMaster_IsActive_IsTracked");
+
             // One-to-many: SecurityMaster -> Prices
             entity.HasMany(e => e.Prices)
                 .WithOne(p => p.Security)
@@ -242,6 +251,38 @@ public class StockAnalyzerDbContext : DbContext
             // Index for filtering business days within a date range
             entity.HasIndex(e => new { e.SourceId, e.IsBusinessDay, e.EffectiveDate })
                 .HasDatabaseName("IX_BusinessCalendar_SourceId_IsBusinessDay_EffectiveDate");
+        });
+
+        // TrackedSecurities configuration
+        modelBuilder.Entity<TrackedSecurityEntity>(entity =>
+        {
+            entity.ToTable("TrackedSecurities", "data");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).UseIdentityColumn();
+            entity.Property(e => e.Source).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Priority).HasDefaultValue(1);
+            entity.Property(e => e.Notes).HasMaxLength(500);
+            entity.Property(e => e.AddedBy).HasMaxLength(100).HasDefaultValue("system");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+            // Each security can only be tracked once (avoid duplicates)
+            entity.HasIndex(e => e.SecurityAlias)
+                .IsUnique()
+                .HasDatabaseName("IX_TrackedSecurities_SecurityAlias");
+
+            // Index for filtering by source (e.g., find all S&P 500 components)
+            entity.HasIndex(e => e.Source)
+                .HasDatabaseName("IX_TrackedSecurities_Source");
+
+            // Index for priority ordering
+            entity.HasIndex(e => e.Priority)
+                .HasDatabaseName("IX_TrackedSecurities_Priority");
+
+            // Foreign key to SecurityMaster
+            entity.HasOne(e => e.Security)
+                .WithOne()
+                .HasForeignKey<TrackedSecurityEntity>(e => e.SecurityAlias)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

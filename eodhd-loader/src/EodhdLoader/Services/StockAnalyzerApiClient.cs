@@ -232,7 +232,8 @@ public class StockAnalyzerApiClient
     // ============================================================================
 
     /// <summary>
-    /// Gets trading days missing price data. Uses BusinessCalendar for efficient lookup.
+    /// Gets securities with gaps in their price history (Security Master driven).
+    /// Returns securities ordered by most missing days first.
     /// </summary>
     public async Task<PriceGapsResult> GetPriceGapsAsync(string? market = null, int? limit = null, CancellationToken ct = default)
     {
@@ -259,6 +260,32 @@ public class StockAnalyzerApiClient
         catch (Exception ex)
         {
             return new PriceGapsResult { Success = false, Error = ex.Message };
+        }
+    }
+
+    /// <summary>
+    /// Gets the specific missing dates for a security.
+    /// </summary>
+    public async Task<SecurityGapsResult> GetSecurityGapsAsync(int securityAlias, int? limit = null, CancellationToken ct = default)
+    {
+        if (_httpClient == null)
+            return new SecurityGapsResult { Success = false, Error = "HttpClient not configured" };
+
+        try
+        {
+            var url = $"/api/admin/prices/gaps/{securityAlias}";
+            if (limit.HasValue)
+                url += $"?limit={limit.Value}";
+
+            var response = await _httpClient.GetAsync(url, ct);
+            response.EnsureSuccessStatusCode();
+
+            var result = await response.Content.ReadFromJsonAsync<SecurityGapsResult>(cancellationToken: ct);
+            return result ?? new SecurityGapsResult { Success = false, Error = "Empty response" };
+        }
+        catch (Exception ex)
+        {
+            return new SecurityGapsResult { Success = false, Error = ex.Message };
         }
     }
 
@@ -514,10 +541,42 @@ public class PriceGapsResult
     public bool Success { get; set; }
     public string? Error { get; set; }
     public string Market { get; set; } = "";
-    public int TotalMissingDays { get; set; }
-    public int DaysWithData { get; set; }
-    public int TotalTradingDays { get; set; }
+    public PriceGapsSummary Summary { get; set; } = new();
     public double CompletionPercent { get; set; }
+    public List<SecurityGapInfo> Gaps { get; set; } = [];
+}
+
+public class PriceGapsSummary
+{
+    public int TotalSecurities { get; set; }
+    public int SecuritiesWithData { get; set; }
+    public int SecuritiesWithGaps { get; set; }
+    public int SecuritiesComplete { get; set; }
+    public int TotalPriceRecords { get; set; }
+    public int TotalMissingDays { get; set; }
+}
+
+public class SecurityGapInfo
+{
+    public int SecurityAlias { get; set; }
+    public string Ticker { get; set; } = "";
+    public string FirstDate { get; set; } = "";
+    public string LastDate { get; set; } = "";
+    public int ActualDays { get; set; }
+    public int ExpectedDays { get; set; }
+    public int MissingDays { get; set; }
+}
+
+public class SecurityGapsResult
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+    public int SecurityAlias { get; set; }
+    public string Ticker { get; set; } = "";
+    public string? FirstDate { get; set; }
+    public string? LastDate { get; set; }
+    public string? Message { get; set; }
+    public int MissingCount { get; set; }
     public List<string> MissingDates { get; set; } = [];
 }
 

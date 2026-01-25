@@ -1212,6 +1212,98 @@ app.MapGet("/api/admin/data/prices/summary", async (IServiceProvider serviceProv
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status500InternalServerError);
 
+// POST /api/admin/data/seed-tracked-securities - Seed TrackedSecurities from existing price data
+// Run this AFTER the EF Core migration has created the schema
+app.MapPost("/api/admin/data/seed-tracked-securities", async (IServiceProvider serviceProvider) =>
+{
+    using var scope = serviceProvider.CreateScope();
+    var context = scope.ServiceProvider.GetService<StockAnalyzerDbContext>();
+
+    if (context == null)
+        return Results.BadRequest(new { error = "Database context not configured" });
+
+    try
+    {
+        var connection = context.Database.GetDbConnection();
+        await connection.OpenAsync();
+
+        int securitiesSeeded = 0;
+        int securitiesUpdated = 0;
+
+        // Insert into TrackedSecurities for securities with prices
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = @"
+                INSERT INTO data.TrackedSecurities (SecurityAlias, Source, Priority, Notes, AddedBy)
+                SELECT DISTINCT p.SecurityAlias, 'Legacy', 1, 'Auto-added from existing price data', 'migration'
+                FROM data.Prices p
+                INNER JOIN data.SecurityMaster sm ON sm.SecurityAlias = p.SecurityAlias
+                WHERE NOT EXISTS (SELECT 1 FROM data.TrackedSecurities ts WHERE ts.SecurityAlias = p.SecurityAlias);
+
+                SELECT @@ROWCOUNT";
+            cmd.CommandTimeout = 120;
+            securitiesSeeded = (int)(await cmd.ExecuteScalarAsync() ?? 0);
+        }
+
+        // Update IsTracked flag on SecurityMaster
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = @"
+                UPDATE sm
+                SET IsTracked = 1
+                FROM data.SecurityMaster sm
+                WHERE EXISTS (SELECT 1 FROM data.TrackedSecurities ts WHERE ts.SecurityAlias = sm.SecurityAlias)
+                  AND sm.IsTracked = 0;
+
+                SELECT @@ROWCOUNT";
+            cmd.CommandTimeout = 120;
+            securitiesUpdated = (int)(await cmd.ExecuteScalarAsync() ?? 0);
+        }
+
+        // Verify counts
+        int trackedInSM = 0;
+        int trackedRecords = 0;
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = @"
+                SELECT
+                    (SELECT COUNT(*) FROM data.SecurityMaster WHERE IsTracked = 1),
+                    (SELECT COUNT(*) FROM data.TrackedSecurities)";
+            cmd.CommandTimeout = 30;
+            using var reader = await cmd.ExecuteReaderAsync();
+            if (await reader.ReadAsync())
+            {
+                trackedInSM = reader.GetInt32(0);
+                trackedRecords = reader.GetInt32(1);
+            }
+        }
+
+        return Results.Ok(new
+        {
+            success = true,
+            message = "Tracked securities seeded successfully",
+            securitiesSeeded,
+            securitiesUpdated,
+            verification = new
+            {
+                trackedInSecurityMaster = trackedInSM,
+                trackedSecuritiesRecords = trackedRecords,
+                inSync = trackedInSM == trackedRecords
+            }
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Seeding tracked securities failed");
+        return Results.Problem($"Seeding failed: {ex.Message}");
+    }
+})
+.WithName("SeedTrackedSecurities")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status500InternalServerError);
+
 // GET /api/admin/data/prices/monitor - Rich monitoring stats for crawler display
 // Uses efficient SQL queries instead of EF LINQ to avoid full table scans
 app.MapGet("/api/admin/data/prices/monitor", async (IServiceProvider serviceProvider) =>
@@ -1361,8 +1453,8 @@ app.MapGet("/api/admin/data/prices/monitor", async (IServiceProvider serviceProv
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status500InternalServerError);
 
-// GET /api/admin/prices/gaps - Find trading days with missing price data
-// Uses BusinessCalendar to efficiently find gaps without scanning Prices table
+// GET /api/admin/prices/gaps - Find missing price data for tracked securities
+// Only checks securities with IsTracked = 1 (our monitored universe)
 app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, string? market, int? limit) =>
 {
     using var scope = serviceProvider.CreateScope();
@@ -1377,74 +1469,135 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
         await connection.OpenAsync();
 
         var marketFilter = market?.ToUpperInvariant() ?? "US";
-        var maxResults = limit ?? 100;
+        var maxResults = limit ?? 50;
 
-        // Efficient anti-join query using BusinessCalendar
-        // Gets trading days that have no price data
+        // Strategy: Find TRACKED securities with gaps in their price history
+        // Only considers securities where IsTracked = 1 (our curated universe)
+        //
+        // This query:
+        // 1. Gets tracked, active US securities from Security Master
+        // 2. Finds the min/max date of existing prices for each
+        // 3. Counts trading days (from BusinessCalendar) in that range
+        // 4. Compares to actual price count - any difference is a gap
+        // 5. Returns securities with gaps, ordered by priority then most gaps
+
         using var cmd = connection.CreateCommand();
         cmd.CommandText = @"
-            SELECT TOP (@limit) bc.CalendarDate
-            FROM data.BusinessCalendar bc WITH (NOLOCK)
-            WHERE bc.IsBusinessDay = 1
-              AND bc.CalendarDate <= CAST(GETDATE() AS DATE)
-              AND bc.CalendarDate >= '1980-01-01'
-              AND NOT EXISTS (
-                SELECT 1 FROM data.Prices p WITH (NOLOCK)
-                WHERE p.EffectiveDate = bc.CalendarDate
-              )
-            ORDER BY bc.CalendarDate DESC";
+            WITH SecurityDateRange AS (
+                SELECT
+                    sm.SecurityAlias,
+                    sm.TickerSymbol,
+                    COALESCE(ts.Priority, 999) AS Priority,
+                    MIN(p.EffectiveDate) AS FirstDate,
+                    MAX(p.EffectiveDate) AS LastDate,
+                    COUNT(*) AS ActualPriceCount
+                FROM data.SecurityMaster sm WITH (NOLOCK)
+                INNER JOIN data.Prices p WITH (NOLOCK) ON p.SecurityAlias = sm.SecurityAlias
+                LEFT JOIN data.TrackedSecurities ts WITH (NOLOCK) ON ts.SecurityAlias = sm.SecurityAlias
+                WHERE sm.IsActive = 1
+                  AND sm.IsTracked = 1
+                GROUP BY sm.SecurityAlias, sm.TickerSymbol, ts.Priority
+            ),
+            ExpectedCounts AS (
+                SELECT
+                    sdr.SecurityAlias,
+                    sdr.TickerSymbol,
+                    sdr.Priority,
+                    sdr.FirstDate,
+                    sdr.LastDate,
+                    sdr.ActualPriceCount,
+                    (SELECT COUNT(*) FROM data.BusinessCalendar bc WITH (NOLOCK)
+                     WHERE bc.IsBusinessDay = 1
+                       AND bc.CalendarDate >= sdr.FirstDate
+                       AND bc.CalendarDate <= sdr.LastDate) AS ExpectedPriceCount
+                FROM SecurityDateRange sdr
+            )
+            SELECT TOP (@limit)
+                SecurityAlias,
+                TickerSymbol,
+                FirstDate,
+                LastDate,
+                ActualPriceCount,
+                ExpectedPriceCount,
+                (ExpectedPriceCount - ActualPriceCount) AS MissingDays
+            FROM ExpectedCounts
+            WHERE ExpectedPriceCount > ActualPriceCount
+            ORDER BY Priority, (ExpectedPriceCount - ActualPriceCount) DESC, TickerSymbol";
 
         var limitParam = cmd.CreateParameter();
         limitParam.ParameterName = "@limit";
         limitParam.Value = maxResults;
         cmd.Parameters.Add(limitParam);
-        cmd.CommandTimeout = 30;
+        cmd.CommandTimeout = 60;
 
-        var missingDates = new List<string>();
+        var securitiesWithGaps = new List<object>();
+        int totalMissingDays = 0;
+
         using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
-            missingDates.Add(reader.GetDateTime(0).ToString("yyyy-MM-dd"));
+            var missingDays = reader.GetInt32(6);
+            totalMissingDays += missingDays;
+            securitiesWithGaps.Add(new
+            {
+                securityAlias = reader.GetInt32(0),
+                ticker = reader.GetString(1),
+                firstDate = reader.GetDateTime(2).ToString("yyyy-MM-dd"),
+                lastDate = reader.GetDateTime(3).ToString("yyyy-MM-dd"),
+                actualDays = reader.GetInt32(4),
+                expectedDays = reader.GetInt32(5),
+                missingDays
+            });
         }
 
-        // Get total count of missing days (for progress display)
-        int totalMissing = 0;
-        using (var countCmd = connection.CreateCommand())
+        // Get summary stats (only for tracked securities)
+        int totalSecurities = 0;
+        int securitiesWithData = 0;
+        int totalPriceRecords = 0;
+
+        using (var statsCmd = connection.CreateCommand())
         {
-            countCmd.CommandText = @"
-                SELECT COUNT(*)
-                FROM data.BusinessCalendar bc WITH (NOLOCK)
-                WHERE bc.IsBusinessDay = 1
-                  AND bc.CalendarDate <= CAST(GETDATE() AS DATE)
-                  AND bc.CalendarDate >= '1980-01-01'
-                  AND NOT EXISTS (
-                    SELECT 1 FROM data.Prices p WITH (NOLOCK)
-                    WHERE p.EffectiveDate = bc.CalendarDate
-                  )";
-            countCmd.CommandTimeout = 60;
-            totalMissing = (int)(await countCmd.ExecuteScalarAsync() ?? 0);
+            statsCmd.CommandText = @"
+                SELECT
+                    (SELECT COUNT(*) FROM data.SecurityMaster WITH (NOLOCK)
+                     WHERE IsActive = 1 AND IsTracked = 1) AS TotalTrackedSecurities,
+                    (SELECT COUNT(DISTINCT p.SecurityAlias) FROM data.Prices p WITH (NOLOCK)
+                     INNER JOIN data.SecurityMaster sm WITH (NOLOCK) ON sm.SecurityAlias = p.SecurityAlias
+                     WHERE sm.IsTracked = 1) AS TrackedSecuritiesWithData,
+                    (SELECT COUNT(*) FROM data.Prices p WITH (NOLOCK)
+                     INNER JOIN data.SecurityMaster sm WITH (NOLOCK) ON sm.SecurityAlias = p.SecurityAlias
+                     WHERE sm.IsTracked = 1) AS TotalPriceRecordsForTracked";
+            statsCmd.CommandTimeout = 30;
+
+            using var statsReader = await statsCmd.ExecuteReaderAsync();
+            if (await statsReader.ReadAsync())
+            {
+                totalSecurities = statsReader.GetInt32(0);
+                securitiesWithData = statsReader.GetInt32(1);
+                totalPriceRecords = statsReader.GetInt32(2);
+            }
         }
 
-        // Get count of days WITH data (for progress calculation)
-        int daysWithData = 0;
-        using (var dataCmd = connection.CreateCommand())
-        {
-            dataCmd.CommandText = "SELECT COUNT(DISTINCT EffectiveDate) FROM data.Prices WITH (NOLOCK)";
-            dataCmd.CommandTimeout = 30;
-            daysWithData = (int)(await dataCmd.ExecuteScalarAsync() ?? 0);
-        }
+        var securitiesComplete = securitiesWithGaps.Count == 0 ? securitiesWithData :
+            securitiesWithData - securitiesWithGaps.Count;
 
         return Results.Ok(new
         {
             success = true,
             market = marketFilter,
-            totalMissingDays = totalMissing,
-            daysWithData,
-            totalTradingDays = totalMissing + daysWithData,
-            completionPercent = (totalMissing + daysWithData) > 0
-                ? Math.Round(daysWithData * 100.0 / (totalMissing + daysWithData), 1)
+            summary = new
+            {
+                totalSecurities,
+                securitiesWithData,
+                securitiesWithGaps = securitiesWithGaps.Count,
+                securitiesComplete,
+                totalPriceRecords,
+                totalMissingDays
+            },
+            completionPercent = totalSecurities > 0
+                ? Math.Round(securitiesComplete * 100.0 / totalSecurities, 1)
                 : 0,
-            missingDates
+            gaps = securitiesWithGaps
         });
     }
     catch (Exception ex)
@@ -1457,6 +1610,138 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
 .WithOpenApi()
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status500InternalServerError);
+
+// GET /api/admin/prices/gaps/{securityAlias} - Get specific missing dates for a security
+app.MapGet("/api/admin/prices/gaps/{securityAlias}", async (IServiceProvider serviceProvider, int securityAlias, int? limit) =>
+{
+    using var scope = serviceProvider.CreateScope();
+    var context = scope.ServiceProvider.GetService<StockAnalyzerDbContext>();
+
+    if (context == null)
+        return Results.BadRequest(new { error = "Database context not configured" });
+
+    try
+    {
+        var connection = context.Database.GetDbConnection();
+        await connection.OpenAsync();
+
+        var maxResults = limit ?? 100;
+
+        // Get security info and date range
+        string? ticker = null;
+        DateTime? firstDate = null;
+        DateTime? lastDate = null;
+
+        using (var infoCmd = connection.CreateCommand())
+        {
+            infoCmd.CommandText = @"
+                SELECT
+                    sm.TickerSymbol,
+                    MIN(p.EffectiveDate) AS FirstDate,
+                    MAX(p.EffectiveDate) AS LastDate
+                FROM data.SecurityMaster sm WITH (NOLOCK)
+                LEFT JOIN data.Prices p WITH (NOLOCK) ON p.SecurityAlias = sm.SecurityAlias
+                WHERE sm.SecurityAlias = @securityAlias
+                GROUP BY sm.TickerSymbol";
+
+            var aliasParam = infoCmd.CreateParameter();
+            aliasParam.ParameterName = "@securityAlias";
+            aliasParam.Value = securityAlias;
+            infoCmd.Parameters.Add(aliasParam);
+            infoCmd.CommandTimeout = 30;
+
+            using var infoReader = await infoCmd.ExecuteReaderAsync();
+            if (await infoReader.ReadAsync())
+            {
+                ticker = infoReader.GetString(0);
+                if (!infoReader.IsDBNull(1))
+                {
+                    firstDate = infoReader.GetDateTime(1);
+                    lastDate = infoReader.GetDateTime(2);
+                }
+            }
+        }
+
+        if (ticker == null)
+            return Results.NotFound(new { error = $"Security {securityAlias} not found" });
+
+        if (firstDate == null)
+            return Results.Ok(new
+            {
+                success = true,
+                securityAlias,
+                ticker,
+                message = "No price data exists for this security",
+                missingDates = new List<string>()
+            });
+
+        // Find missing trading days within the security's date range
+        var missingDates = new List<string>();
+
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"
+            SELECT TOP (@limit) bc.CalendarDate
+            FROM data.BusinessCalendar bc WITH (NOLOCK)
+            WHERE bc.IsBusinessDay = 1
+              AND bc.CalendarDate >= @firstDate
+              AND bc.CalendarDate <= @lastDate
+              AND NOT EXISTS (
+                SELECT 1 FROM data.Prices p WITH (NOLOCK)
+                WHERE p.SecurityAlias = @securityAlias
+                  AND p.EffectiveDate = bc.CalendarDate
+              )
+            ORDER BY bc.CalendarDate DESC";
+
+        var limitParam = cmd.CreateParameter();
+        limitParam.ParameterName = "@limit";
+        limitParam.Value = maxResults;
+        cmd.Parameters.Add(limitParam);
+
+        var firstParam = cmd.CreateParameter();
+        firstParam.ParameterName = "@firstDate";
+        firstParam.Value = firstDate.Value;
+        cmd.Parameters.Add(firstParam);
+
+        var lastParam = cmd.CreateParameter();
+        lastParam.ParameterName = "@lastDate";
+        lastParam.Value = lastDate.Value;
+        cmd.Parameters.Add(lastParam);
+
+        var secParam = cmd.CreateParameter();
+        secParam.ParameterName = "@securityAlias";
+        secParam.Value = securityAlias;
+        cmd.Parameters.Add(secParam);
+
+        cmd.CommandTimeout = 30;
+
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            missingDates.Add(reader.GetDateTime(0).ToString("yyyy-MM-dd"));
+        }
+
+        return Results.Ok(new
+        {
+            success = true,
+            securityAlias,
+            ticker,
+            firstDate = firstDate.Value.ToString("yyyy-MM-dd"),
+            lastDate = lastDate.Value.ToString("yyyy-MM-dd"),
+            missingCount = missingDates.Count,
+            missingDates
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Security gaps query failed for {SecurityAlias}", securityAlias);
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("SecurityGaps")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status404NotFound)
 .Produces(StatusCodes.Status500InternalServerError);
 
 // GET /api/admin/prices/holidays/analyze - Analyze holidays missing price data

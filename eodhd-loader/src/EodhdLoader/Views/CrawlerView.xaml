@@ -93,10 +93,11 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
                 <!-- Completion -->
-                <Border Grid.Column="0" Background="#0f3460" CornerRadius="8" Padding="12" Margin="0,0,8,0">
+                <Border Grid.Column="0" Background="#0f3460" CornerRadius="8" Padding="12" Margin="0,0,4,0">
                     <StackPanel HorizontalAlignment="Center">
                         <TextBlock Text="COMPLETE" FontSize="10" Foreground="#888" HorizontalAlignment="Center" FontWeight="Bold"/>
                         <TextBlock FontSize="24" FontWeight="Bold" Foreground="#4CAF50" HorizontalAlignment="Center" FontFamily="Consolas">
@@ -105,26 +106,36 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Days Missing -->
+                <!-- Securities with Gaps -->
                 <Border Grid.Column="1" Background="#0f3460" CornerRadius="8" Padding="12" Margin="4,0">
                     <StackPanel HorizontalAlignment="Center">
-                        <TextBlock Text="MISSING" FontSize="10" Foreground="#888" HorizontalAlignment="Center" FontWeight="Bold"/>
-                        <TextBlock Text="{Binding TotalMissingDays, StringFormat=N0}" FontSize="24" FontWeight="Bold"
-                                   Foreground="#ff6b6b" HorizontalAlignment="Center" FontFamily="Consolas"/>
+                        <TextBlock Text="SECURITIES" FontSize="10" Foreground="#888" HorizontalAlignment="Center" FontWeight="Bold"/>
+                        <TextBlock FontSize="24" FontWeight="Bold" Foreground="#ff6b6b" HorizontalAlignment="Center" FontFamily="Consolas">
+                            <Run Text="{Binding SecuritiesWithGaps}"/><Run Text="/" Foreground="#666"/><Run Text="{Binding TotalSecurities}" Foreground="#666"/>
+                        </TextBlock>
                     </StackPanel>
                 </Border>
 
-                <!-- Days Loaded This Session -->
+                <!-- Days Missing -->
                 <Border Grid.Column="2" Background="#0f3460" CornerRadius="8" Padding="12" Margin="4,0">
                     <StackPanel HorizontalAlignment="Center">
+                        <TextBlock Text="MISSING DAYS" FontSize="10" Foreground="#888" HorizontalAlignment="Center" FontWeight="Bold"/>
+                        <TextBlock Text="{Binding TotalMissingDays, StringFormat=N0}" FontSize="24" FontWeight="Bold"
+                                   Foreground="#ff9f43" HorizontalAlignment="Center" FontFamily="Consolas"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Securities Processed This Session -->
+                <Border Grid.Column="3" Background="#0f3460" CornerRadius="8" Padding="12" Margin="4,0">
+                    <StackPanel HorizontalAlignment="Center">
                         <TextBlock Text="SESSION" FontSize="10" Foreground="#888" HorizontalAlignment="Center" FontWeight="Bold"/>
-                        <TextBlock Text="{Binding DaysLoadedThisSession, StringFormat=N0}" FontSize="24" FontWeight="Bold"
+                        <TextBlock Text="{Binding SecuritiesProcessedThisSession, StringFormat=N0}" FontSize="24" FontWeight="Bold"
                                    Foreground="#00d4ff" HorizontalAlignment="Center" FontFamily="Consolas"/>
                     </StackPanel>
                 </Border>
 
                 <!-- Records Loaded -->
-                <Border Grid.Column="3" Background="#0f3460" CornerRadius="8" Padding="12" Margin="8,0,0,0">
+                <Border Grid.Column="4" Background="#0f3460" CornerRadius="8" Padding="12" Margin="4,0,0,0">
                     <StackPanel HorizontalAlignment="Center">
                         <TextBlock Text="RECORDS" FontSize="10" Foreground="#888" HorizontalAlignment="Center" FontWeight="Bold"/>
                         <TextBlock Text="{Binding RecordsLoadedThisSession, StringFormat=N0}" FontSize="24" FontWeight="Bold"
@@ -167,7 +178,7 @@
                         <TextBlock Text="{Binding CurrentAction}" Foreground="White" FontSize="14" VerticalAlignment="Center"/>
                     </StackPanel>
 
-                    <TextBlock Grid.Column="1" Text="{Binding CurrentDate}" Foreground="#00d4ff" FontSize="16"
+                    <TextBlock Grid.Column="1" Text="{Binding CurrentTicker}" Foreground="#00d4ff" FontSize="16"
                                FontWeight="Bold" FontFamily="Consolas" HorizontalAlignment="Center" VerticalAlignment="Center"/>
 
                     <StackPanel Grid.Column="2" Orientation="Horizontal">
@@ -198,14 +209,14 @@
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="24"/>
-                                            <ColumnDefinition Width="90"/>
+                                            <ColumnDefinition Width="140"/>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="60"/>
                                         </Grid.ColumnDefinitions>
 
                                         <TextBlock Grid.Column="0" Text="{Binding Icon}" FontSize="12"/>
                                         <TextBlock Grid.Column="1" Text="{Binding Date}" Foreground="#00d4ff"
-                                                   FontFamily="Consolas" FontSize="11"/>
+                                                   FontFamily="Consolas" FontSize="11" TextTrimming="CharacterEllipsis"/>
                                         <TextBlock Grid.Column="2" Text="{Binding Details}" Foreground="White"
                                                    FontSize="11" TextTrimming="CharacterEllipsis"/>
                                         <TextBlock Grid.Column="3" Text="{Binding Timestamp}" Foreground="#666"

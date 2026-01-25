@@ -8,7 +8,7 @@ namespace EodhdLoader.ViewModels;
 
 /// <summary>
 /// ViewModel for the Crawler - an autonomous gap-filling agent.
-/// Finds missing trading days and loads price data from EODHD.
+/// Finds securities with missing price data and loads from EODHD.
 /// Paced at ~52 API calls/minute (75,000/day budget).
 /// </summary>
 public partial class CrawlerViewModel : ViewModelBase
@@ -20,7 +20,7 @@ public partial class CrawlerViewModel : ViewModelBase
     // Rate limiting: 75,000 calls/day = 52/min = ~1.15 seconds between calls
     // Using 1.2s to be safe
     private const int CallIntervalMs = 1200;
-    private const int BatchSize = 10; // Dates to fetch per gaps query
+    private const int SecuritiesToFetch = 20; // Securities to query at a time
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StartCrawlCommand))]
@@ -40,15 +40,18 @@ public partial class CrawlerViewModel : ViewModelBase
     [ObservableProperty]
     private TargetEnvironment _selectedEnvironment = TargetEnvironment.Production;
 
-    // Progress tracking
+    // Progress tracking - Security Master based
+    [ObservableProperty]
+    private int _totalSecurities;
+
+    [ObservableProperty]
+    private int _securitiesWithGaps;
+
     [ObservableProperty]
     private int _totalMissingDays;
 
     [ObservableProperty]
-    private int _daysWithData;
-
-    [ObservableProperty]
-    private int _daysLoadedThisSession;
+    private int _securitiesProcessedThisSession;
 
     [ObservableProperty]
     private double _completionPercent;
@@ -57,7 +60,7 @@ public partial class CrawlerViewModel : ViewModelBase
     private string _currentAction = "Idle";
 
     [ObservableProperty]
-    private string _currentDate = "—";
+    private string _currentTicker = "—";
 
     [ObservableProperty]
     private int _recordsLoadedThisSession;
@@ -69,8 +72,11 @@ public partial class CrawlerViewModel : ViewModelBase
     [ObservableProperty]
     private ObservableCollection<CrawlActivity> _activityLog = [];
 
-    // Queue of dates to process
+    // Queue of securities to process
+    private Queue<SecurityGapInfo> _securityQueue = new();
+    // Current security's missing dates
     private Queue<string> _dateQueue = new();
+    private SecurityGapInfo? _currentSecurity;
 
     public CrawlerViewModel(StockAnalyzerApiClient apiClient)
     {
@@ -81,7 +87,7 @@ public partial class CrawlerViewModel : ViewModelBase
         {
             Interval = TimeSpan.FromMilliseconds(CallIntervalMs)
         };
-        _crawlTimer.Tick += async (s, e) => await ProcessNextDateAsync();
+        _crawlTimer.Tick += async (s, e) => await ProcessNextAsync();
     }
 
     [RelayCommand]
@@ -104,7 +110,7 @@ public partial class CrawlerViewModel : ViewModelBase
 
                 // Fetch initial gap status
                 await RefreshGapsAsync();
-                StatusText = $"Connected. {TotalMissingDays:N0} missing days found. Click Start to begin.";
+                StatusText = $"Connected. {SecuritiesWithGaps} securities with {TotalMissingDays:N0} missing days. Click Start to begin.";
             }
             else
             {
@@ -127,18 +133,19 @@ public partial class CrawlerViewModel : ViewModelBase
 
     private async Task RefreshGapsAsync()
     {
-        var gaps = await _apiClient.GetPriceGapsAsync("US", BatchSize, _cts?.Token ?? default);
+        var gaps = await _apiClient.GetPriceGapsAsync("US", SecuritiesToFetch, _cts?.Token ?? default);
         if (gaps.Success)
         {
-            TotalMissingDays = gaps.TotalMissingDays;
-            DaysWithData = gaps.DaysWithData;
+            TotalSecurities = gaps.Summary.TotalSecurities;
+            SecuritiesWithGaps = gaps.Summary.SecuritiesWithGaps;
+            TotalMissingDays = gaps.Summary.TotalMissingDays;
             CompletionPercent = gaps.CompletionPercent;
 
-            // Queue up the missing dates
-            _dateQueue.Clear();
-            foreach (var date in gaps.MissingDates)
+            // Queue up the securities with gaps (ordered by most gaps first)
+            _securityQueue.Clear();
+            foreach (var secGap in gaps.Gaps)
             {
-                _dateQueue.Enqueue(date);
+                _securityQueue.Enqueue(secGap);
             }
         }
     }
@@ -150,20 +157,20 @@ public partial class CrawlerViewModel : ViewModelBase
     {
         IsCrawling = true;
         _cts = new CancellationTokenSource();
-        DaysLoadedThisSession = 0;
+        SecuritiesProcessedThisSession = 0;
         RecordsLoadedThisSession = 0;
         ErrorsThisSession = 0;
 
         CurrentAction = "Starting...";
         StatusText = "Crawler starting...";
 
-        // Get initial batch of missing dates
+        // Get initial batch of securities with gaps
         await RefreshGapsAsync();
 
-        if (_dateQueue.Count == 0)
+        if (_securityQueue.Count == 0)
         {
             CurrentAction = "Complete!";
-            StatusText = "No missing dates found. Coverage is complete!";
+            StatusText = "No gaps found. All Security Master securities have complete price data!";
             IsCrawling = false;
             return;
         }
@@ -171,7 +178,7 @@ public partial class CrawlerViewModel : ViewModelBase
         // Start the paced timer
         _crawlTimer.Start();
         CurrentAction = "Crawling";
-        StatusText = $"Crawling... {_dateQueue.Count} dates queued";
+        StatusText = $"Crawling... {_securityQueue.Count} securities queued";
     }
 
     private bool CanStopCrawl() => IsCrawling;
@@ -183,10 +190,10 @@ public partial class CrawlerViewModel : ViewModelBase
         _cts?.Cancel();
         IsCrawling = false;
         CurrentAction = "Stopped";
-        StatusText = $"Stopped. Loaded {DaysLoadedThisSession} days this session.";
+        StatusText = $"Stopped. Processed {SecuritiesProcessedThisSession} securities, loaded {RecordsLoadedThisSession:N0} records.";
     }
 
-    private async Task ProcessNextDateAsync()
+    private async Task ProcessNextAsync()
     {
         if (_cts?.Token.IsCancellationRequested == true)
         {
@@ -194,73 +201,122 @@ public partial class CrawlerViewModel : ViewModelBase
             return;
         }
 
-        // If queue is empty, refresh from API
-        if (_dateQueue.Count == 0)
+        // If we have dates queued for current security, process next date
+        if (_dateQueue.Count > 0 && _currentSecurity != null)
+        {
+            await ProcessNextDateAsync();
+            return;
+        }
+
+        // Need to get next security
+        if (_securityQueue.Count == 0)
         {
             CurrentAction = "Refreshing gaps...";
             await RefreshGapsAsync();
 
-            if (_dateQueue.Count == 0)
+            if (_securityQueue.Count == 0)
             {
                 // No more gaps - we're done!
                 _crawlTimer.Stop();
                 IsCrawling = false;
                 CurrentAction = "Complete!";
-                StatusText = $"All gaps filled! Loaded {DaysLoadedThisSession} days.";
-                AddActivity("✓", "Complete", "All trading days have price data");
+                StatusText = $"All gaps filled! Processed {SecuritiesProcessedThisSession} securities, loaded {RecordsLoadedThisSession:N0} records.";
+                AddActivity("✓", "Complete", "All Security Master securities have complete price data");
                 return;
             }
         }
 
-        // Get next date to process
+        // Get next security
+        _currentSecurity = _securityQueue.Dequeue();
+        CurrentTicker = _currentSecurity.Ticker;
+        CurrentAction = $"Analyzing {_currentSecurity.Ticker}...";
+
+        // Fetch the specific missing dates for this security
+        var secGaps = await _apiClient.GetSecurityGapsAsync(_currentSecurity.SecurityAlias, 100, _cts?.Token ?? default);
+        if (secGaps.Success && secGaps.MissingDates.Count > 0)
+        {
+            _dateQueue.Clear();
+            foreach (var date in secGaps.MissingDates)
+            {
+                _dateQueue.Enqueue(date);
+            }
+
+            AddActivity("📊", _currentSecurity.Ticker, $"{secGaps.MissingCount} missing dates ({secGaps.FirstDate} - {secGaps.LastDate})");
+            StatusText = $"{_currentSecurity.Ticker}: {_dateQueue.Count} dates to load";
+        }
+        else
+        {
+            // No gaps for this security (maybe already filled)
+            SecuritiesProcessedThisSession++;
+            _currentSecurity = null;
+        }
+    }
+
+    private async Task ProcessNextDateAsync()
+    {
+        if (_currentSecurity == null || _dateQueue.Count == 0) return;
+
         var dateStr = _dateQueue.Dequeue();
-        CurrentDate = dateStr;
-        CurrentAction = $"Loading {dateStr}";
+        CurrentAction = $"Loading {_currentSecurity.Ticker} {dateStr}";
 
         try
         {
-            // Parse date and call refresh API
+            // Use load-tickers endpoint to load just this ticker for this date
             if (DateTime.TryParse(dateStr, out var date))
             {
-                var result = await _apiClient.RefreshDateAsync(date, _cts?.Token ?? default);
+                var result = await _apiClient.LoadTickersAsync(
+                    [_currentSecurity.Ticker],
+                    date,
+                    date,
+                    _cts?.Token ?? default);
 
                 if (result.Success && result.Data != null)
                 {
-                    DaysLoadedThisSession++;
                     RecordsLoadedThisSession += result.Data.PricesLoaded;
-                    DaysWithData++;
-                    TotalMissingDays = Math.Max(0, TotalMissingDays - 1);
-                    CompletionPercent = (DaysWithData + TotalMissingDays) > 0
-                        ? Math.Round(DaysWithData * 100.0 / (DaysWithData + TotalMissingDays), 1)
-                        : 100;
 
-                    AddActivity("✓", dateStr, $"{result.Data.PricesLoaded} records");
-                    StatusText = $"Loaded {dateStr}: {result.Data.PricesLoaded} records. {_dateQueue.Count} queued.";
+                    if (result.Data.PricesLoaded > 0)
+                    {
+                        AddActivity("✓", $"{_currentSecurity.Ticker} {dateStr}", $"{result.Data.PricesLoaded} records");
+                    }
+
+                    TotalMissingDays = Math.Max(0, TotalMissingDays - 1);
+
+                    // Update completion
+                    if (_dateQueue.Count == 0)
+                    {
+                        // Done with this security
+                        SecuritiesProcessedThisSession++;
+                        SecuritiesWithGaps = Math.Max(0, SecuritiesWithGaps - 1);
+                        CompletionPercent = TotalSecurities > 0
+                            ? Math.Round((TotalSecurities - SecuritiesWithGaps) * 100.0 / TotalSecurities, 1)
+                            : 100;
+                        _currentSecurity = null;
+                    }
+
+                    StatusText = $"Loaded {_currentSecurity?.Ticker ?? "?"} {dateStr}. {_dateQueue.Count} dates remaining for this security.";
                 }
                 else
                 {
                     ErrorsThisSession++;
-                    AddActivity("✗", dateStr, result.Error ?? "Failed");
-                    StatusText = $"Error on {dateStr}: {result.Error}";
+                    AddActivity("✗", $"{_currentSecurity.Ticker} {dateStr}", result.Error ?? "Failed");
                 }
             }
         }
         catch (Exception ex)
         {
             ErrorsThisSession++;
-            AddActivity("✗", dateStr, ex.Message);
-            StatusText = $"Error: {ex.Message}";
+            AddActivity("✗", $"{_currentSecurity.Ticker} {dateStr}", ex.Message);
         }
     }
 
-    private void AddActivity(string icon, string date, string details)
+    private void AddActivity(string icon, string item, string details)
     {
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
             ActivityLog.Insert(0, new CrawlActivity
             {
                 Icon = icon,
-                Date = date,
+                Date = item,
                 Details = details,
                 Timestamp = DateTime.Now.ToString("HH:mm:ss")
             });

@@ -64,6 +64,13 @@ public class SecurityMasterEntity
     public bool IsActive { get; set; } = true;
 
     /// <summary>
+    /// Whether this security is in our tracked universe for gap-filling.
+    /// When true, the Crawler will ensure complete price history.
+    /// Synced with TrackedSecurities table for detailed tracking info.
+    /// </summary>
+    public bool IsTracked { get; set; } = false;
+
+    /// <summary>
     /// Timestamp when this record was created (UTC).
     /// </summary>
     public DateTime CreatedAt { get; set; }
