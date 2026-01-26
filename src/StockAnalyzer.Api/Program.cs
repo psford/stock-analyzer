@@ -1027,6 +1027,61 @@ app.MapPost("/api/admin/prices/load-tickers", async (
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status500InternalServerError);
 
+// POST /api/admin/prices/backfill - Optimized parallel backfill for multiple tickers
+app.MapPost("/api/admin/prices/backfill", async (
+    PriceRefreshService? refreshService,
+    HttpRequest request) =>
+{
+    if (refreshService == null)
+        return Results.BadRequest(new { error = "Price refresh service not configured" });
+
+    var body = await request.ReadFromJsonAsync<BackfillRequest>();
+    if (body == null || body.Tickers == null || body.Tickers.Length == 0)
+        return Results.BadRequest(new { error = "Tickers array required" });
+
+    if (string.IsNullOrEmpty(body.StartDate) || string.IsNullOrEmpty(body.EndDate))
+        return Results.BadRequest(new { error = "StartDate and EndDate required (format: yyyy-MM-dd)" });
+
+    if (!DateTime.TryParse(body.StartDate, out var startDate))
+        return Results.BadRequest(new { error = "Invalid StartDate format. Use yyyy-MM-dd" });
+
+    if (!DateTime.TryParse(body.EndDate, out var endDate))
+        return Results.BadRequest(new { error = "Invalid EndDate format. Use yyyy-MM-dd" });
+
+    var maxConcurrency = body.MaxConcurrency ?? 10;
+    if (maxConcurrency < 1 || maxConcurrency > 50)
+        return Results.BadRequest(new { error = "MaxConcurrency must be between 1 and 50" });
+
+    try
+    {
+        Log.Information("Starting parallel backfill for {Count} tickers with concurrency {Concurrency}",
+            body.Tickers.Length, maxConcurrency);
+
+        var result = await refreshService.BackfillTickersParallelAsync(
+            body.Tickers, startDate, endDate, maxConcurrency);
+
+        return Results.Ok(new
+        {
+            message = "Parallel backfill complete",
+            tickersRequested = result.TotalTickers,
+            tickersProcessed = result.TickersProcessed,
+            recordsInserted = result.TotalRecordsInserted,
+            errors = result.Errors,
+            wasCancelled = result.WasCancelled
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Failed to run parallel backfill");
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("BackfillTickerPrices")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status500InternalServerError);
+
 // ============================================================================
 // Data Export Endpoints (for syncing production data to local development)
 // ============================================================================

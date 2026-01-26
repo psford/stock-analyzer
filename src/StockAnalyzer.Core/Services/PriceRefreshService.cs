@@ -427,6 +427,142 @@ public class PriceRefreshService : BackgroundService
     }
 
     /// <summary>
+    /// Optimized parallel backfill for multiple tickers.
+    /// Uses parallelism with rate limiting to maximize throughput while respecting EODHD limits.
+    /// EODHD allows 1,000 requests/minute - we use 10 concurrent requests with 100ms spacing.
+    /// </summary>
+    /// <param name="tickers">List of ticker symbols to load</param>
+    /// <param name="startDate">Start date for historical data</param>
+    /// <param name="endDate">End date for historical data</param>
+    /// <param name="maxConcurrency">Max concurrent API requests (default: 10)</param>
+    /// <param name="progress">Optional progress callback</param>
+    /// <param name="ct">Cancellation token</param>
+    /// <returns>Result with counts and any errors</returns>
+    public async Task<TickerLoadResult> BackfillTickersParallelAsync(
+        IEnumerable<string> tickers,
+        DateTime startDate,
+        DateTime endDate,
+        int maxConcurrency = 10,
+        IProgress<TickerBackfillProgress>? progress = null,
+        CancellationToken ct = default)
+    {
+        var tickerList = tickers.ToList();
+        var result = new TickerLoadResult { TotalTickers = tickerList.Count };
+
+        _logger.LogInformation(
+            "Starting parallel backfill for {Count} tickers from {Start} to {End} with concurrency {Concurrency}",
+            tickerList.Count, startDate.ToString("yyyy-MM-dd"), endDate.ToString("yyyy-MM-dd"), maxConcurrency);
+
+        // Use semaphore to limit concurrency
+        using var semaphore = new SemaphoreSlim(maxConcurrency);
+        var processedCount = 0;
+        var insertedCount = 0;
+        var errorList = new List<string>();
+        var lockObj = new object();
+
+        var tasks = tickerList.Select(async ticker =>
+        {
+            await semaphore.WaitAsync(ct);
+            try
+            {
+                if (ct.IsCancellationRequested) return;
+
+                using var scope = _serviceProvider.CreateScope();
+                var eodhd = scope.ServiceProvider.GetRequiredService<EodhdService>();
+                var priceRepo = scope.ServiceProvider.GetRequiredService<IPriceRepository>();
+                var securityRepo = scope.ServiceProvider.GetRequiredService<ISecurityMasterRepository>();
+
+                // Get or create security in SecurityMaster
+                var security = await securityRepo.GetByTickerAsync(ticker);
+                if (security == null)
+                {
+                    security = await securityRepo.CreateAsync(new SecurityMasterCreateDto
+                    {
+                        TickerSymbol = ticker.ToUpperInvariant(),
+                        IssueName = ticker.ToUpperInvariant()
+                    });
+                    _logger.LogDebug("Created new security for {Ticker}", LogSanitizer.Sanitize(ticker));
+                }
+
+                // Fetch historical data from EODHD (1 API call = full history)
+                var historicalData = await eodhd.GetHistoricalDataAsync(ticker, startDate, endDate, ct);
+
+                if (historicalData.Count == 0)
+                {
+                    lock (lockObj)
+                    {
+                        errorList.Add($"{ticker}: No data returned");
+                    }
+                    return;
+                }
+
+                // Convert to price DTOs
+                var priceDtos = historicalData.Select(record => new PriceCreateDto
+                {
+                    SecurityAlias = security.SecurityAlias,
+                    EffectiveDate = record.ParsedDate,
+                    Open = record.Open,
+                    High = record.High,
+                    Low = record.Low,
+                    Close = record.Close,
+                    AdjustedClose = record.AdjustedClose,
+                    Volume = (long)record.Volume
+                }).ToList();
+
+                // Insert prices (uses upsert, so duplicates are handled)
+                var inserted = await priceRepo.BulkInsertAsync(priceDtos);
+
+                lock (lockObj)
+                {
+                    processedCount++;
+                    insertedCount += inserted;
+                }
+
+                _logger.LogDebug("Loaded {Count} records for {Ticker} ({Processed}/{Total})",
+                    inserted, LogSanitizer.Sanitize(ticker), processedCount, tickerList.Count);
+
+                // Report progress
+                progress?.Report(new TickerBackfillProgress
+                {
+                    CurrentTicker = ticker,
+                    TickersProcessed = processedCount,
+                    TotalTickers = tickerList.Count,
+                    RecordsInserted = insertedCount,
+                    PercentComplete = (int)(processedCount * 100.0 / tickerList.Count)
+                });
+
+                // Small delay to stay under rate limits (100ms × 10 concurrent = 1000/min max)
+                await Task.Delay(100, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error loading data for {Ticker}", LogSanitizer.Sanitize(ticker));
+                lock (lockObj)
+                {
+                    errorList.Add($"{ticker}: {ex.Message}");
+                }
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
+
+        await Task.WhenAll(tasks);
+
+        result.TickersProcessed = processedCount;
+        result.TotalRecordsInserted = insertedCount;
+        result.Errors = errorList;
+        result.WasCancelled = ct.IsCancellationRequested;
+
+        _logger.LogInformation(
+            "Parallel backfill complete: {Processed}/{Total} tickers, {Records} records, {Errors} errors",
+            result.TickersProcessed, result.TotalTickers, result.TotalRecordsInserted, result.Errors.Count);
+
+        return result;
+    }
+
+    /// <summary>
     /// Sync SecurityMaster from the existing Symbols table.
     /// Creates SecurityMaster entries for all active symbols.
     /// </summary>
@@ -580,6 +716,18 @@ public class TickerLoadResult
 }
 
 /// <summary>
+/// Progress report for ticker backfill operations.
+/// </summary>
+public class TickerBackfillProgress
+{
+    public string CurrentTicker { get; set; } = "";
+    public int TickersProcessed { get; set; }
+    public int TotalTickers { get; set; }
+    public int RecordsInserted { get; set; }
+    public int PercentComplete { get; set; }
+}
+
+/// <summary>
 /// Progress report for bulk load operations.
 /// </summary>
 public class BulkLoadProgress
@@ -615,6 +763,17 @@ public record TickerLoadRequest
     public string[]? Tickers { get; init; }
     public string? StartDate { get; init; }
     public string? EndDate { get; init; }
+}
+
+/// <summary>
+/// Request body for optimized parallel backfill.
+/// </summary>
+public record BackfillRequest
+{
+    public string[]? Tickers { get; init; }
+    public string? StartDate { get; init; }
+    public string? EndDate { get; init; }
+    public int? MaxConcurrency { get; init; }
 }
 
 /// <summary>
