@@ -96,6 +96,13 @@
     padding: 0;
     color: inherit;
 }
+.dark #doc-content pre code {
+    background-color: transparent;
+}
+/* Ensure no highlight on code lines in dark mode */
+.dark #doc-content pre code * {
+    background-color: transparent;
+}
 #doc-content table {
     width: 100%;
     border-collapse: collapse;
