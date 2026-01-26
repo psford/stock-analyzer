@@ -18,7 +18,6 @@ public class BorisService
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ConfigurationService _config;
-    private readonly string? _eodhdApiKey;
 
     private HttpClient? _httpClient;
     private string _currentBaseUrl = "";
@@ -44,7 +43,6 @@ public class BorisService
     {
         _httpClientFactory = httpClientFactory;
         _config = config;
-        _eodhdApiKey = config.EodhdApiKey;
         _dailyBudget = DefaultDailyBudget;
         _budgetResetDate = DateTime.Today;
     }
@@ -114,94 +112,118 @@ public class BorisService
 
     private async Task RunCrawlLoopAsync(IProgress<BorisProgress>? progress, CancellationToken ct)
     {
-        // Phase 1: Get current database coverage status
-        Log("🔍 Analyzing database coverage...");
-        var coverage = await GetCoverageStatusAsync(ct);
+        // Phase 1: Get securities with price gaps (Security Master driven)
+        Log("🔍 Querying tracked securities for price gaps...");
+        var gapsResult = await GetSecurityGapsAsync(ct);
 
-        if (coverage == null)
+        if (gapsResult == null || !gapsResult.Success)
         {
-            Log("❌ Could not connect to API. Is the Stock Analyzer running?");
+            Log($"❌ Could not query price gaps: {gapsResult?.Error ?? "Unknown error"}");
             return;
         }
 
-        Log($"📈 Current state: {coverage.TotalPriceRecords:N0} prices, latest date: {coverage.LatestPriceDate ?? "none"}");
+        Log($"📈 Found {gapsResult.Summary.TotalSecurities:N0} tracked securities");
+        Log($"   {gapsResult.Summary.SecuritiesWithGaps} with gaps, {gapsResult.Summary.TotalMissingDays:N0} total missing days");
+        Log($"   Completion: {gapsResult.CompletionPercent:F1}%");
 
-        // Phase 2: Determine what dates need loading
-        var datesToLoad = await DeterminePriorityDatesAsync(coverage, ct);
-
-        if (datesToLoad.Count == 0)
+        if (gapsResult.Summary.SecuritiesWithGaps == 0 || gapsResult.Gaps.Count == 0)
         {
-            Log("✅ All recent data appears to be loaded!");
+            Log("✅ All tracked securities have complete price history!");
             return;
         }
 
-        Log($"📅 {datesToLoad.Count} trading days identified for loading");
-
-        // Phase 3: Load data using bulk API, respecting budget
-        var loaded = 0;
-        var totalDays = datesToLoad.Count;
+        // Phase 2: Process each security with gaps
+        var securitiesProcessed = 0;
+        var totalDatesLoaded = 0;
         var totalPricesInserted = 0;
+        var totalSecurities = gapsResult.Gaps.Count;
 
-        foreach (var date in datesToLoad)
+        foreach (var securityGap in gapsResult.Gaps)
         {
             ct.ThrowIfCancellationRequested();
 
             // Check budget
-            if (_callsUsedToday + BulkApiCost > _dailyBudget)
+            if (_callsUsedToday >= _dailyBudget)
             {
                 Log($"💸 Daily budget exhausted ({_callsUsedToday}/{_dailyBudget} calls used)");
                 Log($"⏰ Boris will resume tomorrow with fresh budget");
                 break;
             }
 
-            Log($"🕸️ Loading {date:yyyy-MM-dd}...");
+            Log($"🕸️ Processing {securityGap.Ticker} ({securityGap.MissingDays} missing days)...");
 
-            var result = await LoadBulkDataForDateAsync(date, ct);
-
-            if (result.Success)
+            // Get the specific missing dates for this security
+            var missingDates = await GetMissingDatesForSecurityAsync(securityGap.SecurityAlias, ct);
+            if (missingDates == null || missingDates.Count == 0)
             {
-                _callsUsedToday += BulkApiCost;
-                loaded++;
-                totalPricesInserted += result.RecordsLoaded;
+                Log($"⚠️ {securityGap.Ticker}: No missing dates returned (may have been filled)");
+                securitiesProcessed++;
+                continue;
+            }
 
-                // Show detailed breakdown: fetched from EODHD, matched to our securities, actually inserted (new records)
-                var insertInfo = result.RecordsLoaded > 0
-                    ? $"{result.RecordsLoaded:N0} inserted"
-                    : "already up to date";
-                Log($"✓ {date:yyyy-MM-dd}: {result.RecordsFetched:N0} fetched, {result.RecordsMatched:N0} matched, {insertInfo}");
+            // Load data for each missing date (limited by budget)
+            var datesForSecurity = 0;
+            var pricesForSecurity = 0;
 
-                progress?.Report(new BorisProgress
+            foreach (var missingDate in missingDates)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                if (_callsUsedToday >= _dailyBudget)
+                    break;
+
+                var result = await LoadDataForTickerDateAsync(securityGap.Ticker, missingDate, ct);
+
+                if (result.Success)
                 {
-                    CurrentDate = date,
-                    DaysProcessed = loaded,
-                    TotalDaysQueued = totalDays,
-                    RecordsLoadedToday = result.RecordsLoaded,
-                    CallsUsedToday = _callsUsedToday,
-                    DailyBudget = _dailyBudget
-                });
-            }
-            else
-            {
-                Log($"⚠️ {date:yyyy-MM-dd}: {result.Error}");
+                    _callsUsedToday++;
+                    datesForSecurity++;
+                    totalDatesLoaded++;
+                    pricesForSecurity += result.RecordsLoaded;
+                    totalPricesInserted += result.RecordsLoaded;
+                }
+                else
+                {
+                    // Don't spam logs for expected failures (weekends, holidays, etc.)
+                    if (!result.Error?.Contains("No data") ?? true)
+                        Log($"  ⚠️ {missingDate:yyyy-MM-dd}: {result.Error}");
+                }
+
+                // Rate limiting - be nice to the API
+                await Task.Delay(200, ct);
             }
 
-            // Rate limiting - be nice to the API
-            await Task.Delay(1000, ct);
+            securitiesProcessed++;
+            if (datesForSecurity > 0)
+            {
+                Log($"✓ {securityGap.Ticker}: {datesForSecurity} dates loaded, {pricesForSecurity} prices");
+            }
+
+            progress?.Report(new BorisProgress
+            {
+                CurrentDate = missingDates.FirstOrDefault(),
+                DaysProcessed = totalDatesLoaded,
+                TotalDaysQueued = gapsResult.Summary.TotalMissingDays,
+                RecordsLoadedToday = totalPricesInserted,
+                CallsUsedToday = _callsUsedToday,
+                DailyBudget = _dailyBudget
+            });
         }
 
-        Log($"🎯 Session complete: {loaded} days loaded, {totalPricesInserted:N0} prices inserted, {_callsUsedToday} API calls used");
+        Log($"🎯 Session complete: {securitiesProcessed}/{totalSecurities} securities, {totalDatesLoaded} dates loaded, {totalPricesInserted:N0} prices inserted, {_callsUsedToday} API calls used");
     }
 
-    private async Task<CoverageStatus?> GetCoverageStatusAsync(CancellationToken ct)
+    private async Task<PriceGapsResult?> GetSecurityGapsAsync(CancellationToken ct)
     {
         if (_httpClient == null) return null;
 
         try
         {
-            var response = await _httpClient.GetAsync("/api/admin/prices/status", ct);
+            // Get tracked securities with gaps - limit to 100 per session to avoid overwhelming
+            var response = await _httpClient.GetAsync("/api/admin/prices/gaps?market=US&limit=100", ct);
             if (!response.IsSuccessStatusCode) return null;
 
-            return await response.Content.ReadFromJsonAsync<CoverageStatus>(ct);
+            return await response.Content.ReadFromJsonAsync<PriceGapsResult>(ct);
         }
         catch
         {
@@ -209,96 +231,59 @@ public class BorisService
         }
     }
 
-    private async Task<List<DateTime>> DeterminePriorityDatesAsync(CoverageStatus coverage, CancellationToken ct)
+    private async Task<List<DateTime>?> GetMissingDatesForSecurityAsync(int securityAlias, CancellationToken ct)
     {
-        var dates = new List<DateTime>();
+        if (_httpClient == null) return null;
 
-        // Start from yesterday and work backwards to 1980
-        // EODHD has data back to the early 80s for major indices
-        var endDate = DateTime.Today.AddDays(-1);
-        var startDate = new DateTime(1980, 1, 1);
-
-        // Fetch actual dates that have data from the API
-        Log("🔍 Fetching existing coverage dates from database...");
-        HashSet<DateTime> existingDates;
         try
         {
-            if (_httpClient == null) throw new InvalidOperationException("HttpClient not initialized");
+            // Limit to 50 dates per security to keep sessions manageable
+            var response = await _httpClient.GetAsync($"/api/admin/prices/gaps/{securityAlias}?limit=50", ct);
+            if (!response.IsSuccessStatusCode) return null;
 
-            var url = $"/api/admin/prices/coverage-dates?startDate={startDate:yyyy-MM-dd}&endDate={endDate:yyyy-MM-dd}";
-            var response = await _httpClient.GetAsync(url, ct);
+            var result = await response.Content.ReadFromJsonAsync<SecurityGapsResult>(ct);
+            if (result?.MissingDates == null) return null;
 
-            if (response.IsSuccessStatusCode)
-            {
-                var coverageResult = await response.Content.ReadFromJsonAsync<CoverageDatesResponse>(ct);
-                existingDates = coverageResult?.DatesWithData?
-                    .Select(d => DateTime.Parse(d))
-                    .ToHashSet() ?? [];
-                Log($"📊 Found {existingDates.Count} dates with existing data");
-            }
-            else
-            {
-                Log("⚠️ Could not fetch coverage dates, proceeding with full scan");
-                existingDates = [];
-            }
+            return result.MissingDates
+                .Select(d => DateTime.Parse(d))
+                .OrderByDescending(d => d) // Most recent first
+                .ToList();
         }
-        catch (Exception ex)
+        catch
         {
-            Log($"⚠️ Error fetching coverage dates: {ex.Message}");
-            existingDates = [];
+            return null;
         }
-
-        // Phase 1: Recent dates first (most valuable to users)
-        // Load any missing dates from last 30 days
-        var recentStart = endDate.AddDays(-30);
-        for (var date = endDate; date >= recentStart; date = date.AddDays(-1))
-        {
-            if (IsTradingDay(date) && !existingDates.Contains(date.Date))
-            {
-                dates.Add(date);
-            }
-        }
-
-        // Phase 2: Continue backwards for historical data
-        for (var date = recentStart.AddDays(-1); date >= startDate; date = date.AddDays(-1))
-        {
-            if (IsTradingDay(date) && !existingDates.Contains(date.Date))
-            {
-                dates.Add(date);
-            }
-        }
-
-        return dates;
     }
 
-    private async Task<BulkLoadResult> LoadBulkDataForDateAsync(DateTime date, CancellationToken ct)
+    private async Task<BulkLoadResult> LoadDataForTickerDateAsync(string ticker, DateTime date, CancellationToken ct)
     {
         try
         {
             if (_httpClient == null)
                 return new BulkLoadResult { Success = false, Error = "HttpClient not initialized" };
 
-            // Use the synchronous refresh-date endpoint which waits for completion
-            // and returns actual record counts (unlike bulk-load which is fire-and-forget)
-            var request = new { Date = date.ToString("yyyy-MM-dd") };
-
-            var response = await _httpClient.PostAsJsonAsync("/api/admin/prices/refresh-date", request, ct);
-
-            if (!response.IsSuccessStatusCode)
+            // Call the Stock Analyzer API to load data - it will fetch from EODHD internally
+            var insertRequest = new
             {
-                var error = await response.Content.ReadAsStringAsync(ct);
-                return new BulkLoadResult { Success = false, Error = error };
+                Tickers = new[] { ticker },
+                StartDate = date.ToString("yyyy-MM-dd"),
+                EndDate = date.ToString("yyyy-MM-dd")
+            };
+
+            var insertResponse = await _httpClient.PostAsJsonAsync("/api/admin/prices/load-tickers", insertRequest, ct);
+            if (!insertResponse.IsSuccessStatusCode)
+            {
+                var error = await insertResponse.Content.ReadAsStringAsync(ct);
+                return new BulkLoadResult { Success = false, Error = $"API error: {error}" };
             }
 
-            // Parse the response to get actual record counts
-            var result = await response.Content.ReadFromJsonAsync<RefreshDateResponse>(ct);
-
+            var result = await insertResponse.Content.ReadFromJsonAsync<LoadTickersApiResult>(ct);
             return new BulkLoadResult
             {
                 Success = true,
                 RecordsLoaded = result?.RecordsInserted ?? 0,
-                RecordsFetched = result?.RecordsFetched ?? 0,
-                RecordsMatched = result?.RecordsMatched ?? 0
+                RecordsFetched = result?.TickersProcessed ?? 0,
+                RecordsMatched = 1
             };
         }
         catch (Exception ex)
@@ -307,35 +292,13 @@ public class BorisService
         }
     }
 
-    private class RefreshDateResponse
+    private class LoadTickersApiResult
     {
-        [JsonPropertyName("message")]
         public string? Message { get; set; }
-
-        [JsonPropertyName("date")]
-        public string? Date { get; set; }
-
-        [JsonPropertyName("recordsFetched")]
-        public int RecordsFetched { get; set; }
-
-        [JsonPropertyName("recordsMatched")]
-        public int RecordsMatched { get; set; }
-
-        [JsonPropertyName("recordsUnmatched")]
-        public int RecordsUnmatched { get; set; }
-
-        [JsonPropertyName("recordsInserted")]
+        public int TickersRequested { get; set; }
+        public int TickersProcessed { get; set; }
         public int RecordsInserted { get; set; }
-    }
-
-    private static bool IsTradingDay(DateTime date)
-    {
-        // Skip weekends
-        if (date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday)
-            return false;
-
-        // TODO: Add holiday checking for major US holidays
-        return true;
+        public List<string>? Errors { get; set; }
     }
 
     private void Log(string message)

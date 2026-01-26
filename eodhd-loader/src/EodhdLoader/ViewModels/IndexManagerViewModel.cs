@@ -171,15 +171,15 @@ public partial class IndexManagerViewModel : ViewModelBase
             if (result.Success && result.Data != null)
             {
                 ProcessedCount = result.Data.TickersProcessed;
-                ErrorCount = result.Data.Errors;
+                ErrorCount = result.Data.Errors.Count;
                 Progress = 100;
                 ProgressText = "Complete!";
 
-                Log($"Backfill complete! Tickers: {result.Data.TickersProcessed}, Prices: {result.Data.PricesLoaded}, Errors: {result.Data.Errors}");
+                Log($"Backfill complete! Tickers: {result.Data.TickersProcessed}, Records: {result.Data.RecordsInserted}, Errors: {result.Data.Errors.Count}");
 
-                if (result.Data.FailedTickers.Count > 0)
+                if (result.Data.Errors.Count > 0)
                 {
-                    Log($"Failed tickers: {string.Join(", ", result.Data.FailedTickers)}");
+                    Log($"Errors: {string.Join(", ", result.Data.Errors)}");
                 }
             }
             else
