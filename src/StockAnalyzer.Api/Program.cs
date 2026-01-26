@@ -1650,33 +1650,21 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
         cmd.CommandTimeout = 60;
 
         var securitiesWithGaps = new List<object>();
-        int totalMissingDays = 0;
-        int trackedGapsCount = 0;
-        int untrackedGapsCount = 0;
 
         using (var reader = await cmd.ExecuteReaderAsync())
         {
             while (await reader.ReadAsync())
             {
-                var missingDays = reader.GetInt32(7);
-                var isTracked = reader.GetBoolean(2);
-                totalMissingDays += missingDays;
-
-                if (isTracked)
-                    trackedGapsCount++;
-                else
-                    untrackedGapsCount++;
-
                 securitiesWithGaps.Add(new
                 {
                     securityAlias = reader.GetInt32(0),
                     ticker = reader.GetString(1),
-                    isTracked,
+                    isTracked = reader.GetBoolean(2),
                     firstDate = reader.GetDateTime(3).ToString("yyyy-MM-dd"),
                     lastDate = reader.GetDateTime(4).ToString("yyyy-MM-dd"),
                     actualDays = reader.GetInt32(5),
                     expectedDays = reader.GetInt32(6),
-                    missingDays
+                    missingDays = reader.GetInt32(7)
                 });
             }
         }
@@ -1687,6 +1675,83 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
         int totalPriceRecords = 0;
         int totalTrackedSecurities = 0;
         int totalUntrackedSecurities = 0;
+        int totalTrackedWithGaps = 0;
+        int totalUntrackedWithGaps = 0;
+        int totalAllMissingDays = 0;
+
+        // Count ALL securities with gaps (not limited by TOP clause)
+        using (var gapCountCmd = connection.CreateCommand())
+        {
+            gapCountCmd.CommandText = @"
+                WITH SecurityDateRange AS (
+                    SELECT
+                        sm.SecurityAlias,
+                        sm.IsTracked,
+                        MIN(p.EffectiveDate) AS FirstDate,
+                        MAX(p.EffectiveDate) AS LastDate,
+                        COUNT(*) AS ActualPriceCount
+                    FROM data.SecurityMaster sm WITH (NOLOCK)
+                    INNER JOIN data.Prices p WITH (NOLOCK) ON p.SecurityAlias = sm.SecurityAlias
+                    WHERE sm.IsActive = 1
+                      AND (sm.IsTracked = 1 OR @includeUntracked = 1)
+                    GROUP BY sm.SecurityAlias, sm.IsTracked
+                ),
+                ExpectedCounts AS (
+                    SELECT
+                        sdr.SecurityAlias,
+                        sdr.IsTracked,
+                        sdr.ActualPriceCount,
+                        (SELECT COUNT(*) FROM data.BusinessCalendar bc WITH (NOLOCK)
+                         WHERE bc.IsBusinessDay = 1
+                           AND bc.EffectiveDate >= sdr.FirstDate
+                           AND bc.EffectiveDate <= sdr.LastDate) AS ExpectedPriceCount
+                    FROM SecurityDateRange sdr
+                ),
+                GapsInExistingData AS (
+                    SELECT SecurityAlias, IsTracked, (ExpectedPriceCount - ActualPriceCount) AS MissingDays
+                    FROM ExpectedCounts
+                    WHERE ExpectedPriceCount > ActualPriceCount
+                ),
+                NoPriceData AS (
+                    SELECT
+                        sm.SecurityAlias,
+                        sm.IsTracked,
+                        (SELECT COUNT(*) FROM data.BusinessCalendar bc WITH (NOLOCK)
+                         WHERE bc.IsBusinessDay = 1
+                           AND bc.EffectiveDate >= DATEADD(YEAR, -2, GETDATE())
+                           AND bc.EffectiveDate <= GETDATE()) AS MissingDays
+                    FROM data.SecurityMaster sm WITH (NOLOCK)
+                    WHERE sm.IsActive = 1
+                      AND @includeUntracked = 1
+                      AND sm.IsTracked = 0
+                      AND NOT EXISTS (SELECT 1 FROM data.Prices p WITH (NOLOCK) WHERE p.SecurityAlias = sm.SecurityAlias)
+                ),
+                AllGaps AS (
+                    SELECT * FROM GapsInExistingData
+                    UNION ALL
+                    SELECT * FROM NoPriceData
+                )
+                SELECT
+                    SUM(CASE WHEN IsTracked = 1 THEN 1 ELSE 0 END) AS TrackedWithGaps,
+                    SUM(CASE WHEN IsTracked = 0 THEN 1 ELSE 0 END) AS UntrackedWithGaps,
+                    SUM(MissingDays) AS TotalMissingDays
+                FROM AllGaps";
+
+            var gapCountIncludeUntrackedParam = gapCountCmd.CreateParameter();
+            gapCountIncludeUntrackedParam.ParameterName = "@includeUntracked";
+            gapCountIncludeUntrackedParam.Value = includeUntrackedSecurities ? 1 : 0;
+            gapCountCmd.Parameters.Add(gapCountIncludeUntrackedParam);
+
+            gapCountCmd.CommandTimeout = 60;
+
+            using var gapCountReader = await gapCountCmd.ExecuteReaderAsync();
+            if (await gapCountReader.ReadAsync())
+            {
+                totalTrackedWithGaps = gapCountReader.IsDBNull(0) ? 0 : gapCountReader.GetInt32(0);
+                totalUntrackedWithGaps = gapCountReader.IsDBNull(1) ? 0 : gapCountReader.GetInt32(1);
+                totalAllMissingDays = gapCountReader.IsDBNull(2) ? 0 : gapCountReader.GetInt32(2);
+            }
+        }
 
         using (var statsCmd = connection.CreateCommand())
         {
@@ -1724,8 +1789,9 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
             }
         }
 
-        var securitiesComplete = securitiesWithGaps.Count == 0 ? securitiesWithData :
-            securitiesWithData - securitiesWithGaps.Count;
+        var totalGapsCount = totalTrackedWithGaps + totalUntrackedWithGaps;
+        var securitiesComplete = totalGapsCount == 0 ? securitiesWithData :
+            securitiesWithData - totalGapsCount;
 
         return Results.Ok(new
         {
@@ -1738,12 +1804,12 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                 totalTrackedSecurities,
                 totalUntrackedSecurities,
                 securitiesWithData,
-                securitiesWithGaps = securitiesWithGaps.Count,
-                trackedWithGaps = trackedGapsCount,
-                untrackedWithGaps = untrackedGapsCount,
+                securitiesWithGaps = totalGapsCount,
+                trackedWithGaps = totalTrackedWithGaps,
+                untrackedWithGaps = totalUntrackedWithGaps,
                 securitiesComplete,
                 totalPriceRecords,
-                totalMissingDays
+                totalMissingDays = totalAllMissingDays
             },
             completionPercent = totalSecurities > 0
                 ? Math.Round(securitiesComplete * 100.0 / totalSecurities, 1)
