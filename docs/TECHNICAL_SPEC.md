@@ -2047,12 +2047,49 @@ CREATE INDEX IX_Prices_EffectiveDate ON data.Prices(EffectiveDate);
 
 **Scale Target:** ~1.26 million rows (500 stocks × 252 trading days × 10 years)
 
+**PriceStaging Table (staging schema):**
+
+Buffers incoming bulk data before merge to production. No foreign key constraints for maximum insert speed.
+
+```sql
+CREATE TABLE staging.PriceStaging (
+    Id BIGINT IDENTITY(1,1) PRIMARY KEY,
+    BatchId UNIQUEIDENTIFIER NOT NULL,              -- Groups records from same import
+    Ticker NVARCHAR(20) NOT NULL,                   -- Raw ticker (looked up during merge)
+    EffectiveDate DATE NOT NULL,
+    Open DECIMAL(18,4) NOT NULL,
+    High DECIMAL(18,4) NOT NULL,
+    Low DECIMAL(18,4) NOT NULL,
+    Close DECIMAL(18,4) NOT NULL,
+    AdjustedClose DECIMAL(18,4) NULL,
+    Volume BIGINT NULL,
+    Status NVARCHAR(20) DEFAULT 'pending',          -- pending/processed/skipped/error
+    ErrorMessage NVARCHAR(500) NULL,
+    CreatedAt DATETIME2 DEFAULT GETUTCDATE(),
+    ProcessedAt DATETIME2 NULL
+);
+
+CREATE INDEX IX_PriceStaging_Status_CreatedAt ON staging.PriceStaging(Status, CreatedAt);
+CREATE INDEX IX_PriceStaging_BatchId ON staging.PriceStaging(BatchId);
+CREATE INDEX IX_PriceStaging_Ticker_EffectiveDate ON staging.PriceStaging(Ticker, EffectiveDate);
+```
+
+**Staging Workflow:**
+1. Bulk insert raw data to staging (fast, no FK checks)
+2. Merge to production via `MergeToPricesAsync()`:
+   - Lookup SecurityAlias for each ticker
+   - Optionally create missing SecurityMaster entries
+   - Skip duplicates (ticker+date already in production)
+   - Update staging status (processed/skipped/error)
+3. Cleanup old processed records via `CleanupProcessedAsync()`
+
 **Repository Interfaces:**
 
 | Interface | Implementation | Purpose |
 |-----------|----------------|---------|
 | `ISecurityMasterRepository` | `SqlSecurityMasterRepository` | Security CRUD, upsert, search |
 | `IPriceRepository` | `SqlPriceRepository` | Price range queries, bulk insert |
+| `IPriceStagingRepository` | `SqlPriceStagingRepository` | Staging bulk insert, merge to production |
 
 **Key Methods:**
 - `GetByTickerAsync(ticker)` - Lookup by ticker symbol
