@@ -1682,8 +1682,17 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
         // Count ALL securities with gaps (not limited by TOP clause)
         using (var gapCountCmd = connection.CreateCommand())
         {
+            // Optimized: compute the 2-year business day count ONCE at the top level
+            // instead of as a correlated subquery for each of 6,692 securities
             gapCountCmd.CommandText = @"
-                WITH SecurityDateRange AS (
+                WITH TwoYearBusinessDays AS (
+                    SELECT COUNT(*) AS DayCount
+                    FROM data.BusinessCalendar bc WITH (NOLOCK)
+                    WHERE bc.IsBusinessDay = 1
+                      AND bc.EffectiveDate >= DATEADD(YEAR, -2, GETDATE())
+                      AND bc.EffectiveDate <= GETDATE()
+                ),
+                SecurityDateRange AS (
                     SELECT
                         sm.SecurityAlias,
                         sm.IsTracked,
@@ -1716,10 +1725,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                     SELECT
                         sm.SecurityAlias,
                         sm.IsTracked,
-                        (SELECT COUNT(*) FROM data.BusinessCalendar bc WITH (NOLOCK)
-                         WHERE bc.IsBusinessDay = 1
-                           AND bc.EffectiveDate >= DATEADD(YEAR, -2, GETDATE())
-                           AND bc.EffectiveDate <= GETDATE()) AS MissingDays
+                        (SELECT DayCount FROM TwoYearBusinessDays) AS MissingDays
                     FROM data.SecurityMaster sm WITH (NOLOCK)
                     WHERE sm.IsActive = 1
                       AND @includeUntracked = 1
