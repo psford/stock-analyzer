@@ -1,8 +1,8 @@
 # Security Overview
 
 **Document Classification:** Internal
-**Last Updated:** 2026-01-21
-**Version:** 1.2
+**Last Updated:** 2026-01-25
+**Version:** 1.3
 
 This document provides an executive summary of security controls implemented in the Stock Analyzer application, intended for security leadership and compliance review.
 
@@ -92,7 +92,27 @@ Dependency vulnerabilities are monitored through multiple channels.
 
 ### 2. CI/CD Pipeline Security
 
-#### 2.1 GitHub Actions Workflow
+#### 2.1 Local CI Gate (Pre-Push)
+
+Before code reaches GitHub, a local Jenkins CI gate validates all changes:
+
+```
+git commit → Pre-commit Hooks → git push → Pre-push Hook → Jenkins Build → GitHub
+                  ↓                              ↓
+            Secrets scan               Full test suite
+            Bandit SAST               .NET + JavaScript tests
+            Linters                   Build validation
+```
+
+**Pre-push Hook Behavior:**
+- Triggers Jenkins build automatically on every `git push`
+- Waits for build completion (5-minute timeout)
+- Blocks push if build fails (exit code 1)
+- Gracefully skips if Jenkins not running (allows push with warning)
+
+**Configuration:** `helpers/hooks/jenkins_pre_push.py` (installed via `pre-commit install --hook-type pre-push`)
+
+#### 2.2 GitHub Actions Workflow
 
 ```
 Developer Push → Pre-flight Checks → Build & Test → Security Scans → Deploy
@@ -102,7 +122,7 @@ Developer Push → Pre-flight Checks → Build & Test → Security Scans → Dep
                                     Fail on High/Critical
 ```
 
-#### 2.2 Branch Protection
+#### 2.3 Branch Protection
 
 Both `develop` and `master` branches are protected. All changes must follow:
 
@@ -120,7 +140,7 @@ feature/X → PR to develop → (approval) → PR to master → Production
 | **Force push** | Disabled on protected branches |
 | **Signed commits** | Recommended (not enforced) |
 
-#### 2.3 Deployment Controls
+#### 2.4 Deployment Controls
 
 | Control | Implementation |
 |---------|----------------|
@@ -252,6 +272,7 @@ For security concerns, contact the repository owner through GitHub.
 - [x] SAST (CodeQL, SecurityCodeScan, .NET Analyzers)
 - [x] SCA (OWASP Dependency Check, Dependabot)
 - [x] Pre-commit secrets scanning
+- [x] Pre-push CI gate (Jenkins local Docker)
 - [x] Security headers and CSP
 - [x] TLS encryption via Cloudflare (Full strict mode)
 - [x] Branch protection and PR reviews
@@ -285,6 +306,7 @@ For security concerns, contact the repository owner through GitHub.
 
 | Date | Version | Change |
 |------|---------|--------|
+| 2026-01-25 | 1.3 | Added local Jenkins CI gate with pre-push hook integration |
 | 2026-01-21 | 1.2 | Added custom domain configuration (psfordtest.com) with Azure managed SSL |
 | 2026-01-19 | 1.1 | Updated for App Service migration, Azure Key Vault implementation |
 | 2026-01-18 | 1.0 | Initial document |

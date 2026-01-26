@@ -1,7 +1,7 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.18
-**Last Updated:** 2026-01-24
+**Version:** 2.19
+**Last Updated:** 2026-01-25
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
 
@@ -1719,25 +1719,54 @@ Checkout → Setup .NET 8.0 → Restore → Build (Release) → Test → Upload 
 **Prerequisites:**
 - Docker Desktop running
 - Jenkins container with Docker socket access
+- Jenkins credentials stored in `.env`:
+  - `JENKINS_USER` - Jenkins admin username
+  - `JENKINS_API_TOKEN` - API token for CLI/automation
 
 **Pipeline Stages:**
 ```groovy
-Checkout → Restore → Build → Test → Publish
+Checkout → Restore → Build → Test (.NET) → Test (JavaScript) → Publish
 ```
 
-**Docker Agent:** `mcr.microsoft.com/dotnet/sdk:8.0`
+**Docker Agent:** `mcr.microsoft.com/dotnet/sdk:8.0` (with Node.js installed for JS tests)
 
-**Starting Jenkins:**
-```bash
-docker run -d --name jenkins \
-  -p 8080:8080 -p 50000:50000 \
-  -v jenkins_home:/var/jenkins_home \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  jenkins/jenkins:lts
+**Helper Scripts:**
 
-# Install Docker CLI and fix permissions
-docker exec -u root jenkins apt-get update && apt-get install -y docker.io
-docker exec -u root jenkins chmod 666 /var/run/docker.sock
+| Script | Purpose |
+|--------|---------|
+| `helpers/jenkins-local.ps1` | Main Jenkins management script |
+| `helpers/jenkins-console.ps1` | Fetch build console output |
+| `helpers/jenkins-reload.ps1` | Reload Jenkins configuration |
+| `helpers/hooks/jenkins_pre_push.py` | Pre-push hook for CI validation |
+
+**Usage:**
+```powershell
+# Start/stop/restart Jenkins
+.\helpers\jenkins-local.ps1 start
+.\helpers\jenkins-local.ps1 stop
+.\helpers\jenkins-local.ps1 restart
+
+# Check status
+.\helpers\jenkins-local.ps1 status
+
+# Trigger a build manually
+.\helpers\jenkins-local.ps1 build
+
+# View build logs
+.\helpers\jenkins-local.ps1 logs
+```
+
+**Pre-Push Hook Integration:**
+
+The project includes a pre-push hook (`helpers/hooks/jenkins_pre_push.py`) that:
+1. Triggers a Jenkins build before every `git push`
+2. Waits for the build to complete (5-minute timeout)
+3. Blocks the push if the build fails
+4. Gracefully skips if Jenkins is not running
+
+Install the hook:
+```powershell
+py -m pre_commit install --hook-type pre-push
 ```
 
 **Required Plugins:**
@@ -1774,6 +1803,7 @@ See `docs/CI_CD_SETUP.md` for complete setup and troubleshooting guide.
 | Bandit | Python SAST | Pre-commit hook |
 | detect-secrets | Secrets detection | Pre-commit hook |
 | Dependabot | Dependency scanning | GitHub (enabled) |
+| Jenkins CI | Full test suite | Pre-push hook (local)
 
 See `docs/CI_CD_SECURITY_PLAN.md` for the full security migration roadmap.
 
@@ -2486,6 +2516,7 @@ const [stockInfo, history, analysis, significantMoves, news] = await Promise.all
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.19 | 2026-01-25 | **Local Jenkins CI Integration:** Pre-push hook (`helpers/hooks/jenkins_pre_push.py`) triggers local Jenkins build before every `git push`. Blocks push if build fails. Helper scripts: `jenkins-local.ps1` (start/stop/build/status), `jenkins-console.ps1` (fetch logs), `jenkins-reload.ps1` (reload config). Jenkinsfile updated with correct paths (`projects/stock-analyzer/`) and JavaScript test stage. Jenkins API token authentication via `.env` credentials. Pre-commit config extended with pre-push stage. |
 | 2.15 | 2026-01-22 | **Sentiment-Filtered News:** SentimentAnalyzer.cs static utility with keyword-based sentiment analysis (~50 positive/negative keywords). NewsService.GetNewsForDateWithSentimentAsync() filters headlines to match price direction. AnalysisService.DetectSignificantMovesAsync() uses sentiment-aware news. Fallback cascade: sentiment-matched company news → any company news → market news. SentimentAnalyzerTests.cs (32 tests) covers positive/negative/neutral headlines, price matching, real-world Ford "Soars" bug scenario. |
 | 2.18 | 2026-01-24 | **Database Protection & Coverage API:** Bicep template modified to NOT manage the production database (prevents overwriting 3.5M+ price records from BACPAC import). Database name corrected from `stockanalyzerdb` to `stockanalyzer-db`. New `/api/admin/prices/coverage-dates` endpoint returns distinct dates with price data for coverage analysis. `GetDistinctDatesAsync()` method added to IPriceRepository. SecurityMaster extended with Country, Currency, ISIN columns via EF Core migration. EodhdService extended with `GetExchangeSymbolsAsync()` method to sync EODHD symbol metadata. |
 | 2.17 | 2026-01-23 | **Sentiment-Filtered News & Production Deployment:** Deployed v3.0 to production with database-first price lookup. Fixed image prefetch thread exhaustion (reduced initial load from 50 to 5). |
