@@ -32,6 +32,7 @@ public partial class App : Application
         services.AddHttpClient();
         services.AddSingleton<StockAnalyzerApiClient>();
         services.AddSingleton<BorisService>();
+        services.AddSingleton<BulkFillService>();
         services.AddSingleton<PriceCoverageAnalyzer>();
         services.AddSingleton<HolidayForwardFillService>();
         services.AddSingleton<ProdSyncService>();
@@ -53,6 +54,7 @@ public partial class App : Application
 
         // ViewModels
         services.AddTransient<BorisViewModel>();
+        services.AddTransient<BulkFillViewModel>();
         services.AddTransient<CrawlerViewModel>();
         services.AddTransient<DashboardViewModel>();
         services.AddTransient<IndexManagerViewModel>();

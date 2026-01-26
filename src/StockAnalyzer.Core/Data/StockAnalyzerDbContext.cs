@@ -29,6 +29,9 @@ public class StockAnalyzerDbContext : DbContext
     public DbSet<BusinessCalendarEntity> BusinessCalendar => Set<BusinessCalendarEntity>();
     public DbSet<TrackedSecurityEntity> TrackedSecurities => Set<TrackedSecurityEntity>();
 
+    // Staging tables (staging schema)
+    public DbSet<PriceStagingEntity> PriceStaging => Set<PriceStagingEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -283,6 +286,42 @@ public class StockAnalyzerDbContext : DbContext
                 .WithOne()
                 .HasForeignKey<TrackedSecurityEntity>(e => e.SecurityAlias)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ========================================================================
+        // Staging Tables (staging schema)
+        // These tables buffer incoming data before merge to production.
+        // No foreign key constraints for maximum insert speed.
+        // ========================================================================
+
+        // PriceStaging configuration
+        modelBuilder.Entity<PriceStagingEntity>(entity =>
+        {
+            entity.ToTable("PriceStaging", "staging");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).UseIdentityColumn();
+            entity.Property(e => e.Ticker).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.EffectiveDate).HasColumnType("date");
+            entity.Property(e => e.Open).HasPrecision(18, 4);
+            entity.Property(e => e.High).HasPrecision(18, 4);
+            entity.Property(e => e.Low).HasPrecision(18, 4);
+            entity.Property(e => e.Close).HasPrecision(18, 4);
+            entity.Property(e => e.AdjustedClose).HasPrecision(18, 4);
+            entity.Property(e => e.Status).HasMaxLength(20).HasDefaultValue("pending");
+            entity.Property(e => e.ErrorMessage).HasMaxLength(500);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+            // Index for finding pending records to process
+            entity.HasIndex(e => new { e.Status, e.CreatedAt })
+                .HasDatabaseName("IX_PriceStaging_Status_CreatedAt");
+
+            // Index for batch processing
+            entity.HasIndex(e => e.BatchId)
+                .HasDatabaseName("IX_PriceStaging_BatchId");
+
+            // Index for ticker lookups during merge
+            entity.HasIndex(e => new { e.Ticker, e.EffectiveDate })
+                .HasDatabaseName("IX_PriceStaging_Ticker_EffectiveDate");
         });
     }
 }

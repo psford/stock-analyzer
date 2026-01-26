@@ -17,17 +17,22 @@ public partial class MainViewModel : ViewModelBase
     private DashboardViewModel _dashboard;
 
     [ObservableProperty]
+    private BulkFillViewModel _bulkFill;
+
+    [ObservableProperty]
     private int _selectedTabIndex;
 
     public MainViewModel(
         BorisViewModel boris,
         CrawlerViewModel crawler,
         IndexManagerViewModel indexManager,
-        DashboardViewModel dashboard)
+        DashboardViewModel dashboard,
+        BulkFillViewModel bulkFill)
     {
         _boris = boris;
         _crawler = crawler;
         _indexManager = indexManager;
         _dashboard = dashboard;
+        _bulkFill = bulkFill;
     }
 }

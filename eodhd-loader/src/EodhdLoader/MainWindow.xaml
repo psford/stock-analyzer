@@ -24,6 +24,9 @@
             <TabItem Header="🕸️ Crawler">
                 <views:CrawlerView DataContext="{Binding Crawler}"/>
             </TabItem>
+            <TabItem Header="📦 Bulk Fill">
+                <views:BulkFillView DataContext="{Binding BulkFill}"/>
+            </TabItem>
             <TabItem Header="Index Manager">
                 <views:IndexManagerView DataContext="{Binding IndexManager}"/>
             </TabItem>
