@@ -154,7 +154,8 @@
                     </Grid.ColumnDefinitions>
 
                     <StackPanel Grid.Column="0" Orientation="Horizontal">
-                        <TextBlock Text="🔄" FontSize="16" VerticalAlignment="Center" Margin="0,0,8,0">
+                        <TextBlock Text="🔄" FontSize="16" VerticalAlignment="Center" Margin="0,0,8,0"
+                                   RenderTransformOrigin="0.5,0.5">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
                                     <Style.Triggers>
@@ -172,7 +173,7 @@
                                 </Style>
                             </TextBlock.Style>
                             <TextBlock.RenderTransform>
-                                <RotateTransform CenterX="8" CenterY="8"/>
+                                <RotateTransform/>
                             </TextBlock.RenderTransform>
                         </TextBlock>
                         <TextBlock Text="{Binding CurrentAction}" Foreground="White" FontSize="14" VerticalAlignment="Center"/>
