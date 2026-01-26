@@ -1544,8 +1544,12 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
         // Use parameterized query to avoid CA2100 SQL injection warning
         // When @includeUntracked = 0, only tracked securities are included
         // When @includeUntracked = 1, all securities are included (tracked come first)
+        // This query has two parts via UNION:
+        // 1. Securities WITH prices that have internal gaps
+        // 2. Securities WITHOUT any prices (need initial load) - only when includeUntracked=1
         cmd.CommandText = @"
             WITH SecurityDateRange AS (
+                -- Part 1: Securities that HAVE prices - check for internal gaps
                 SELECT
                     sm.SecurityAlias,
                     sm.TickerSymbol,
@@ -1575,6 +1579,51 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                        AND bc.EffectiveDate >= sdr.FirstDate
                        AND bc.EffectiveDate <= sdr.LastDate) AS ExpectedPriceCount
                 FROM SecurityDateRange sdr
+            ),
+            GapsInExistingData AS (
+                SELECT
+                    SecurityAlias,
+                    TickerSymbol,
+                    IsTracked,
+                    Priority,
+                    FirstDate,
+                    LastDate,
+                    ActualPriceCount,
+                    ExpectedPriceCount,
+                    (ExpectedPriceCount - ActualPriceCount) AS MissingDays
+                FROM ExpectedCounts
+                WHERE ExpectedPriceCount > ActualPriceCount
+            ),
+            NoPriceData AS (
+                -- Part 2: Securities with NO prices at all (only when includeUntracked=1)
+                -- Use last 2 years as the expected date range for initial load
+                SELECT
+                    sm.SecurityAlias,
+                    sm.TickerSymbol,
+                    sm.IsTracked,
+                    COALESCE(ts.Priority, 999) AS Priority,
+                    DATEADD(YEAR, -2, GETDATE()) AS FirstDate,
+                    CAST(GETDATE() AS DATE) AS LastDate,
+                    0 AS ActualPriceCount,
+                    (SELECT COUNT(*) FROM data.BusinessCalendar bc WITH (NOLOCK)
+                     WHERE bc.IsBusinessDay = 1
+                       AND bc.EffectiveDate >= DATEADD(YEAR, -2, GETDATE())
+                       AND bc.EffectiveDate <= GETDATE()) AS ExpectedPriceCount,
+                    (SELECT COUNT(*) FROM data.BusinessCalendar bc WITH (NOLOCK)
+                     WHERE bc.IsBusinessDay = 1
+                       AND bc.EffectiveDate >= DATEADD(YEAR, -2, GETDATE())
+                       AND bc.EffectiveDate <= GETDATE()) AS MissingDays
+                FROM data.SecurityMaster sm WITH (NOLOCK)
+                LEFT JOIN data.TrackedSecurities ts WITH (NOLOCK) ON ts.SecurityAlias = sm.SecurityAlias
+                WHERE sm.IsActive = 1
+                  AND @includeUntracked = 1
+                  AND sm.IsTracked = 0
+                  AND NOT EXISTS (SELECT 1 FROM data.Prices p WITH (NOLOCK) WHERE p.SecurityAlias = sm.SecurityAlias)
+            ),
+            AllGaps AS (
+                SELECT * FROM GapsInExistingData
+                UNION ALL
+                SELECT * FROM NoPriceData
             )
             SELECT TOP (@limit)
                 SecurityAlias,
@@ -1584,10 +1633,9 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                 LastDate,
                 ActualPriceCount,
                 ExpectedPriceCount,
-                (ExpectedPriceCount - ActualPriceCount) AS MissingDays
-            FROM ExpectedCounts
-            WHERE ExpectedPriceCount > ActualPriceCount
-            ORDER BY IsTracked DESC, Priority, (ExpectedPriceCount - ActualPriceCount) DESC, TickerSymbol";
+                MissingDays
+            FROM AllGaps
+            ORDER BY IsTracked DESC, Priority, MissingDays DESC, TickerSymbol";
 
         var limitParam = cmd.CreateParameter();
         limitParam.ParameterName = "@limit";
@@ -1769,15 +1817,12 @@ app.MapGet("/api/admin/prices/gaps/{securityAlias}", async (IServiceProvider ser
         if (ticker == null)
             return Results.NotFound(new { error = $"Security {securityAlias} not found" });
 
+        // For securities with no price data, use last 2 years as the date range
         if (firstDate == null)
-            return Results.Ok(new
-            {
-                success = true,
-                securityAlias,
-                ticker,
-                message = "No price data exists for this security",
-                missingDates = new List<string>()
-            });
+        {
+            firstDate = DateTime.Today.AddYears(-2);
+            lastDate = DateTime.Today;
+        }
 
         // Find missing trading days within the security's date range
         var missingDates = new List<string>();

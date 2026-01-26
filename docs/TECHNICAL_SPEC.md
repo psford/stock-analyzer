@@ -1,7 +1,7 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.19
-**Last Updated:** 2026-01-25
+**Version:** 2.21
+**Last Updated:** 2026-01-26
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
 
@@ -2561,6 +2561,7 @@ const [stockInfo, history, analysis, significantMoves, news] = await Promise.all
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.21 | 2026-01-26 | **Gap Detection Includes Zero-Data Securities:** `/api/admin/prices/gaps` endpoint now uses UNION query to include both (1) securities with internal gaps in existing price data, and (2) untracked securities with zero price records. Securities with no data use 2-year lookback window for expected date range. `/api/admin/prices/gaps/{securityAlias}` endpoint updated to return business days for securities with no prices (2-year range). Enables crawler to populate historical data for previously untouched securities. |
 | 2.20 | 2026-01-26 | **Two-Phase Gap Detection for Crawler:** `/api/admin/prices/gaps` endpoint now supports `includeUntracked` parameter. Default behavior (false) returns only tracked securities. When true, returns all active securities with tracked ones prioritized first. Response includes `isTracked` flag per security and separate counts (`trackedWithGaps`, `untrackedWithGaps`). EODHD Loader (Boris) crawler updated with two-phase operation: Phase 1 fills tracked securities, then automatically switches to Phase 2 for untracked securities. UI shows current phase indicator. |
 | 2.19 | 2026-01-25 | **Local Jenkins CI Integration:** Pre-push hook (`helpers/hooks/jenkins_pre_push.py`) triggers local Jenkins build before every `git push`. Blocks push if build fails. Helper scripts: `jenkins-local.ps1` (start/stop/build/status), `jenkins-console.ps1` (fetch logs), `jenkins-reload.ps1` (reload config). Jenkinsfile updated with correct paths (`projects/stock-analyzer/`) and JavaScript test stage. Jenkins API token authentication via `.env` credentials. Pre-commit config extended with pre-push stage. |
 | 2.15 | 2026-01-22 | **Sentiment-Filtered News:** SentimentAnalyzer.cs static utility with keyword-based sentiment analysis (~50 positive/negative keywords). NewsService.GetNewsForDateWithSentimentAsync() filters headlines to match price direction. AnalysisService.DetectSignificantMovesAsync() uses sentiment-aware news. Fallback cascade: sentiment-matched company news → any company news → market news. SentimentAnalyzerTests.cs (32 tests) covers positive/negative/neutral headlines, price matching, real-world Ford "Soars" bug scenario. |
