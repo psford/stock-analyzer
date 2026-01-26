@@ -1702,12 +1702,12 @@ app.MapGet("/api/admin/prices/gaps/{securityAlias}", async (IServiceProvider ser
 
         var firstParam = cmd.CreateParameter();
         firstParam.ParameterName = "@firstDate";
-        firstParam.Value = firstDate.Value;
+        firstParam.Value = firstDate!.Value;  // Null check at line 1671 ensures this is non-null
         cmd.Parameters.Add(firstParam);
 
         var lastParam = cmd.CreateParameter();
         lastParam.ParameterName = "@lastDate";
-        lastParam.Value = lastDate.Value;
+        lastParam.Value = lastDate!.Value;  // Set alongside firstDate at line 1663
         cmd.Parameters.Add(lastParam);
 
         var secParam = cmd.CreateParameter();

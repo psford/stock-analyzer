@@ -274,8 +274,10 @@ public class AnalysisService
         var macdLine = new List<decimal?>();
         for (int i = 0; i < closes.Count; i++)
         {
-            if (emaFast[i].HasValue && emaSlow[i].HasValue)
-                macdLine.Add(emaFast[i].Value - emaSlow[i].Value);
+            var fast = emaFast[i];
+            var slow = emaSlow[i];
+            if (fast.HasValue && slow.HasValue)
+                macdLine.Add(fast.Value - slow.Value);
             else
                 macdLine.Add(null);
         }
