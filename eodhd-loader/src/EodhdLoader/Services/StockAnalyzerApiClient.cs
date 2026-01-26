@@ -299,6 +299,31 @@ public class StockAnalyzerApiClient
         }
     }
 
+    /// <summary>
+    /// Marks a security as having no data available from EODHD.
+    /// Called when the crawler detects EODHD returns no data for a ticker.
+    /// These securities will be skipped in future gap-filling.
+    /// </summary>
+    public async Task<MarkUnavailableResult> MarkEodhdUnavailableAsync(int securityAlias, CancellationToken ct = default)
+    {
+        if (_httpClient == null)
+            return new MarkUnavailableResult { Success = false, Error = "HttpClient not configured" };
+
+        try
+        {
+            var response = await _httpClient.PostAsync($"/api/admin/prices/mark-eodhd-unavailable/{securityAlias}", null, ct);
+            response.EnsureSuccessStatusCode();
+
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var result = await response.Content.ReadFromJsonAsync<MarkUnavailableResult>(options, ct);
+            return result ?? new MarkUnavailableResult { Success = false, Error = "Empty response" };
+        }
+        catch (Exception ex)
+        {
+            return new MarkUnavailableResult { Success = false, Error = ex.Message };
+        }
+    }
+
     // ============================================================================
     // Data Sync Methods (for pulling production data to local)
     // ============================================================================
@@ -703,4 +728,22 @@ public class RecentActivityItem
 {
     public string Date { get; set; } = "";
     public string LoadedAt { get; set; } = "";
+}
+
+public class MarkUnavailableResult
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+
+    [JsonPropertyName("ticker")]
+    public string? Ticker { get; set; }
+
+    [JsonPropertyName("securityAlias")]
+    public int SecurityAlias { get; set; }
 }

@@ -1562,6 +1562,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                 INNER JOIN data.Prices p WITH (NOLOCK) ON p.SecurityAlias = sm.SecurityAlias
                 LEFT JOIN data.TrackedSecurities ts WITH (NOLOCK) ON ts.SecurityAlias = sm.SecurityAlias
                 WHERE sm.IsActive = 1
+                  AND sm.IsEodhdUnavailable = 0
                   AND (sm.IsTracked = 1 OR @includeUntracked = 1)
                 GROUP BY sm.SecurityAlias, sm.TickerSymbol, sm.IsTracked, ts.Priority
             ),
@@ -1616,6 +1617,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                 FROM data.SecurityMaster sm WITH (NOLOCK)
                 LEFT JOIN data.TrackedSecurities ts WITH (NOLOCK) ON ts.SecurityAlias = sm.SecurityAlias
                 WHERE sm.IsActive = 1
+                  AND sm.IsEodhdUnavailable = 0
                   AND @includeUntracked = 1
                   AND sm.IsTracked = 0
                   AND NOT EXISTS (SELECT 1 FROM data.Prices p WITH (NOLOCK) WHERE p.SecurityAlias = sm.SecurityAlias)
@@ -1702,6 +1704,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                     FROM data.SecurityMaster sm WITH (NOLOCK)
                     INNER JOIN data.Prices p WITH (NOLOCK) ON p.SecurityAlias = sm.SecurityAlias
                     WHERE sm.IsActive = 1
+                      AND sm.IsEodhdUnavailable = 0
                       AND (sm.IsTracked = 1 OR @includeUntracked = 1)
                     GROUP BY sm.SecurityAlias, sm.IsTracked
                 ),
@@ -1728,6 +1731,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                         (SELECT DayCount FROM TwoYearBusinessDays) AS MissingDays
                     FROM data.SecurityMaster sm WITH (NOLOCK)
                     WHERE sm.IsActive = 1
+                      AND sm.IsEodhdUnavailable = 0
                       AND @includeUntracked = 1
                       AND sm.IsTracked = 0
                       AND NOT EXISTS (SELECT 1 FROM data.Prices p WITH (NOLOCK) WHERE p.SecurityAlias = sm.SecurityAlias)
@@ -1765,17 +1769,17 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
             statsCmd.CommandText = @"
                 SELECT
                     (SELECT COUNT(*) FROM data.SecurityMaster WITH (NOLOCK)
-                     WHERE IsActive = 1 AND (IsTracked = 1 OR @includeUntracked = 1)) AS TotalSecurities,
+                     WHERE IsActive = 1 AND IsEodhdUnavailable = 0 AND (IsTracked = 1 OR @includeUntracked = 1)) AS TotalSecurities,
                     (SELECT COUNT(DISTINCT p.SecurityAlias) FROM data.Prices p WITH (NOLOCK)
                      INNER JOIN data.SecurityMaster sm WITH (NOLOCK) ON sm.SecurityAlias = p.SecurityAlias
-                     WHERE sm.IsActive = 1 AND (sm.IsTracked = 1 OR @includeUntracked = 1)) AS SecuritiesWithData,
+                     WHERE sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0 AND (sm.IsTracked = 1 OR @includeUntracked = 1)) AS SecuritiesWithData,
                     (SELECT COUNT(*) FROM data.Prices p WITH (NOLOCK)
                      INNER JOIN data.SecurityMaster sm WITH (NOLOCK) ON sm.SecurityAlias = p.SecurityAlias
-                     WHERE sm.IsActive = 1 AND (sm.IsTracked = 1 OR @includeUntracked = 1)) AS TotalPriceRecords,
+                     WHERE sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0 AND (sm.IsTracked = 1 OR @includeUntracked = 1)) AS TotalPriceRecords,
                     (SELECT COUNT(*) FROM data.SecurityMaster WITH (NOLOCK)
-                     WHERE IsActive = 1 AND IsTracked = 1) AS TotalTrackedSecurities,
+                     WHERE IsActive = 1 AND IsEodhdUnavailable = 0 AND IsTracked = 1) AS TotalTrackedSecurities,
                     (SELECT COUNT(*) FROM data.SecurityMaster WITH (NOLOCK)
-                     WHERE IsActive = 1 AND IsTracked = 0) AS TotalUntrackedSecurities";
+                     WHERE IsActive = 1 AND IsEodhdUnavailable = 0 AND IsTracked = 0) AS TotalUntrackedSecurities";
 
             var statsIncludeUntrackedParam = statsCmd.CreateParameter();
             statsIncludeUntrackedParam.ParameterName = "@includeUntracked";
@@ -1959,6 +1963,60 @@ app.MapGet("/api/admin/prices/gaps/{securityAlias}", async (IServiceProvider ser
     }
 })
 .WithName("SecurityGaps")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status404NotFound)
+.Produces(StatusCodes.Status500InternalServerError);
+
+// POST /api/admin/prices/mark-eodhd-unavailable - Mark a security as having no EODHD data available
+// Called by the crawler when EODHD returns no data for a ticker
+app.MapPost("/api/admin/prices/mark-eodhd-unavailable/{securityAlias}", async (IServiceProvider serviceProvider, int securityAlias) =>
+{
+    using var scope = serviceProvider.CreateScope();
+    var context = scope.ServiceProvider.GetService<StockAnalyzerDbContext>();
+
+    if (context == null)
+        return Results.BadRequest(new { error = "Database context not configured" });
+
+    try
+    {
+        var security = await context.SecurityMaster.FindAsync(securityAlias);
+
+        if (security == null)
+            return Results.NotFound(new { error = $"Security {securityAlias} not found" });
+
+        if (security.IsEodhdUnavailable)
+        {
+            return Results.Ok(new
+            {
+                success = true,
+                message = $"Security {security.TickerSymbol} was already marked as EODHD unavailable",
+                ticker = security.TickerSymbol,
+                securityAlias
+            });
+        }
+
+        security.IsEodhdUnavailable = true;
+        security.UpdatedAt = DateTime.UtcNow;
+        await context.SaveChangesAsync();
+
+        Log.Information("Marked {Ticker} (alias {Alias}) as EODHD unavailable", security.TickerSymbol, securityAlias);
+
+        return Results.Ok(new
+        {
+            success = true,
+            message = $"Marked {security.TickerSymbol} as EODHD unavailable - will be skipped in future gap-filling",
+            ticker = security.TickerSymbol,
+            securityAlias
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Failed to mark security {SecurityAlias} as EODHD unavailable", securityAlias);
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("MarkEodhdUnavailable")
 .WithOpenApi()
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status404NotFound)

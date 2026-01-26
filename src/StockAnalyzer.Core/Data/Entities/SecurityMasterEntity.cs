@@ -71,6 +71,14 @@ public class SecurityMasterEntity
     public bool IsTracked { get; set; } = false;
 
     /// <summary>
+    /// Whether EODHD has no data available for this security.
+    /// Set to true when the crawler detects EODHD returns no data for this ticker.
+    /// When true, the crawler will skip this security during gap-filling.
+    /// Typically affects OTC/Pink Sheet securities that EODHD doesn't cover.
+    /// </summary>
+    public bool IsEodhdUnavailable { get; set; } = false;
+
+    /// <summary>
     /// Timestamp when this record was created (UTC).
     /// </summary>
     public DateTime CreatedAt { get; set; }

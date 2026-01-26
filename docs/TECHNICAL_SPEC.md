@@ -1,6 +1,6 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.21
+**Version:** 2.23
 **Last Updated:** 2026-01-26
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
@@ -2016,6 +2016,8 @@ CREATE TABLE data.SecurityMaster (
     Currency NVARCHAR(10),                          -- Currency (e.g., "USD")
     Isin NVARCHAR(20),                              -- International Securities ID Number
     IsActive BIT DEFAULT 1,                         -- Whether actively traded
+    IsTracked BIT DEFAULT 0,                        -- Whether in tracked universe for gap-filling
+    IsEodhdUnavailable BIT DEFAULT 0,               -- Whether EODHD has no data for this security
     CreatedAt DATETIME2 DEFAULT GETUTCDATE(),
     UpdatedAt DATETIME2 DEFAULT GETUTCDATE()
 );
@@ -2561,6 +2563,7 @@ const [stockInfo, history, analysis, significantMoves, news] = await Promise.all
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.23 | 2026-01-26 | **EODHD Unavailable Security Tracking:** Added `IsEodhdUnavailable` column to SecurityMaster via EF Core migration. Securities where EODHD has no data (typically OTC/Pink Sheet) are automatically detected and marked by the crawler. Gap detection queries filter out unavailable securities to prevent endless retry loops. New `POST /api/admin/prices/mark-eodhd-unavailable/{securityAlias}` endpoint. Crawler detects 10 consecutive dates with 0 records and marks security as unavailable (threshold accounts for extended market closures like 9/11). |
 | 2.22 | 2026-01-26 | **Gap Count Query Fix:** The `/api/admin/prices/gaps` endpoint was incorrectly counting `trackedWithGaps` and `untrackedWithGaps` from the LIMITED results (TOP N) instead of actual totals. Added separate count query to compute true totals of all securities with gaps. This fix ensures the crawler UI displays accurate counts even when more gaps exist than the limit parameter. |
 | 2.21 | 2026-01-26 | **Gap Detection Includes Zero-Data Securities:** `/api/admin/prices/gaps` endpoint now uses UNION query to include both (1) securities with internal gaps in existing price data, and (2) untracked securities with zero price records. Securities with no data use 2-year lookback window for expected date range. `/api/admin/prices/gaps/{securityAlias}` endpoint updated to return business days for securities with no prices (2-year range). Enables crawler to populate historical data for previously untouched securities. |
 | 2.20 | 2026-01-26 | **Two-Phase Gap Detection for Crawler:** `/api/admin/prices/gaps` endpoint now supports `includeUntracked` parameter. Default behavior (false) returns only tracked securities. When true, returns all active securities with tracked ones prioritized first. Response includes `isTracked` flag per security and separate counts (`trackedWithGaps`, `untrackedWithGaps`). EODHD Loader (Boris) crawler updated with two-phase operation: Phase 1 fills tracked securities, then automatically switches to Phase 2 for untracked securities. UI shows current phase indicator. |

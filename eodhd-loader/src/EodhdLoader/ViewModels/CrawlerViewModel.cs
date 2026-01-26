@@ -94,6 +94,9 @@ public partial class CrawlerViewModel : ViewModelBase
     // Current security's missing dates
     private Queue<string> _dateQueue = new();
     private SecurityGapInfo? _currentSecurity;
+    // Track consecutive dates with no data returned for detecting unavailable securities
+    private int _consecutiveNoDataCount;
+    private const int NoDataThreshold = 10; // Mark as unavailable after 10 consecutive dates with no data (accounts for extended closures like 9/11)
 
     public CrawlerViewModel(StockAnalyzerApiClient apiClient)
     {
@@ -315,6 +318,8 @@ public partial class CrawlerViewModel : ViewModelBase
 
             AddActivity("📊", $"{trackedLabel} {_currentSecurity.Ticker}", $"{secGaps.MissingCount} missing dates ({secGaps.FirstDate} - {secGaps.LastDate})");
             StatusText = $"{CurrentPhase}: {_currentSecurity.Ticker} - {_dateQueue.Count} dates to load";
+            // Reset no-data counter for new security
+            _consecutiveNoDataCount = 0;
         }
         else
         {
@@ -349,6 +354,20 @@ public partial class CrawlerViewModel : ViewModelBase
                     if (result.Data.RecordsInserted > 0)
                     {
                         AddActivity("✓", $"{_currentSecurity.Ticker} {dateStr}", $"{result.Data.RecordsInserted} records");
+                        // Reset no-data counter since we got data
+                        _consecutiveNoDataCount = 0;
+                    }
+                    else
+                    {
+                        // No data returned - EODHD may not have this ticker
+                        _consecutiveNoDataCount++;
+
+                        if (_consecutiveNoDataCount >= NoDataThreshold)
+                        {
+                            // Mark this security as EODHD unavailable and move on
+                            await MarkSecurityUnavailableAsync(_currentSecurity);
+                            return;
+                        }
                     }
 
                     TotalMissingDays = Math.Max(0, TotalMissingDays - 1);
@@ -379,6 +398,47 @@ public partial class CrawlerViewModel : ViewModelBase
             ErrorsThisSession++;
             AddActivity("✗", $"{_currentSecurity?.Ticker ?? "?"} {dateStr}", ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Marks a security as EODHD unavailable when we detect no data is returned.
+    /// Clears the date queue and moves to the next security.
+    /// </summary>
+    private async Task MarkSecurityUnavailableAsync(SecurityGapInfo security)
+    {
+        var trackedLabel = security.IsTracked ? "[T]" : "[U]";
+        AddActivity("⚠️", $"{trackedLabel} {security.Ticker}", $"No EODHD data - marking as unavailable");
+        StatusText = $"Marking {security.Ticker} as EODHD unavailable (no data after {NoDataThreshold} dates)...";
+
+        try
+        {
+            var result = await _apiClient.MarkEodhdUnavailableAsync(security.SecurityAlias, _cts?.Token ?? default);
+
+            if (result.Success)
+            {
+                AddActivity("🚫", security.Ticker, "Marked as EODHD unavailable - will be skipped");
+            }
+            else
+            {
+                AddActivity("✗", security.Ticker, $"Failed to mark unavailable: {result.Error}");
+                ErrorsThisSession++;
+            }
+        }
+        catch (Exception ex)
+        {
+            AddActivity("✗", security.Ticker, $"Mark unavailable failed: {ex.Message}");
+            ErrorsThisSession++;
+        }
+
+        // Clear queued dates and move to next security
+        _dateQueue.Clear();
+        SecuritiesProcessedThisSession++;
+        SecuritiesWithGaps = Math.Max(0, SecuritiesWithGaps - 1);
+        CompletionPercent = TotalSecurities > 0
+            ? Math.Round((TotalSecurities - SecuritiesWithGaps) * 100.0 / TotalSecurities, 1)
+            : 100;
+        _currentSecurity = null;
+        _consecutiveNoDataCount = 0;
     }
 
     private void AddActivity(string icon, string item, string details)
