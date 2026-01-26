@@ -10,6 +10,10 @@ namespace EodhdLoader.ViewModels;
 /// ViewModel for the Crawler - an autonomous gap-filling agent.
 /// Finds securities with missing price data and loads from EODHD.
 /// Paced at ~52 API calls/minute (75,000/day budget).
+///
+/// Two-phase operation:
+/// Phase 1: Fill tracked securities first (our curated universe)
+/// Phase 2: When tracked complete, backfill untracked securities
 /// </summary>
 public partial class CrawlerViewModel : ViewModelBase
 {
@@ -39,6 +43,19 @@ public partial class CrawlerViewModel : ViewModelBase
 
     [ObservableProperty]
     private TargetEnvironment _selectedEnvironment = TargetEnvironment.Production;
+
+    // Two-phase tracking
+    [ObservableProperty]
+    private bool _isInUntrackedPhase;
+
+    [ObservableProperty]
+    private string _currentPhase = "Phase 1: Tracked";
+
+    [ObservableProperty]
+    private int _trackedSecuritiesWithGaps;
+
+    [ObservableProperty]
+    private int _untrackedSecuritiesWithGaps;
 
     // Progress tracking - Security Master based
     [ObservableProperty]
@@ -108,9 +125,14 @@ public partial class CrawlerViewModel : ViewModelBase
                 IsConnected = true;
                 ConnectionStatus = $"Connected ({envName})";
 
-                // Fetch initial gap status
+                // Fetch initial gap status (tracked only for initial display)
                 await RefreshGapsAsync();
-                StatusText = $"Connected. {SecuritiesWithGaps} securities with {TotalMissingDays:N0} missing days. Click Start to begin.";
+
+                // Also get a quick count of untracked gaps for the status display
+                var untrackedGaps = await _apiClient.GetPriceGapsAsync("US", 1, true, _cts?.Token ?? default);
+                var untrackedCount = untrackedGaps.Success ? untrackedGaps.Summary.UntrackedWithGaps : 0;
+
+                StatusText = $"Connected. Tracked: {TrackedSecuritiesWithGaps} with gaps. Untracked: {untrackedCount:N0} with gaps. Click Start to begin.";
             }
             else
             {
@@ -133,15 +155,19 @@ public partial class CrawlerViewModel : ViewModelBase
 
     private async Task RefreshGapsAsync()
     {
-        var gaps = await _apiClient.GetPriceGapsAsync("US", SecuritiesToFetch, _cts?.Token ?? default);
+        // In Phase 1, only query tracked securities
+        // In Phase 2, include untracked securities (tracked come first in results)
+        var gaps = await _apiClient.GetPriceGapsAsync("US", SecuritiesToFetch, IsInUntrackedPhase, _cts?.Token ?? default);
         if (gaps.Success)
         {
             TotalSecurities = gaps.Summary.TotalSecurities;
             SecuritiesWithGaps = gaps.Summary.SecuritiesWithGaps;
             TotalMissingDays = gaps.Summary.TotalMissingDays;
             CompletionPercent = gaps.CompletionPercent;
+            TrackedSecuritiesWithGaps = gaps.Summary.TrackedWithGaps;
+            UntrackedSecuritiesWithGaps = gaps.Summary.UntrackedWithGaps;
 
-            // Queue up the securities with gaps (ordered by most gaps first)
+            // Queue up the securities with gaps (ordered by tracked first, then priority, then most gaps)
             _securityQueue.Clear();
             foreach (var secGap in gaps.Gaps)
             {
@@ -161,24 +187,46 @@ public partial class CrawlerViewModel : ViewModelBase
         RecordsLoadedThisSession = 0;
         ErrorsThisSession = 0;
 
+        // Start in Phase 1: Tracked securities
+        IsInUntrackedPhase = false;
+        CurrentPhase = "Phase 1: Tracked";
+
         CurrentAction = "Starting...";
-        StatusText = "Crawler starting...";
+        StatusText = "Crawler starting (Phase 1: Tracked securities)...";
 
         // Get initial batch of securities with gaps
         await RefreshGapsAsync();
 
         if (_securityQueue.Count == 0)
         {
-            CurrentAction = "Complete!";
-            StatusText = "No gaps found. All Security Master securities have complete price data!";
-            IsCrawling = false;
-            return;
+            // No tracked securities with gaps - try untracked
+            AddActivity("✓", "Phase 1 Complete", "All tracked securities have complete price data");
+            await SwitchToUntrackedPhaseAsync();
+            if (_securityQueue.Count == 0)
+            {
+                CurrentAction = "Complete!";
+                StatusText = "No gaps found. All securities (tracked and untracked) have complete price data!";
+                IsCrawling = false;
+                return;
+            }
         }
 
         // Start the paced timer
         _crawlTimer.Start();
         CurrentAction = "Crawling";
-        StatusText = $"Crawling... {_securityQueue.Count} securities queued";
+        StatusText = $"{CurrentPhase}: {_securityQueue.Count} securities queued";
+    }
+
+    private async Task SwitchToUntrackedPhaseAsync()
+    {
+        IsInUntrackedPhase = true;
+        CurrentPhase = "Phase 2: Untracked";
+        CurrentAction = "Switching to Phase 2...";
+        StatusText = "Phase 1 complete. Starting Phase 2: Untracked securities...";
+        AddActivity("→", "Phase 2", "Switching to untracked securities");
+
+        // Refresh gaps with untracked included
+        await RefreshGapsAsync();
     }
 
     private bool CanStopCrawl() => IsCrawling;
@@ -216,12 +264,34 @@ public partial class CrawlerViewModel : ViewModelBase
 
             if (_securityQueue.Count == 0)
             {
-                // No more gaps - we're done!
+                // No more gaps in current phase
+                if (!IsInUntrackedPhase)
+                {
+                    // Phase 1 complete - switch to Phase 2 (untracked)
+                    AddActivity("✓", "Phase 1 Complete", "All tracked securities have complete price data");
+                    await SwitchToUntrackedPhaseAsync();
+
+                    if (_securityQueue.Count == 0)
+                    {
+                        // No untracked securities with gaps either - we're fully done
+                        _crawlTimer.Stop();
+                        IsCrawling = false;
+                        CurrentAction = "Complete!";
+                        StatusText = $"All gaps filled! Processed {SecuritiesProcessedThisSession} securities, loaded {RecordsLoadedThisSession:N0} records.";
+                        AddActivity("✓", "Complete", "All securities (tracked and untracked) have complete price data");
+                        return;
+                    }
+
+                    StatusText = $"{CurrentPhase}: {_securityQueue.Count} securities queued";
+                    return;
+                }
+
+                // Phase 2 also complete - we're done!
                 _crawlTimer.Stop();
                 IsCrawling = false;
                 CurrentAction = "Complete!";
                 StatusText = $"All gaps filled! Processed {SecuritiesProcessedThisSession} securities, loaded {RecordsLoadedThisSession:N0} records.";
-                AddActivity("✓", "Complete", "All Security Master securities have complete price data");
+                AddActivity("✓", "Complete", "All securities (tracked and untracked) have complete price data");
                 return;
             }
         }
@@ -229,7 +299,9 @@ public partial class CrawlerViewModel : ViewModelBase
         // Get next security
         _currentSecurity = _securityQueue.Dequeue();
         CurrentTicker = _currentSecurity.Ticker;
-        CurrentAction = $"Analyzing {_currentSecurity.Ticker}...";
+
+        var trackedLabel = _currentSecurity.IsTracked ? "[T]" : "[U]";
+        CurrentAction = $"Analyzing {trackedLabel} {_currentSecurity.Ticker}...";
 
         // Fetch the specific missing dates for this security
         var secGaps = await _apiClient.GetSecurityGapsAsync(_currentSecurity.SecurityAlias, 100, _cts?.Token ?? default);
@@ -241,8 +313,8 @@ public partial class CrawlerViewModel : ViewModelBase
                 _dateQueue.Enqueue(date);
             }
 
-            AddActivity("📊", _currentSecurity.Ticker, $"{secGaps.MissingCount} missing dates ({secGaps.FirstDate} - {secGaps.LastDate})");
-            StatusText = $"{_currentSecurity.Ticker}: {_dateQueue.Count} dates to load";
+            AddActivity("📊", $"{trackedLabel} {_currentSecurity.Ticker}", $"{secGaps.MissingCount} missing dates ({secGaps.FirstDate} - {secGaps.LastDate})");
+            StatusText = $"{CurrentPhase}: {_currentSecurity.Ticker} - {_dateQueue.Count} dates to load";
         }
         else
         {
@@ -272,11 +344,11 @@ public partial class CrawlerViewModel : ViewModelBase
 
                 if (result.Success && result.Data != null)
                 {
-                    RecordsLoadedThisSession += result.Data.PricesLoaded;
+                    RecordsLoadedThisSession += result.Data.RecordsInserted;
 
-                    if (result.Data.PricesLoaded > 0)
+                    if (result.Data.RecordsInserted > 0)
                     {
-                        AddActivity("✓", $"{_currentSecurity.Ticker} {dateStr}", $"{result.Data.PricesLoaded} records");
+                        AddActivity("✓", $"{_currentSecurity.Ticker} {dateStr}", $"{result.Data.RecordsInserted} records");
                     }
 
                     TotalMissingDays = Math.Max(0, TotalMissingDays - 1);
@@ -305,7 +377,7 @@ public partial class CrawlerViewModel : ViewModelBase
         catch (Exception ex)
         {
             ErrorsThisSession++;
-            AddActivity("✗", $"{_currentSecurity.Ticker} {dateStr}", ex.Message);
+            AddActivity("✗", $"{_currentSecurity?.Ticker ?? "?"} {dateStr}", ex.Message);
         }
     }
 

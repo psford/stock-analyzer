@@ -1508,9 +1508,10 @@ app.MapGet("/api/admin/data/prices/monitor", async (IServiceProvider serviceProv
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status500InternalServerError);
 
-// GET /api/admin/prices/gaps - Find missing price data for tracked securities
-// Only checks securities with IsTracked = 1 (our monitored universe)
-app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, string? market, int? limit) =>
+// GET /api/admin/prices/gaps - Find missing price data for securities
+// By default only checks tracked securities (IsTracked = 1)
+// Set includeUntracked=true to also include untracked securities (prioritized after tracked)
+app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, string? market, int? limit, bool? includeUntracked) =>
 {
     using var scope = serviceProvider.CreateScope();
     var context = scope.ServiceProvider.GetService<StockAnalyzerDbContext>();
@@ -1525,23 +1526,30 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
 
         var marketFilter = market?.ToUpperInvariant() ?? "US";
         var maxResults = limit ?? 50;
+        var includeUntrackedSecurities = includeUntracked ?? false;
 
-        // Strategy: Find TRACKED securities with gaps in their price history
-        // Only considers securities where IsTracked = 1 (our curated universe)
+        // Strategy: Find securities with gaps in their price history
+        // When includeUntracked=false (default): Only tracked securities (IsTracked = 1)
+        // When includeUntracked=true: All active securities, but tracked ones come first
         //
         // This query:
-        // 1. Gets tracked, active US securities from Security Master
+        // 1. Gets active securities from Security Master (filtered by IsTracked unless includeUntracked)
         // 2. Finds the min/max date of existing prices for each
         // 3. Counts trading days (from BusinessCalendar) in that range
         // 4. Compares to actual price count - any difference is a gap
-        // 5. Returns securities with gaps, ordered by priority then most gaps
+        // 5. Returns securities with gaps, ordered by: IsTracked DESC, Priority, most gaps
 
         using var cmd = connection.CreateCommand();
+
+        // Use parameterized query to avoid CA2100 SQL injection warning
+        // When @includeUntracked = 0, only tracked securities are included
+        // When @includeUntracked = 1, all securities are included (tracked come first)
         cmd.CommandText = @"
             WITH SecurityDateRange AS (
                 SELECT
                     sm.SecurityAlias,
                     sm.TickerSymbol,
+                    sm.IsTracked,
                     COALESCE(ts.Priority, 999) AS Priority,
                     MIN(p.EffectiveDate) AS FirstDate,
                     MAX(p.EffectiveDate) AS LastDate,
@@ -1550,13 +1558,14 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                 INNER JOIN data.Prices p WITH (NOLOCK) ON p.SecurityAlias = sm.SecurityAlias
                 LEFT JOIN data.TrackedSecurities ts WITH (NOLOCK) ON ts.SecurityAlias = sm.SecurityAlias
                 WHERE sm.IsActive = 1
-                  AND sm.IsTracked = 1
-                GROUP BY sm.SecurityAlias, sm.TickerSymbol, ts.Priority
+                  AND (sm.IsTracked = 1 OR @includeUntracked = 1)
+                GROUP BY sm.SecurityAlias, sm.TickerSymbol, sm.IsTracked, ts.Priority
             ),
             ExpectedCounts AS (
                 SELECT
                     sdr.SecurityAlias,
                     sdr.TickerSymbol,
+                    sdr.IsTracked,
                     sdr.Priority,
                     sdr.FirstDate,
                     sdr.LastDate,
@@ -1570,6 +1579,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
             SELECT TOP (@limit)
                 SecurityAlias,
                 TickerSymbol,
+                IsTracked,
                 FirstDate,
                 LastDate,
                 ActualPriceCount,
@@ -1577,53 +1587,82 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                 (ExpectedPriceCount - ActualPriceCount) AS MissingDays
             FROM ExpectedCounts
             WHERE ExpectedPriceCount > ActualPriceCount
-            ORDER BY Priority, (ExpectedPriceCount - ActualPriceCount) DESC, TickerSymbol";
+            ORDER BY IsTracked DESC, Priority, (ExpectedPriceCount - ActualPriceCount) DESC, TickerSymbol";
 
         var limitParam = cmd.CreateParameter();
         limitParam.ParameterName = "@limit";
         limitParam.Value = maxResults;
         cmd.Parameters.Add(limitParam);
+
+        var includeUntrackedParam = cmd.CreateParameter();
+        includeUntrackedParam.ParameterName = "@includeUntracked";
+        includeUntrackedParam.Value = includeUntrackedSecurities ? 1 : 0;
+        cmd.Parameters.Add(includeUntrackedParam);
+
         cmd.CommandTimeout = 60;
 
         var securitiesWithGaps = new List<object>();
         int totalMissingDays = 0;
+        int trackedGapsCount = 0;
+        int untrackedGapsCount = 0;
 
         using (var reader = await cmd.ExecuteReaderAsync())
         {
             while (await reader.ReadAsync())
             {
-                var missingDays = reader.GetInt32(6);
+                var missingDays = reader.GetInt32(7);
+                var isTracked = reader.GetBoolean(2);
                 totalMissingDays += missingDays;
+
+                if (isTracked)
+                    trackedGapsCount++;
+                else
+                    untrackedGapsCount++;
+
                 securitiesWithGaps.Add(new
                 {
                     securityAlias = reader.GetInt32(0),
                     ticker = reader.GetString(1),
-                    firstDate = reader.GetDateTime(2).ToString("yyyy-MM-dd"),
-                    lastDate = reader.GetDateTime(3).ToString("yyyy-MM-dd"),
-                    actualDays = reader.GetInt32(4),
-                    expectedDays = reader.GetInt32(5),
+                    isTracked,
+                    firstDate = reader.GetDateTime(3).ToString("yyyy-MM-dd"),
+                    lastDate = reader.GetDateTime(4).ToString("yyyy-MM-dd"),
+                    actualDays = reader.GetInt32(5),
+                    expectedDays = reader.GetInt32(6),
                     missingDays
                 });
             }
         }
 
-        // Get summary stats (only for tracked securities)
+        // Get summary stats based on mode
         int totalSecurities = 0;
         int securitiesWithData = 0;
         int totalPriceRecords = 0;
+        int totalTrackedSecurities = 0;
+        int totalUntrackedSecurities = 0;
 
         using (var statsCmd = connection.CreateCommand())
         {
+            // Use parameterized query to avoid CA2100 SQL injection warning
             statsCmd.CommandText = @"
                 SELECT
                     (SELECT COUNT(*) FROM data.SecurityMaster WITH (NOLOCK)
-                     WHERE IsActive = 1 AND IsTracked = 1) AS TotalTrackedSecurities,
+                     WHERE IsActive = 1 AND (IsTracked = 1 OR @includeUntracked = 1)) AS TotalSecurities,
                     (SELECT COUNT(DISTINCT p.SecurityAlias) FROM data.Prices p WITH (NOLOCK)
                      INNER JOIN data.SecurityMaster sm WITH (NOLOCK) ON sm.SecurityAlias = p.SecurityAlias
-                     WHERE sm.IsTracked = 1) AS TrackedSecuritiesWithData,
+                     WHERE sm.IsActive = 1 AND (sm.IsTracked = 1 OR @includeUntracked = 1)) AS SecuritiesWithData,
                     (SELECT COUNT(*) FROM data.Prices p WITH (NOLOCK)
                      INNER JOIN data.SecurityMaster sm WITH (NOLOCK) ON sm.SecurityAlias = p.SecurityAlias
-                     WHERE sm.IsTracked = 1) AS TotalPriceRecordsForTracked";
+                     WHERE sm.IsActive = 1 AND (sm.IsTracked = 1 OR @includeUntracked = 1)) AS TotalPriceRecords,
+                    (SELECT COUNT(*) FROM data.SecurityMaster WITH (NOLOCK)
+                     WHERE IsActive = 1 AND IsTracked = 1) AS TotalTrackedSecurities,
+                    (SELECT COUNT(*) FROM data.SecurityMaster WITH (NOLOCK)
+                     WHERE IsActive = 1 AND IsTracked = 0) AS TotalUntrackedSecurities";
+
+            var statsIncludeUntrackedParam = statsCmd.CreateParameter();
+            statsIncludeUntrackedParam.ParameterName = "@includeUntracked";
+            statsIncludeUntrackedParam.Value = includeUntrackedSecurities ? 1 : 0;
+            statsCmd.Parameters.Add(statsIncludeUntrackedParam);
+
             statsCmd.CommandTimeout = 30;
 
             using var statsReader = await statsCmd.ExecuteReaderAsync();
@@ -1632,6 +1671,8 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                 totalSecurities = statsReader.GetInt32(0);
                 securitiesWithData = statsReader.GetInt32(1);
                 totalPriceRecords = statsReader.GetInt32(2);
+                totalTrackedSecurities = statsReader.GetInt32(3);
+                totalUntrackedSecurities = statsReader.GetInt32(4);
             }
         }
 
@@ -1642,11 +1683,16 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
         {
             success = true,
             market = marketFilter,
+            includeUntracked = includeUntrackedSecurities,
             summary = new
             {
                 totalSecurities,
+                totalTrackedSecurities,
+                totalUntrackedSecurities,
                 securitiesWithData,
                 securitiesWithGaps = securitiesWithGaps.Count,
+                trackedWithGaps = trackedGapsCount,
+                untrackedWithGaps = untrackedGapsCount,
                 securitiesComplete,
                 totalPriceRecords,
                 totalMissingDays

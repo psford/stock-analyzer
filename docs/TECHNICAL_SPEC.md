@@ -2150,9 +2150,17 @@ Maintains the historical price database with automatic daily updates.
 |----------|-------------|
 | `GET /api/admin/prices/status` | Database status: counts, latest date, EODHD status |
 | `GET /api/admin/prices/coverage-dates` | Get distinct dates with price data (query: `startDate`, `endDate`) |
+| `GET /api/admin/prices/gaps` | Find securities with missing price data (query: `market`, `limit`, `includeUntracked`) |
+| `GET /api/admin/prices/gaps/{securityAlias}` | Get specific missing dates for a security (query: `limit`) |
 | `POST /api/admin/prices/sync-securities` | Sync SecurityMaster from Symbols table |
 | `POST /api/admin/prices/refresh-date` | Fetch prices for specific date (body: `{Date: "yyyy-MM-dd"}`) |
 | `POST /api/admin/prices/bulk-load` | Start bulk historical load (body: `{StartDate, EndDate}`) |
+
+**Gap Detection (`/api/admin/prices/gaps`):**
+- Default: Returns only tracked securities (`IsTracked = 1`) with price gaps
+- With `includeUntracked=true`: Returns all active securities, ordered by tracked first
+- Response includes `isTracked` flag per security and summary counts for tracked/untracked gaps
+- Used by EODHD Loader crawler for two-phase gap filling (tracked first, then untracked)
 
 **Bulk Load Flow:**
 1. Call `/api/admin/prices/sync-securities` to populate SecurityMaster
@@ -2553,6 +2561,7 @@ const [stockInfo, history, analysis, significantMoves, news] = await Promise.all
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.20 | 2026-01-26 | **Two-Phase Gap Detection for Crawler:** `/api/admin/prices/gaps` endpoint now supports `includeUntracked` parameter. Default behavior (false) returns only tracked securities. When true, returns all active securities with tracked ones prioritized first. Response includes `isTracked` flag per security and separate counts (`trackedWithGaps`, `untrackedWithGaps`). EODHD Loader (Boris) crawler updated with two-phase operation: Phase 1 fills tracked securities, then automatically switches to Phase 2 for untracked securities. UI shows current phase indicator. |
 | 2.19 | 2026-01-25 | **Local Jenkins CI Integration:** Pre-push hook (`helpers/hooks/jenkins_pre_push.py`) triggers local Jenkins build before every `git push`. Blocks push if build fails. Helper scripts: `jenkins-local.ps1` (start/stop/build/status), `jenkins-console.ps1` (fetch logs), `jenkins-reload.ps1` (reload config). Jenkinsfile updated with correct paths (`projects/stock-analyzer/`) and JavaScript test stage. Jenkins API token authentication via `.env` credentials. Pre-commit config extended with pre-push stage. |
 | 2.15 | 2026-01-22 | **Sentiment-Filtered News:** SentimentAnalyzer.cs static utility with keyword-based sentiment analysis (~50 positive/negative keywords). NewsService.GetNewsForDateWithSentimentAsync() filters headlines to match price direction. AnalysisService.DetectSignificantMovesAsync() uses sentiment-aware news. Fallback cascade: sentiment-matched company news → any company news → market news. SentimentAnalyzerTests.cs (32 tests) covers positive/negative/neutral headlines, price matching, real-world Ford "Soars" bug scenario. |
 | 2.18 | 2026-01-24 | **Database Protection & Coverage API:** Bicep template modified to NOT manage the production database (prevents overwriting 3.5M+ price records from BACPAC import). Database name corrected from `stockanalyzerdb` to `stockanalyzer-db`. New `/api/admin/prices/coverage-dates` endpoint returns distinct dates with price data for coverage analysis. `GetDistinctDatesAsync()` method added to IPriceRepository. SecurityMaster extended with Country, Currency, ISIN columns via EF Core migration. EodhdService extended with `GetExchangeSymbolsAsync()` method to sync EODHD symbol metadata. |

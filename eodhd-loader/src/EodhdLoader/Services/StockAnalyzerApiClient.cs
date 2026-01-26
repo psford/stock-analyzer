@@ -1,6 +1,7 @@
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace EodhdLoader.Services;
 
@@ -69,9 +70,9 @@ public class StockAnalyzerApiClient
 
         var request = new
         {
-            tickers,
-            fromDate = fromDate.ToString("yyyy-MM-dd"),
-            toDate = toDate?.ToString("yyyy-MM-dd")
+            Tickers = tickers.ToArray(),
+            StartDate = fromDate.ToString("yyyy-MM-dd"),
+            EndDate = (toDate ?? fromDate).ToString("yyyy-MM-dd")
         };
 
         var response = await _httpClient.PostAsJsonAsync("/api/admin/prices/load-tickers", request, ct);
@@ -233,9 +234,13 @@ public class StockAnalyzerApiClient
 
     /// <summary>
     /// Gets securities with gaps in their price history (Security Master driven).
-    /// Returns securities ordered by most missing days first.
+    /// Returns securities ordered by tracked status, then priority, then most missing days.
     /// </summary>
-    public async Task<PriceGapsResult> GetPriceGapsAsync(string? market = null, int? limit = null, CancellationToken ct = default)
+    /// <param name="market">Market filter (default: US)</param>
+    /// <param name="limit">Maximum number of securities to return</param>
+    /// <param name="includeUntracked">If true, includes untracked securities (after tracked ones)</param>
+    /// <param name="ct">Cancellation token</param>
+    public async Task<PriceGapsResult> GetPriceGapsAsync(string? market = null, int? limit = null, bool includeUntracked = false, CancellationToken ct = default)
     {
         if (_httpClient == null)
             return new PriceGapsResult { Success = false, Error = "HttpClient not configured" };
@@ -248,13 +253,17 @@ public class StockAnalyzerApiClient
                 queryParams.Add($"market={market}");
             if (limit.HasValue)
                 queryParams.Add($"limit={limit.Value}");
+            if (includeUntracked)
+                queryParams.Add("includeUntracked=true");
             if (queryParams.Count > 0)
                 url += "?" + string.Join("&", queryParams);
 
             var response = await _httpClient.GetAsync(url, ct);
             response.EnsureSuccessStatusCode();
 
-            var result = await response.Content.ReadFromJsonAsync<PriceGapsResult>(cancellationToken: ct);
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var result = await response.Content.ReadFromJsonAsync<PriceGapsResult>(options, ct);
+
             return result ?? new PriceGapsResult { Success = false, Error = "Empty response" };
         }
         catch (Exception ex)
@@ -280,7 +289,8 @@ public class StockAnalyzerApiClient
             var response = await _httpClient.GetAsync(url, ct);
             response.EnsureSuccessStatusCode();
 
-            var result = await response.Content.ReadFromJsonAsync<SecurityGapsResult>(cancellationToken: ct);
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var result = await response.Content.ReadFromJsonAsync<SecurityGapsResult>(options, ct);
             return result ?? new SecurityGapsResult { Success = false, Error = "Empty response" };
         }
         catch (Exception ex)
@@ -402,10 +412,20 @@ public class ApiResponse<T>
 
 public class LoadTickersResult
 {
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+
+    [JsonPropertyName("tickersRequested")]
+    public int TickersRequested { get; set; }
+
+    [JsonPropertyName("tickersProcessed")]
     public int TickersProcessed { get; set; }
-    public int PricesLoaded { get; set; }
-    public int Errors { get; set; }
-    public List<string> FailedTickers { get; set; } = [];
+
+    [JsonPropertyName("recordsInserted")]
+    public int RecordsInserted { get; set; }
+
+    [JsonPropertyName("errors")]
+    public List<string> Errors { get; set; } = [];
 }
 
 public class RefreshDateResult
@@ -538,45 +558,115 @@ public class PriceExportInfo
 
 public class PriceGapsResult
 {
+    [JsonPropertyName("success")]
     public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
     public string? Error { get; set; }
+
+    [JsonPropertyName("market")]
     public string Market { get; set; } = "";
+
+    [JsonPropertyName("includeUntracked")]
+    public bool IncludeUntracked { get; set; }
+
+    [JsonPropertyName("summary")]
     public PriceGapsSummary Summary { get; set; } = new();
+
+    [JsonPropertyName("completionPercent")]
     public double CompletionPercent { get; set; }
+
+    [JsonPropertyName("gaps")]
     public List<SecurityGapInfo> Gaps { get; set; } = [];
 }
 
 public class PriceGapsSummary
 {
+    [JsonPropertyName("totalSecurities")]
     public int TotalSecurities { get; set; }
+
+    [JsonPropertyName("totalTrackedSecurities")]
+    public int TotalTrackedSecurities { get; set; }
+
+    [JsonPropertyName("totalUntrackedSecurities")]
+    public int TotalUntrackedSecurities { get; set; }
+
+    [JsonPropertyName("securitiesWithData")]
     public int SecuritiesWithData { get; set; }
+
+    [JsonPropertyName("securitiesWithGaps")]
     public int SecuritiesWithGaps { get; set; }
+
+    [JsonPropertyName("trackedWithGaps")]
+    public int TrackedWithGaps { get; set; }
+
+    [JsonPropertyName("untrackedWithGaps")]
+    public int UntrackedWithGaps { get; set; }
+
+    [JsonPropertyName("securitiesComplete")]
     public int SecuritiesComplete { get; set; }
+
+    [JsonPropertyName("totalPriceRecords")]
     public int TotalPriceRecords { get; set; }
+
+    [JsonPropertyName("totalMissingDays")]
     public int TotalMissingDays { get; set; }
 }
 
 public class SecurityGapInfo
 {
+    [JsonPropertyName("securityAlias")]
     public int SecurityAlias { get; set; }
+
+    [JsonPropertyName("ticker")]
     public string Ticker { get; set; } = "";
+
+    [JsonPropertyName("isTracked")]
+    public bool IsTracked { get; set; }
+
+    [JsonPropertyName("firstDate")]
     public string FirstDate { get; set; } = "";
+
+    [JsonPropertyName("lastDate")]
     public string LastDate { get; set; } = "";
+
+    [JsonPropertyName("actualDays")]
     public int ActualDays { get; set; }
+
+    [JsonPropertyName("expectedDays")]
     public int ExpectedDays { get; set; }
+
+    [JsonPropertyName("missingDays")]
     public int MissingDays { get; set; }
 }
 
 public class SecurityGapsResult
 {
+    [JsonPropertyName("success")]
     public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
     public string? Error { get; set; }
+
+    [JsonPropertyName("securityAlias")]
     public int SecurityAlias { get; set; }
+
+    [JsonPropertyName("ticker")]
     public string Ticker { get; set; } = "";
+
+    [JsonPropertyName("firstDate")]
     public string? FirstDate { get; set; }
+
+    [JsonPropertyName("lastDate")]
     public string? LastDate { get; set; }
+
+    [JsonPropertyName("message")]
     public string? Message { get; set; }
+
+    [JsonPropertyName("missingCount")]
     public int MissingCount { get; set; }
+
+    [JsonPropertyName("missingDates")]
     public List<string> MissingDates { get; set; } = [];
 }
 
