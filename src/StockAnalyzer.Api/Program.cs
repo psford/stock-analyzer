@@ -1717,13 +1717,28 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
         // Use parameterized query to avoid CA2100 SQL injection warning
         // When @includeUntracked = 0, only tracked securities are included
         // When @includeUntracked = 1, all securities are included (tracked come first)
-        // This query has two parts via UNION:
-        // 1. Securities WITH prices that have internal gaps
+        // This query has THREE parts via UNION:
+        // 1. Securities WITH prices that have internal gaps (missing days within date range)
         // 2. Securities WITHOUT any prices (need initial load) - only when includeUntracked=1
-        // Updated query: For untracked securities, prioritize Common Stock and shorter tickers
-        // This ensures we backfill widely-traded stocks (NYSE/NASDAQ) before OTC/Pink Sheets
+        // 3. Securities with STALE data (latest price > 7 days old) - only when includeUntracked=1
+        // Performance optimized: Pre-compute securities with prices and business day counts
+        // to avoid expensive NOT EXISTS and correlated subqueries
         cmd.CommandText = @"
-            WITH SecurityDateRange AS (
+            WITH TwoYearBusinessDays AS (
+                -- Pre-compute once: business days in last 2 years
+                SELECT COUNT(*) AS DayCount
+                FROM data.BusinessCalendar bc WITH (NOLOCK)
+                WHERE bc.IsBusinessDay = 1
+                  AND bc.EffectiveDate >= DATEADD(YEAR, -2, GETDATE())
+                  AND bc.EffectiveDate <= GETDATE()
+            ),
+            SecuritiesWithPrices AS (
+                -- Pre-compute once: which securities have ANY prices (efficient distinct scan)
+                SELECT SecurityAlias, MAX(EffectiveDate) AS LatestPriceDate
+                FROM data.Prices WITH (NOLOCK)
+                GROUP BY SecurityAlias
+            ),
+            SecurityDateRange AS (
                 -- Part 1: Securities that HAVE prices - check for internal gaps
                 SELECT
                     sm.SecurityAlias,
@@ -1778,7 +1793,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
             ),
             NoPriceData AS (
                 -- Part 2: Securities with NO prices at all (only when includeUntracked=1)
-                -- Use last 2 years as the expected date range for initial load
+                -- Use LEFT JOIN + IS NULL instead of NOT EXISTS for performance
                 SELECT
                     sm.SecurityAlias,
                     sm.TickerSymbol,
@@ -1789,26 +1804,50 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                     DATEADD(YEAR, -2, GETDATE()) AS FirstDate,
                     CAST(GETDATE() AS DATE) AS LastDate,
                     0 AS ActualPriceCount,
-                    (SELECT COUNT(*) FROM data.BusinessCalendar bc WITH (NOLOCK)
-                     WHERE bc.IsBusinessDay = 1
-                       AND bc.EffectiveDate >= DATEADD(YEAR, -2, GETDATE())
-                       AND bc.EffectiveDate <= GETDATE()) AS ExpectedPriceCount,
-                    (SELECT COUNT(*) FROM data.BusinessCalendar bc WITH (NOLOCK)
-                     WHERE bc.IsBusinessDay = 1
-                       AND bc.EffectiveDate >= DATEADD(YEAR, -2, GETDATE())
-                       AND bc.EffectiveDate <= GETDATE()) AS MissingDays
+                    (SELECT DayCount FROM TwoYearBusinessDays) AS ExpectedPriceCount,
+                    (SELECT DayCount FROM TwoYearBusinessDays) AS MissingDays
                 FROM data.SecurityMaster sm WITH (NOLOCK)
+                LEFT JOIN SecuritiesWithPrices swp ON swp.SecurityAlias = sm.SecurityAlias
                 LEFT JOIN data.TrackedSecurities ts WITH (NOLOCK) ON ts.SecurityAlias = sm.SecurityAlias
                 WHERE sm.IsActive = 1
                   AND sm.IsEodhdUnavailable = 0
                   AND @includeUntracked = 1
                   AND sm.IsTracked = 0
-                  AND NOT EXISTS (SELECT 1 FROM data.Prices p WITH (NOLOCK) WHERE p.SecurityAlias = sm.SecurityAlias)
+                  AND swp.SecurityAlias IS NULL  -- No prices exist
+            ),
+            StaleData AS (
+                -- Part 3: Securities with prices but nothing recent (stale data)
+                -- For untracked: latest price > 30 days old means needs update
+                -- This catches securities that have SOME data but stopped updating
+                SELECT
+                    sm.SecurityAlias,
+                    sm.TickerSymbol,
+                    sm.IsTracked,
+                    sm.SecurityType,
+                    sm.ImportanceScore,
+                    COALESCE(ts.Priority, 999) AS Priority,
+                    swp.LatestPriceDate AS FirstDate,
+                    CAST(GETDATE() AS DATE) AS LastDate,
+                    0 AS ActualPriceCount,
+                    DATEDIFF(DAY, swp.LatestPriceDate, GETDATE()) AS ExpectedPriceCount,
+                    DATEDIFF(DAY, swp.LatestPriceDate, GETDATE()) AS MissingDays
+                FROM data.SecurityMaster sm WITH (NOLOCK)
+                INNER JOIN SecuritiesWithPrices swp ON swp.SecurityAlias = sm.SecurityAlias
+                LEFT JOIN data.TrackedSecurities ts WITH (NOLOCK) ON ts.SecurityAlias = sm.SecurityAlias
+                WHERE sm.IsActive = 1
+                  AND sm.IsEodhdUnavailable = 0
+                  AND @includeUntracked = 1
+                  AND sm.IsTracked = 0
+                  AND swp.LatestPriceDate < DATEADD(DAY, -30, GETDATE())  -- Stale: >30 days old
+                  -- Exclude from GapsInExistingData (those are already handled)
+                  AND sm.SecurityAlias NOT IN (SELECT SecurityAlias FROM GapsInExistingData)
             ),
             AllGaps AS (
                 SELECT * FROM GapsInExistingData
                 UNION ALL
                 SELECT * FROM NoPriceData
+                UNION ALL
+                SELECT * FROM StaleData
             )
             SELECT TOP (@limit)
                 SecurityAlias,
@@ -1874,8 +1913,8 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
         // Count ALL securities with gaps (not limited by TOP clause)
         using (var gapCountCmd = connection.CreateCommand())
         {
-            // Optimized: compute the 2-year business day count ONCE at the top level
-            // instead of as a correlated subquery for each of 6,692 securities
+            // Optimized: Pre-compute securities with prices and business day counts
+            // to avoid expensive NOT EXISTS and correlated subqueries
             gapCountCmd.CommandText = @"
                 WITH TwoYearBusinessDays AS (
                     SELECT COUNT(*) AS DayCount
@@ -1883,6 +1922,12 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                     WHERE bc.IsBusinessDay = 1
                       AND bc.EffectiveDate >= DATEADD(YEAR, -2, GETDATE())
                       AND bc.EffectiveDate <= GETDATE()
+                ),
+                SecuritiesWithPrices AS (
+                    -- Pre-compute: which securities have prices and their latest date
+                    SELECT SecurityAlias, MAX(EffectiveDate) AS LatestPriceDate
+                    FROM data.Prices WITH (NOLOCK)
+                    GROUP BY SecurityAlias
                 ),
                 SecurityDateRange AS (
                     SELECT
@@ -1915,21 +1960,40 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                     WHERE ExpectedPriceCount > ActualPriceCount
                 ),
                 NoPriceData AS (
+                    -- Securities with NO prices (use LEFT JOIN + IS NULL for performance)
                     SELECT
                         sm.SecurityAlias,
                         sm.IsTracked,
                         (SELECT DayCount FROM TwoYearBusinessDays) AS MissingDays
                     FROM data.SecurityMaster sm WITH (NOLOCK)
+                    LEFT JOIN SecuritiesWithPrices swp ON swp.SecurityAlias = sm.SecurityAlias
                     WHERE sm.IsActive = 1
                       AND sm.IsEodhdUnavailable = 0
                       AND @includeUntracked = 1
                       AND sm.IsTracked = 0
-                      AND NOT EXISTS (SELECT 1 FROM data.Prices p WITH (NOLOCK) WHERE p.SecurityAlias = sm.SecurityAlias)
+                      AND swp.SecurityAlias IS NULL
+                ),
+                StaleData AS (
+                    -- Securities with stale data (latest price > 30 days old)
+                    SELECT
+                        sm.SecurityAlias,
+                        sm.IsTracked,
+                        DATEDIFF(DAY, swp.LatestPriceDate, GETDATE()) AS MissingDays
+                    FROM data.SecurityMaster sm WITH (NOLOCK)
+                    INNER JOIN SecuritiesWithPrices swp ON swp.SecurityAlias = sm.SecurityAlias
+                    WHERE sm.IsActive = 1
+                      AND sm.IsEodhdUnavailable = 0
+                      AND @includeUntracked = 1
+                      AND sm.IsTracked = 0
+                      AND swp.LatestPriceDate < DATEADD(DAY, -30, GETDATE())
+                      AND sm.SecurityAlias NOT IN (SELECT SecurityAlias FROM GapsInExistingData)
                 ),
                 AllGaps AS (
                     SELECT * FROM GapsInExistingData
                     UNION ALL
                     SELECT * FROM NoPriceData
+                    UNION ALL
+                    SELECT * FROM StaleData
                 )
                 SELECT
                     SUM(CASE WHEN IsTracked = 1 THEN 1 ELSE 0 END) AS TrackedWithGaps,
