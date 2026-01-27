@@ -2508,8 +2508,15 @@ app.MapPost("/api/admin/securities/calculate-importance", async (IServiceProvide
 .Produces(StatusCodes.Status500InternalServerError);
 
 // GET /api/admin/dashboard/stats - Consolidated dashboard stats for EODHD Loader
-app.MapGet("/api/admin/dashboard/stats", async (IServiceProvider serviceProvider) =>
+// Result sets 1-3 use direct SQL (fast queries on SecurityMaster + indexed Prices).
+// Result sets 4-5 read from CoverageSummary table (instant, avoids full Prices scan).
+// All results cached for 10 minutes via IMemoryCache.
+app.MapGet("/api/admin/dashboard/stats", async (IServiceProvider serviceProvider, IMemoryCache cache) =>
 {
+    const string cacheKey = "dashboard:stats";
+    if (cache.TryGetValue(cacheKey, out object? cached) && cached != null)
+        return Results.Ok(cached);
+
     using var scope = serviceProvider.CreateScope();
     var context = scope.ServiceProvider.GetService<StockAnalyzerDbContext>();
 
@@ -2521,7 +2528,7 @@ app.MapGet("/api/admin/dashboard/stats", async (IServiceProvider serviceProvider
         var connection = context.Database.GetDbConnection();
         await connection.OpenAsync();
 
-        // All dashboard stats in a single query batch for efficiency
+        // Result sets 1-3: Direct SQL (fast - SecurityMaster is small, Prices COUNT uses index)
         using var cmd = connection.CreateCommand();
         cmd.CommandText = @"
             -- Universe counts
@@ -2553,37 +2560,12 @@ app.MapGet("/api/admin/dashboard/stats", async (IServiceProvider serviceProvider
             WHERE sm.IsActive = 1 AND sm.IsTracked = 0
             GROUP BY sm.ImportanceScore
             ORDER BY sm.ImportanceScore DESC;
-
-            -- Coverage by decade (records per decade)
-            SELECT
-                (YEAR(EffectiveDate) / 10) * 10 AS Decade,
-                COUNT(*) AS Records,
-                COUNT(DISTINCT SecurityAlias) AS Securities,
-                COUNT(DISTINCT EffectiveDate) AS TradingDays,
-                MIN(EffectiveDate) AS FirstDate,
-                MAX(EffectiveDate) AS LastDate
-            FROM data.Prices WITH (NOLOCK)
-            GROUP BY (YEAR(EffectiveDate) / 10) * 10
-            ORDER BY Decade DESC;
-
-            -- Coverage by year (for heatmap)
-            SELECT
-                YEAR(EffectiveDate) AS Year,
-                COUNT(*) AS Records,
-                COUNT(DISTINCT SecurityAlias) AS Securities,
-                COUNT(DISTINCT EffectiveDate) AS TradingDays
-            FROM data.Prices WITH (NOLOCK)
-            GROUP BY YEAR(EffectiveDate)
-            ORDER BY Year DESC;
         ";
         cmd.CommandTimeout = 60;
 
-        // Parse all result sets
         object? universeData = null;
         object? pricesData = null;
         var tiers = new List<object>();
-        var decades = new List<object>();
-        var years = new List<object>();
 
         using var reader = await cmd.ExecuteReaderAsync();
 
@@ -2626,39 +2608,43 @@ app.MapGet("/api/admin/dashboard/stats", async (IServiceProvider serviceProvider
             }
         }
 
-        // Result set 4: Coverage by decade
-        if (await reader.NextResultAsync())
-        {
-            while (await reader.ReadAsync())
-            {
-                decades.Add(new
-                {
-                    decade = $"{reader.GetInt32(0)}s",
-                    records = reader.GetInt32(1),
-                    securities = reader.GetInt32(2),
-                    tradingDays = reader.GetInt32(3),
-                    firstDate = reader.GetDateTime(4).ToString("yyyy-MM-dd"),
-                    lastDate = reader.GetDateTime(5).ToString("yyyy-MM-dd")
-                });
-            }
-        }
+        // Close reader before querying CoverageSummary via EF (can't have two open readers)
+        await reader.CloseAsync();
 
-        // Result set 5: Coverage by year
-        if (await reader.NextResultAsync())
-        {
-            while (await reader.ReadAsync())
-            {
-                years.Add(new
-                {
-                    year = reader.GetInt32(0),
-                    records = reader.GetInt32(1),
-                    securities = reader.GetInt32(2),
-                    tradingDays = reader.GetInt32(3)
-                });
-            }
-        }
+        // Result sets 4-5: Read from CoverageSummary table (instant, avoids YEAR() full scan)
+        var summaryRows = await context.CoverageSummary
+            .OrderByDescending(s => s.Year)
+            .ToListAsync();
 
-        return Results.Ok(new
+        // Build decade coverage from summary
+        var decades = summaryRows
+            .GroupBy(r => (r.Year / 10) * 10)
+            .OrderByDescending(g => g.Key)
+            .Select(g => new
+            {
+                decade = $"{g.Key}s",
+                records = g.Sum(r => r.TrackedRecords + r.UntrackedRecords),
+                securities = g.Sum(r => r.TrackedSecurities + r.UntrackedSecurities),
+                tradingDays = g.Max(r => r.TradingDays),
+                firstDate = $"{g.Key}-01-01",
+                lastDate = $"{g.Key + 9}-12-31"
+            })
+            .ToList();
+
+        // Build year coverage from summary
+        var years = summaryRows
+            .GroupBy(r => r.Year)
+            .OrderByDescending(g => g.Key)
+            .Select(g => new
+            {
+                year = g.Key,
+                records = g.Sum(r => r.TrackedRecords + r.UntrackedRecords),
+                securities = g.Sum(r => r.TrackedSecurities + r.UntrackedSecurities),
+                tradingDays = g.Max(r => r.TradingDays)
+            })
+            .ToList();
+
+        var result = new
         {
             success = true,
             timestamp = DateTime.UtcNow.ToString("o"),
@@ -2667,7 +2653,10 @@ app.MapGet("/api/admin/dashboard/stats", async (IServiceProvider serviceProvider
             importanceTiers = tiers,
             coverageByDecade = decades,
             coverageByYear = years
-        });
+        };
+
+        cache.Set(cacheKey, result, TimeSpan.FromMinutes(10));
+        return Results.Ok(result);
     }
     catch (Exception ex)
     {
@@ -2679,8 +2668,79 @@ app.MapGet("/api/admin/dashboard/stats", async (IServiceProvider serviceProvider
 .Produces(StatusCodes.Status200OK);
 
 // GET /api/admin/dashboard/heatmap - Bivariate heatmap data (Year x ImportanceScore)
-// Returns tracked/untracked record counts per (year, score) cell for the coverage heatmap
-app.MapGet("/api/admin/dashboard/heatmap", async (IServiceProvider serviceProvider) =>
+// Reads from pre-aggregated CoverageSummary table for instant response on Azure SQL Basic tier.
+// Call POST /api/admin/dashboard/refresh-summary to populate/refresh the summary table.
+app.MapGet("/api/admin/dashboard/heatmap", async (IServiceProvider serviceProvider, IMemoryCache cache) =>
+{
+    const string cacheKey = "dashboard:heatmap";
+    if (cache.TryGetValue(cacheKey, out object? cached) && cached != null)
+        return Results.Ok(cached);
+
+    using var scope = serviceProvider.CreateScope();
+    var context = scope.ServiceProvider.GetService<StockAnalyzerDbContext>();
+
+    if (context == null)
+        return Results.BadRequest(new { error = "Database context not configured" });
+
+    try
+    {
+        var summaryRows = await context.CoverageSummary
+            .OrderBy(s => s.Year).ThenBy(s => s.ImportanceScore)
+            .ToListAsync();
+
+        if (!summaryRows.Any())
+        {
+            var emptyResult = new
+            {
+                success = true,
+                cells = new List<object>(),
+                metadata = new { minYear = 0, maxYear = 0, totalCells = 0, maxTrackedRecords = 0L, maxUntrackedRecords = 0L },
+                stale = true,
+                message = "Summary table empty. Call POST /api/admin/dashboard/refresh-summary to populate."
+            };
+            return Results.Ok(emptyResult);
+        }
+
+        var cells = summaryRows.Select(r => new
+        {
+            year = r.Year,
+            score = r.ImportanceScore,
+            trackedRecords = r.TrackedRecords,
+            untrackedRecords = r.UntrackedRecords,
+            trackedSecurities = r.TrackedSecurities,
+            untrackedSecurities = r.UntrackedSecurities
+        }).ToList();
+
+        var result = new
+        {
+            success = true,
+            cells,
+            metadata = new
+            {
+                minYear = summaryRows.Min(r => r.Year),
+                maxYear = summaryRows.Max(r => r.Year),
+                totalCells = summaryRows.Count,
+                maxTrackedRecords = summaryRows.Max(r => r.TrackedRecords),
+                maxUntrackedRecords = summaryRows.Max(r => r.UntrackedRecords)
+            }
+        };
+
+        cache.Set(cacheKey, result, TimeSpan.FromMinutes(30));
+        return Results.Ok(result);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("GetDashboardHeatmap")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK);
+
+// POST /api/admin/dashboard/refresh-summary - Refresh the CoverageSummary pre-aggregation table
+// Runs the expensive aggregation query on data.Prices (may take 2-5 min on Azure SQL Basic tier).
+// Call after deployments and after crawl sessions to keep heatmap data current.
+app.MapPost("/api/admin/dashboard/refresh-summary", async (IServiceProvider serviceProvider, IMemoryCache cache) =>
 {
     using var scope = serviceProvider.CreateScope();
     var context = scope.ServiceProvider.GetService<StockAnalyzerDbContext>();
@@ -2701,7 +2761,8 @@ app.MapGet("/api/admin/dashboard/heatmap", async (IServiceProvider serviceProvid
                 SUM(CASE WHEN sm.IsTracked = 1 THEN 1 ELSE 0 END) AS TrackedRecords,
                 SUM(CASE WHEN sm.IsTracked = 0 THEN 1 ELSE 0 END) AS UntrackedRecords,
                 COUNT(DISTINCT CASE WHEN sm.IsTracked = 1 THEN sm.SecurityAlias END) AS TrackedSecurities,
-                COUNT(DISTINCT CASE WHEN sm.IsTracked = 0 THEN sm.SecurityAlias END) AS UntrackedSecurities
+                COUNT(DISTINCT CASE WHEN sm.IsTracked = 0 THEN sm.SecurityAlias END) AS UntrackedSecurities,
+                COUNT(DISTINCT p.EffectiveDate) AS TradingDays
             FROM data.Prices p WITH (NOLOCK)
             INNER JOIN data.SecurityMaster sm WITH (NOLOCK)
                 ON p.SecurityAlias = sm.SecurityAlias
@@ -2709,57 +2770,53 @@ app.MapGet("/api/admin/dashboard/heatmap", async (IServiceProvider serviceProvid
             GROUP BY YEAR(p.EffectiveDate), sm.ImportanceScore
             ORDER BY [Year], Score;
         ";
-        cmd.CommandTimeout = 120;
+        cmd.CommandTimeout = 300; // 5 min — this is the expensive query, runs infrequently
 
-        var cells = new List<object>();
-        long maxTrackedRecords = 0;
-        long maxUntrackedRecords = 0;
-        int minYear = int.MaxValue;
-        int maxYear = int.MinValue;
-
+        var rows = new List<CoverageSummaryEntity>();
         using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
-            var year = reader.GetInt32(0);
-            var trackedRec = reader.GetInt32(2);
-            var untrackedRec = reader.GetInt32(3);
-
-            if (year < minYear) minYear = year;
-            if (year > maxYear) maxYear = year;
-            if (trackedRec > maxTrackedRecords) maxTrackedRecords = trackedRec;
-            if (untrackedRec > maxUntrackedRecords) maxUntrackedRecords = untrackedRec;
-
-            cells.Add(new
+            rows.Add(new CoverageSummaryEntity
             {
-                year,
-                score = reader.GetInt32(1),
-                trackedRecords = trackedRec,
-                untrackedRecords = untrackedRec,
-                trackedSecurities = reader.GetInt32(4),
-                untrackedSecurities = reader.GetInt32(5)
+                Year = reader.GetInt32(0),
+                ImportanceScore = reader.GetInt32(1),
+                TrackedRecords = reader.GetInt32(2),
+                UntrackedRecords = reader.GetInt32(3),
+                TrackedSecurities = reader.GetInt32(4),
+                UntrackedSecurities = reader.GetInt32(5),
+                TradingDays = reader.GetInt32(6),
+                LastUpdatedAt = DateTime.UtcNow
             });
         }
+
+        // Close the reader before executing DML
+        await reader.CloseAsync();
+
+        // Delete existing rows and re-insert
+        await context.Database.ExecuteSqlRawAsync("DELETE FROM data.CoverageSummary");
+        context.CoverageSummary.AddRange(rows);
+        await context.SaveChangesAsync();
+
+        // Invalidate caches
+        cache.Remove("dashboard:heatmap");
+        cache.Remove("dashboard:stats");
+
+        Log.Information("Refreshed CoverageSummary: {CellCount} cells", rows.Count);
 
         return Results.Ok(new
         {
             success = true,
-            cells,
-            metadata = new
-            {
-                minYear = cells.Count > 0 ? minYear : 0,
-                maxYear = cells.Count > 0 ? maxYear : 0,
-                totalCells = cells.Count,
-                maxTrackedRecords,
-                maxUntrackedRecords
-            }
+            message = $"Refreshed {rows.Count} summary cells",
+            cellCount = rows.Count
         });
     }
     catch (Exception ex)
     {
+        Log.Error(ex, "Failed to refresh coverage summary");
         return Results.Problem(ex.Message);
     }
 })
-.WithName("GetDashboardHeatmap")
+.WithName("RefreshDashboardSummary")
 .WithOpenApi()
 .Produces(StatusCodes.Status200OK);
 

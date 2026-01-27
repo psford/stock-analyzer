@@ -1,6 +1,6 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.26
+**Version:** 2.27
 **Last Updated:** 2026-01-27
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
@@ -2162,20 +2162,40 @@ Maintains the historical price database with automatic daily updates.
 | `POST /api/admin/securities/reset-unavailable` | Reset IsEodhdUnavailable flag (query: `days`, `all`) |
 | `GET /api/admin/dashboard/stats` | Consolidated dashboard stats: universe, prices, tiers, decade/year coverage |
 | `GET /api/admin/dashboard/heatmap` | Bivariate heatmap data: Year x ImportanceScore with tracked/untracked split |
+| `POST /api/admin/dashboard/refresh-summary` | Refresh the CoverageSummary pre-aggregation table |
 
 **Dashboard Stats (`/api/admin/dashboard/stats`):**
-- Single consolidated endpoint returning all dashboard metrics in one query batch (5 SQL result sets)
+- Consolidated endpoint returning all dashboard metrics
+- Result sets 1-3 use direct SQL (SecurityMaster counts, Prices aggregate, tier distribution)
+- Result sets 4-5 (decade/year coverage) read from `data.CoverageSummary` table (instant)
+- **Caching:** `IMemoryCache` with 10-minute TTL (key: `dashboard:stats`)
 - Used by EODHD Loader's Data Command Center UI
 - Returns: universe counts (total/tracked/untracked/unavailable), price record stats (total/distinct/oldest/latest), ImportanceScore tier distribution with completion status, coverage by decade, coverage by year
-- **Performance:** 60s query timeout, all tables use `WITH (NOLOCK)` for read consistency
+- **Performance:** 60s query timeout for direct SQL; summary table reads are instant
 - **Response structure:** `{ success, timestamp, universe, prices, importanceTiers[], coverageByDecade[], coverageByYear[] }`
 
 **Heatmap Data (`/api/admin/dashboard/heatmap`):**
-- Returns Year x ImportanceScore cross-tabulation with tracked/untracked price record counts
+- Reads from pre-aggregated `data.CoverageSummary` table (instant response, even on Azure SQL Basic tier)
+- **Caching:** `IMemoryCache` with 30-minute TTL (key: `dashboard:heatmap`)
+- If summary table is empty, returns `stale: true` with guidance to call `refresh-summary`
 - Used by EODHD Loader's bivariate coverage heatmap (SkiaSharp custom control)
-- SQL: `GROUP BY YEAR(p.EffectiveDate), sm.ImportanceScore` with tracked/untracked splits via `CASE WHEN sm.IsTracked`
 - Response: `{ success, cells[{ year, score, trackedRecords, untrackedRecords, trackedSecurities, untrackedSecurities }], metadata{ minYear, maxYear, totalCells, maxTrackedRecords, maxUntrackedRecords } }`
-- ~230 cells (47 years × ~5 populated scores); 120s query timeout
+- ~230 cells (47 years × ~5 populated scores)
+
+**Refresh Summary (`/api/admin/dashboard/refresh-summary`):**
+- Runs the expensive aggregation query on `data.Prices` × `data.SecurityMaster` and writes results to `data.CoverageSummary`
+- **5-minute timeout** — designed for infrequent execution (post-deploy, post-crawl)
+- SQL: `GROUP BY YEAR(p.EffectiveDate), sm.ImportanceScore` with tracked/untracked splits, COUNT(DISTINCT) for securities, COUNT(DISTINCT EffectiveDate) for trading days
+- Invalidates both `dashboard:heatmap` and `dashboard:stats` cache keys on completion
+- Returns: `{ success, message, cellCount }`
+- **When to call:** After deployment, after running calculate-importance, after crawl sessions
+
+**CoverageSummary Table (`data.CoverageSummary`):**
+- Pre-aggregated Year × ImportanceScore grid (~500 rows max: ~50 years × 10 scores)
+- Columns: Id (PK), Year, ImportanceScore, TrackedRecords, UntrackedRecords, TrackedSecurities, UntrackedSecurities, TradingDays, LastUpdatedAt
+- Unique index on `(Year, ImportanceScore)` — each cell has exactly one row
+- **Purpose:** Avoids expensive full-table scans on the 3.5M+ row Prices table; critical for Azure SQL Basic tier (5 DTU)
+- Populated by `POST /api/admin/dashboard/refresh-summary`; consumed by heatmap and stats endpoints
 
 **Reset Unavailable (`/api/admin/securities/reset-unavailable`):**
 - Resets `IsEodhdUnavailable = false` for securities incorrectly marked unavailable
@@ -2609,6 +2629,7 @@ const [stockInfo, history, analysis, significantMoves, news] = await Promise.all
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.27 | 2026-01-27 | **CoverageSummary Pre-Aggregation Table:** New `data.CoverageSummary` table (~500 rows) via EF Core migration to avoid expensive full-table scans on 3.5M+ row Prices table. Critical for Azure SQL Basic tier (5 DTU) where the original `GROUP BY YEAR()` + `COUNT(DISTINCT)` aggregation query timed out. **Heatmap endpoint rewritten** to read from summary table + `IMemoryCache` (30 min TTL). **Stats endpoint optimized:** result sets 4-5 (decade/year coverage) now read from summary table; `IMemoryCache` added (10 min TTL). **New `POST /api/admin/dashboard/refresh-summary` endpoint** runs the expensive aggregation once and writes results to `data.CoverageSummary`. **Build-Boris.ps1 helper script** parses TargetFramework from csproj to dynamically resolve correct build output path, preventing stale shortcut issues when TFM changes. |
 | 2.26 | 2026-01-27 | **Bivariate Coverage Heatmap:** New `/api/admin/dashboard/heatmap` endpoint returning Year × ImportanceScore cross-tabulation with tracked/untracked split. Custom SkiaSharp heatmap control (`CoverageHeatmapControl.cs`) with bivariate color mapping (blue=tracked, yellow=untracked, green=both), pulsing active cell indicator (sine-wave animation at 30fps), live cell updates during crawling, hover tooltips, and bivariate legend. **Future Date Bug Fix:** Capped `LastDate` at `GETDATE()` in gaps CTE and specific dates endpoint to prevent crawler from requesting future dates from EODHD (was causing valid tickers like AA, AG to be incorrectly marked unavailable). **Reset Unavailable Endpoint:** New `POST /api/admin/securities/reset-unavailable` to roll back incorrect IsEodhdUnavailable markings (supports `?days=N` and `?all`). **Calculate-importance expanded** to process ALL active securities (not just untracked) for proper heatmap Y-axis distribution. |
 | 2.25 | 2026-01-27 | **Dashboard Command Center:** New consolidated `/api/admin/dashboard/stats` endpoint returning universe counts, price record stats, ImportanceScore tier distribution, decade coverage, and year-by-year coverage in a single 5-result-set SQL batch. EODHD Loader UI redesigned with LiveChartsCore charts: horizontal bar chart for coverage by decade, stacked column chart for importance tier completion, 6 metric cards (price records, securities, tracked, data span, session, loaded). Target framework updated to `net8.0-windows10.0.19041` for LiveChartsCore.SkiaSharpView.WPF compatibility. |
 | 2.24 | 2026-01-27 | **Gap Query Performance Fix:** Fixed Cloudflare 524 timeout when calling `/api/admin/prices/gaps?includeUntracked=true`. Root cause was expensive `NOT EXISTS` subquery checking 29K securities against 5M+ prices (O(n*m)). Fix: Pre-compute `SecuritiesWithPrices` CTE via `GROUP BY` (single table scan), replace `NOT EXISTS` with `LEFT JOIN + IS NULL` (O(n)). Added third CTE `StaleData` to detect securities with outdated prices (>30 days since last update). Same optimization applied to gap count summary query. |

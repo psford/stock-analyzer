@@ -29,6 +29,9 @@ public class StockAnalyzerDbContext : DbContext
     public DbSet<BusinessCalendarEntity> BusinessCalendar => Set<BusinessCalendarEntity>();
     public DbSet<TrackedSecurityEntity> TrackedSecurities => Set<TrackedSecurityEntity>();
 
+    // Aggregation tables (data schema)
+    public DbSet<CoverageSummaryEntity> CoverageSummary => Set<CoverageSummaryEntity>();
+
     // Staging tables (staging schema)
     public DbSet<PriceStagingEntity> PriceStaging => Set<PriceStagingEntity>();
 
@@ -286,6 +289,20 @@ public class StockAnalyzerDbContext : DbContext
                 .WithOne()
                 .HasForeignKey<TrackedSecurityEntity>(e => e.SecurityAlias)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // CoverageSummary configuration (pre-aggregated heatmap data)
+        modelBuilder.Entity<CoverageSummaryEntity>(entity =>
+        {
+            entity.ToTable("CoverageSummary", "data");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).UseIdentityColumn();
+            entity.Property(e => e.LastUpdatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+            // Each (Year, ImportanceScore) cell has exactly one row
+            entity.HasIndex(e => new { e.Year, e.ImportanceScore })
+                .IsUnique()
+                .HasDatabaseName("IX_CoverageSummary_Year_Score");
         });
 
         // ========================================================================
