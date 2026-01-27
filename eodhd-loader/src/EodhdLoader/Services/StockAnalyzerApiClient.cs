@@ -234,14 +234,14 @@ public class StockAnalyzerApiClient
     // ============================================================================
 
     /// <summary>
-    /// Gets securities with gaps in their price history (Security Master driven).
-    /// Returns securities ordered by tracked status, then priority, then most missing days.
+    /// Gets tracked securities with gaps in their price history.
+    /// Returns securities ordered by priority, then most missing days.
+    /// To load untracked securities, call PromoteUntrackedAsync first.
     /// </summary>
     /// <param name="market">Market filter (default: US)</param>
     /// <param name="limit">Maximum number of securities to return</param>
-    /// <param name="includeUntracked">If true, includes untracked securities (after tracked ones)</param>
     /// <param name="ct">Cancellation token</param>
-    public async Task<PriceGapsResult> GetPriceGapsAsync(string? market = null, int? limit = null, bool includeUntracked = false, CancellationToken ct = default)
+    public async Task<PriceGapsResult> GetPriceGapsAsync(string? market = null, int? limit = null, CancellationToken ct = default)
     {
         if (_httpClient == null)
             return new PriceGapsResult { Success = false, Error = "HttpClient not configured" };
@@ -254,12 +254,24 @@ public class StockAnalyzerApiClient
                 queryParams.Add($"market={market}");
             if (limit.HasValue)
                 queryParams.Add($"limit={limit.Value}");
-            if (includeUntracked)
-                queryParams.Add("includeUntracked=true");
             if (queryParams.Count > 0)
                 url += "?" + string.Join("&", queryParams);
 
             var response = await _httpClient.GetAsync(url, ct);
+
+            // Detect proxy-level timeouts (Azure ARR / Cloudflare)
+            // These mean the server was still working but the reverse proxy gave up
+            var statusCode = (int)response.StatusCode;
+            if (statusCode == 499 || statusCode == 504 || statusCode == 408)
+            {
+                return new PriceGapsResult
+                {
+                    Success = false,
+                    TimedOut = true,
+                    Error = $"Proxy timeout (HTTP {statusCode}). The gap query exceeded the reverse proxy timeout limit."
+                };
+            }
+
             response.EnsureSuccessStatusCode();
 
             var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
@@ -267,9 +279,45 @@ public class StockAnalyzerApiClient
 
             return result ?? new PriceGapsResult { Success = false, Error = "Empty response" };
         }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            // HttpClient timeout (not user cancellation) — treat as timeout
+            return new PriceGapsResult
+            {
+                Success = false,
+                TimedOut = true,
+                Error = $"HTTP client timeout: {ex.Message}"
+            };
+        }
         catch (Exception ex)
         {
             return new PriceGapsResult { Success = false, Error = ex.Message };
+        }
+    }
+
+    /// <summary>
+    /// Promotes untracked securities to tracked status.
+    /// Selects top N by ImportanceScore, marks them as tracked, so the gap query picks them up.
+    /// </summary>
+    /// <param name="count">Number of securities to promote (default: 100, max: 500)</param>
+    /// <param name="ct">Cancellation token</param>
+    public async Task<PromoteResult> PromoteUntrackedAsync(int count = 100, CancellationToken ct = default)
+    {
+        if (_httpClient == null)
+            return new PromoteResult { Success = false, Error = "HttpClient not configured" };
+
+        try
+        {
+            var response = await _httpClient.PostAsync($"/api/admin/securities/promote-untracked?count={count}", null, ct);
+            response.EnsureSuccessStatusCode();
+
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var result = await response.Content.ReadFromJsonAsync<PromoteResult>(options, ct);
+            return result ?? new PromoteResult { Success = false, Error = "Empty response" };
+        }
+        catch (Exception ex)
+        {
+            return new PromoteResult { Success = false, Error = ex.Message };
         }
     }
 
@@ -625,6 +673,24 @@ public class PriceExportInfo
 // ============================================================================
 // Price Monitor DTOs (for Crawler display)
 // ============================================================================
+
+public class PromoteResult
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("promoted")]
+    public int Promoted { get; set; }
+
+    [JsonPropertyName("tickers")]
+    public List<string> Tickers { get; set; } = [];
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+}
 
 public class PriceGapsResult
 {

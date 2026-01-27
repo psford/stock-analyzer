@@ -346,7 +346,7 @@ static IResult InvalidTickerResult() =>
     Results.BadRequest(new { error = "Invalid ticker symbol. Use 1-10 alphanumeric characters, dots, dashes, or carets." });
 
 // GET /api/stock/{ticker} - Get stock information with company profile and identifiers
-app.MapGet("/api/stock/{ticker}", async (string ticker, AggregatedStockDataService stockService, NewsService newsService) =>
+app.MapGet("/api/stock/{ticker}", async (string ticker, AggregatedStockDataService stockService, NewsService newsService, IServiceProvider serviceProvider) =>
 {
     if (!IsValidTicker(ticker))
         return InvalidTickerResult();
@@ -354,6 +354,48 @@ app.MapGet("/api/stock/{ticker}", async (string ticker, AggregatedStockDataServi
     var info = await stockService.GetStockInfoAsync(ticker);
     if (info == null)
         return Results.NotFound(new { error = "Stock not found", symbol = ticker });
+
+    // Auto-track: mark this security as tracked (user interest signal)
+    // Fire-and-forget — don't block the response
+    _ = Task.Run(async () =>
+    {
+        try
+        {
+            using var scope = serviceProvider.CreateScope();
+            var ctx = scope.ServiceProvider.GetService<StockAnalyzerDbContext>();
+            if (ctx == null) return;
+
+            var security = await ctx.SecurityMaster
+                .FirstOrDefaultAsync(s => s.TickerSymbol == ticker && s.IsActive && !s.IsTracked);
+            if (security != null)
+            {
+                security.IsTracked = true;
+                security.UpdatedAt = DateTime.UtcNow;
+
+                // Also add to TrackedSecurities detail table if not already present
+                var alreadyTracked = await ctx.TrackedSecurities
+                    .AnyAsync(ts => ts.SecurityAlias == security.SecurityAlias);
+                if (!alreadyTracked)
+                {
+                    ctx.TrackedSecurities.Add(new TrackedSecurityEntity
+                    {
+                        SecurityAlias = security.SecurityAlias,
+                        Source = "user-search",
+                        Priority = 3,
+                        Notes = "Auto-tracked from web UI stock lookup",
+                        AddedBy = "web-ui"
+                    });
+                }
+
+                await ctx.SaveChangesAsync();
+                Log.Information("Auto-tracked {Ticker} from web UI stock lookup", ticker);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to auto-track {Ticker} from web UI", ticker);
+        }
+    });
 
     // Fetch company profile from Finnhub (includes ISIN, CUSIP, company name)
     var profile = await newsService.GetCompanyProfileAsync(ticker);
@@ -1681,10 +1723,10 @@ app.MapGet("/api/admin/data/prices/monitor", async (IServiceProvider serviceProv
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status500InternalServerError);
 
-// GET /api/admin/prices/gaps - Find missing price data for securities
-// By default only checks tracked securities (IsTracked = 1)
-// Set includeUntracked=true to also include untracked securities (prioritized after tracked)
-app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, string? market, int? limit, bool? includeUntracked) =>
+// GET /api/admin/prices/gaps - Find missing price data for tracked securities
+// Only checks tracked securities (IsTracked = 1), including those with zero price data.
+// To load untracked securities, use POST /api/admin/securities/promote-untracked first.
+app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, string? market, int? limit) =>
 {
     using var scope = serviceProvider.CreateScope();
     var context = scope.ServiceProvider.GetService<StockAnalyzerDbContext>();
@@ -1699,25 +1741,13 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
 
         var marketFilter = market?.ToUpperInvariant() ?? "US";
         var maxResults = limit ?? 50;
-        var includeUntrackedSecurities = includeUntracked ?? false;
-
-        // Strategy: Find securities with gaps in their price history
-        // When includeUntracked=false (default): Only tracked securities (IsTracked = 1)
-        // When includeUntracked=true: All active securities, but tracked ones come first
-        //
-        // Performance optimization for Azure SQL Basic (5 DTU):
-        // Internal gap analysis (comparing expected vs actual business days) is ONLY done for
-        // tracked securities (~420). This avoids expensive correlated subqueries across 23K+ securities.
-        // Untracked securities are detected via lighter queries: NoPriceData and StaleData.
 
         using var cmd = connection.CreateCommand();
 
-        // Two query paths optimized for Azure SQL Basic (5 DTU):
-        // Path A (tracked only): Lean query with no 5.2M-row Prices scan
-        // Path B (include untracked): Full query with SecuritiesWithPrices CTE
-        if (includeUntrackedSecurities)
-        {
-            cmd.CommandText = @"
+        // Tracked-only gap query with two sources:
+        // 1. Tracked securities with price data but internal gaps (INNER JOIN Prices)
+        // 2. Tracked securities with zero price data (NOT EXISTS Prices)
+        cmd.CommandText = @"
                 WITH TwoYearBusinessDays AS (
                     SELECT COUNT(*) AS DayCount
                     FROM data.BusinessCalendar bc WITH (NOLOCK)
@@ -1725,13 +1755,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                       AND bc.EffectiveDate >= DATEADD(YEAR, -2, GETDATE())
                       AND bc.EffectiveDate <= GETDATE()
                 ),
-                SecuritiesWithPrices AS (
-                    SELECT SecurityAlias, MAX(EffectiveDate) AS LatestPriceDate
-                    FROM data.Prices WITH (NOLOCK)
-                    GROUP BY SecurityAlias
-                ),
                 SecurityDateRange AS (
-                    -- Internal gap analysis: tracked only (avoids 23K+ correlated subqueries)
                     SELECT
                         sm.SecurityAlias, sm.TickerSymbol, sm.IsTracked, sm.SecurityType,
                         sm.ImportanceScore, COALESCE(ts.Priority, 999) AS Priority,
@@ -1751,84 +1775,35 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                            AND bc.EffectiveDate <= sdr.LastDate) AS ExpectedPriceCount
                     FROM SecurityDateRange sdr
                 ),
-                GapsInExistingData AS (
+                TrackedWithGaps AS (
                     SELECT SecurityAlias, TickerSymbol, IsTracked, SecurityType, ImportanceScore,
                            Priority, FirstDate, LastDate, ActualPriceCount, ExpectedPriceCount,
                            (ExpectedPriceCount - ActualPriceCount) AS MissingDays
                     FROM ExpectedCounts WHERE ExpectedPriceCount > ActualPriceCount
                 ),
-                NoPriceData AS (
-                    SELECT sm.SecurityAlias, sm.TickerSymbol, sm.IsTracked, sm.SecurityType,
+                TrackedNoPrices AS (
+                    SELECT sm.SecurityAlias, sm.TickerSymbol, CAST(1 AS BIT) AS IsTracked, sm.SecurityType,
                            sm.ImportanceScore, COALESCE(ts.Priority, 999) AS Priority,
-                           DATEADD(YEAR, -2, GETDATE()) AS FirstDate, CAST(GETDATE() AS DATE) AS LastDate,
+                           CAST(DATEADD(YEAR, -2, GETDATE()) AS DATE) AS FirstDate,
+                           CAST(GETDATE() AS DATE) AS LastDate,
                            0 AS ActualPriceCount,
                            (SELECT DayCount FROM TwoYearBusinessDays) AS ExpectedPriceCount,
                            (SELECT DayCount FROM TwoYearBusinessDays) AS MissingDays
                     FROM data.SecurityMaster sm WITH (NOLOCK)
-                    LEFT JOIN SecuritiesWithPrices swp ON swp.SecurityAlias = sm.SecurityAlias
                     LEFT JOIN data.TrackedSecurities ts WITH (NOLOCK) ON ts.SecurityAlias = sm.SecurityAlias
-                    WHERE sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0 AND sm.IsTracked = 0
-                      AND swp.SecurityAlias IS NULL
+                    WHERE sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0 AND sm.IsTracked = 1
+                      AND NOT EXISTS (SELECT 1 FROM data.Prices p WITH (NOLOCK) WHERE p.SecurityAlias = sm.SecurityAlias)
                 ),
-                StaleData AS (
-                    SELECT sm.SecurityAlias, sm.TickerSymbol, sm.IsTracked, sm.SecurityType,
-                           sm.ImportanceScore, COALESCE(ts.Priority, 999) AS Priority,
-                           swp.LatestPriceDate AS FirstDate, CAST(GETDATE() AS DATE) AS LastDate,
-                           0 AS ActualPriceCount,
-                           DATEDIFF(DAY, swp.LatestPriceDate, GETDATE()) AS ExpectedPriceCount,
-                           DATEDIFF(DAY, swp.LatestPriceDate, GETDATE()) AS MissingDays
-                    FROM data.SecurityMaster sm WITH (NOLOCK)
-                    INNER JOIN SecuritiesWithPrices swp ON swp.SecurityAlias = sm.SecurityAlias
-                    LEFT JOIN data.TrackedSecurities ts WITH (NOLOCK) ON ts.SecurityAlias = sm.SecurityAlias
-                    WHERE sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0 AND sm.IsTracked = 0
-                      AND swp.LatestPriceDate < DATEADD(DAY, -30, GETDATE())
-                      AND sm.SecurityAlias NOT IN (SELECT SecurityAlias FROM GapsInExistingData)
-                ),
-                AllGaps AS (
-                    SELECT * FROM GapsInExistingData UNION ALL
-                    SELECT * FROM NoPriceData UNION ALL
-                    SELECT * FROM StaleData
+                AllTrackedGaps AS (
+                    SELECT * FROM TrackedWithGaps
+                    UNION ALL
+                    SELECT * FROM TrackedNoPrices
                 )
                 SELECT TOP (@limit)
                     SecurityAlias, TickerSymbol, IsTracked, FirstDate, LastDate,
                     ActualPriceCount, ExpectedPriceCount, MissingDays, ImportanceScore
-                FROM AllGaps
-                ORDER BY IsTracked DESC, Priority, ImportanceScore DESC,
-                    CASE WHEN SecurityType = 'Common Stock' THEN 0 ELSE 1 END,
-                    LEN(TickerSymbol), MissingDays DESC, TickerSymbol";
-        }
-        else
-        {
-            // Tracked-only: lean query — no SecuritiesWithPrices scan (saves ~90s on 5 DTU)
-            cmd.CommandText = @"
-                WITH SecurityDateRange AS (
-                    SELECT
-                        sm.SecurityAlias, sm.TickerSymbol, sm.IsTracked, sm.SecurityType,
-                        sm.ImportanceScore, COALESCE(ts.Priority, 999) AS Priority,
-                        MIN(p.EffectiveDate) AS FirstDate,
-                        CASE WHEN MAX(p.EffectiveDate) > CAST(GETDATE() AS DATE)
-                             THEN CAST(GETDATE() AS DATE) ELSE MAX(p.EffectiveDate) END AS LastDate,
-                        COUNT(CASE WHEN p.EffectiveDate <= CAST(GETDATE() AS DATE) THEN 1 END) AS ActualPriceCount
-                    FROM data.SecurityMaster sm WITH (NOLOCK)
-                    INNER JOIN data.Prices p WITH (NOLOCK) ON p.SecurityAlias = sm.SecurityAlias
-                    LEFT JOIN data.TrackedSecurities ts WITH (NOLOCK) ON ts.SecurityAlias = sm.SecurityAlias
-                    WHERE sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0 AND sm.IsTracked = 1
-                    GROUP BY sm.SecurityAlias, sm.TickerSymbol, sm.IsTracked, sm.SecurityType, sm.ImportanceScore, ts.Priority
-                ),
-                ExpectedCounts AS (
-                    SELECT sdr.*, (SELECT COUNT(*) FROM data.BusinessCalendar bc WITH (NOLOCK)
-                         WHERE bc.IsBusinessDay = 1 AND bc.EffectiveDate >= sdr.FirstDate
-                           AND bc.EffectiveDate <= sdr.LastDate) AS ExpectedPriceCount
-                    FROM SecurityDateRange sdr
-                )
-                SELECT TOP (@limit)
-                    SecurityAlias, TickerSymbol, IsTracked, FirstDate, LastDate,
-                    ActualPriceCount, ExpectedPriceCount,
-                    (ExpectedPriceCount - ActualPriceCount) AS MissingDays, ImportanceScore
-                FROM ExpectedCounts
-                WHERE ExpectedPriceCount > ActualPriceCount
+                FROM AllTrackedGaps
                 ORDER BY Priority, MissingDays DESC, TickerSymbol";
-        }
 
         var limitParam = cmd.CreateParameter();
         limitParam.ParameterName = "@limit";
@@ -1868,96 +1843,49 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
         int totalUntrackedWithGaps = 0;
         int totalAllMissingDays = 0;
 
-        // Count ALL securities with gaps (not limited by TOP clause)
+        // Count ALL tracked securities with gaps (not limited by TOP clause)
         using (var gapCountCmd = connection.CreateCommand())
         {
-            if (includeUntrackedSecurities)
-            {
-                gapCountCmd.CommandText = @"
+            gapCountCmd.CommandText = @"
                     WITH TwoYearBusinessDays AS (
                         SELECT COUNT(*) AS DayCount FROM data.BusinessCalendar bc WITH (NOLOCK)
                         WHERE bc.IsBusinessDay = 1 AND bc.EffectiveDate >= DATEADD(YEAR, -2, GETDATE())
                           AND bc.EffectiveDate <= GETDATE()
                     ),
-                    SecuritiesWithPrices AS (
-                        SELECT SecurityAlias, MAX(EffectiveDate) AS LatestPriceDate
-                        FROM data.Prices WITH (NOLOCK) GROUP BY SecurityAlias
-                    ),
                     SecurityDateRange AS (
-                        SELECT sm.SecurityAlias, sm.IsTracked,
+                        SELECT sm.SecurityAlias,
                                MIN(p.EffectiveDate) AS FirstDate, MAX(p.EffectiveDate) AS LastDate,
                                COUNT(*) AS ActualPriceCount
                         FROM data.SecurityMaster sm WITH (NOLOCK)
                         INNER JOIN data.Prices p WITH (NOLOCK) ON p.SecurityAlias = sm.SecurityAlias
                         WHERE sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0 AND sm.IsTracked = 1
-                        GROUP BY sm.SecurityAlias, sm.IsTracked
+                        GROUP BY sm.SecurityAlias
                     ),
                     ExpectedCounts AS (
-                        SELECT sdr.SecurityAlias, sdr.IsTracked, sdr.ActualPriceCount,
+                        SELECT sdr.SecurityAlias, sdr.ActualPriceCount,
                                (SELECT COUNT(*) FROM data.BusinessCalendar bc WITH (NOLOCK)
                                 WHERE bc.IsBusinessDay = 1 AND bc.EffectiveDate >= sdr.FirstDate
                                   AND bc.EffectiveDate <= sdr.LastDate) AS ExpectedPriceCount
                         FROM SecurityDateRange sdr
                     ),
-                    GapsInExistingData AS (
-                        SELECT SecurityAlias, IsTracked, (ExpectedPriceCount - ActualPriceCount) AS MissingDays
+                    TrackedWithInternalGaps AS (
+                        SELECT COUNT(*) AS GapCount,
+                               SUM(ExpectedPriceCount - ActualPriceCount) AS MissingDays
                         FROM ExpectedCounts WHERE ExpectedPriceCount > ActualPriceCount
                     ),
-                    NoPriceData AS (
-                        SELECT sm.SecurityAlias, sm.IsTracked,
-                               (SELECT DayCount FROM TwoYearBusinessDays) AS MissingDays
+                    TrackedNoPrices AS (
+                        SELECT COUNT(*) AS NoPriceCount,
+                               (SELECT DayCount FROM TwoYearBusinessDays) * COUNT(*) AS MissingDays
                         FROM data.SecurityMaster sm WITH (NOLOCK)
-                        LEFT JOIN SecuritiesWithPrices swp ON swp.SecurityAlias = sm.SecurityAlias
-                        WHERE sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0 AND sm.IsTracked = 0
-                          AND swp.SecurityAlias IS NULL
-                    ),
-                    StaleData AS (
-                        SELECT sm.SecurityAlias, sm.IsTracked,
-                               DATEDIFF(DAY, swp.LatestPriceDate, GETDATE()) AS MissingDays
-                        FROM data.SecurityMaster sm WITH (NOLOCK)
-                        INNER JOIN SecuritiesWithPrices swp ON swp.SecurityAlias = sm.SecurityAlias
-                        WHERE sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0 AND sm.IsTracked = 0
-                          AND swp.LatestPriceDate < DATEADD(DAY, -30, GETDATE())
-                          AND sm.SecurityAlias NOT IN (SELECT SecurityAlias FROM GapsInExistingData)
-                    ),
-                    AllGaps AS (
-                        SELECT * FROM GapsInExistingData UNION ALL
-                        SELECT * FROM NoPriceData UNION ALL
-                        SELECT * FROM StaleData
-                    )
-                    SELECT
-                        SUM(CASE WHEN IsTracked = 1 THEN 1 ELSE 0 END) AS TrackedWithGaps,
-                        SUM(CASE WHEN IsTracked = 0 THEN 1 ELSE 0 END) AS UntrackedWithGaps,
-                        SUM(MissingDays) AS TotalMissingDays
-                    FROM AllGaps";
-            }
-            else
-            {
-                // Tracked-only: lean count query — no SecuritiesWithPrices scan
-                gapCountCmd.CommandText = @"
-                    WITH SecurityDateRange AS (
-                        SELECT sm.SecurityAlias, sm.IsTracked,
-                               MIN(p.EffectiveDate) AS FirstDate, MAX(p.EffectiveDate) AS LastDate,
-                               COUNT(*) AS ActualPriceCount
-                        FROM data.SecurityMaster sm WITH (NOLOCK)
-                        INNER JOIN data.Prices p WITH (NOLOCK) ON p.SecurityAlias = sm.SecurityAlias
                         WHERE sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0 AND sm.IsTracked = 1
-                        GROUP BY sm.SecurityAlias, sm.IsTracked
-                    ),
-                    ExpectedCounts AS (
-                        SELECT sdr.SecurityAlias, sdr.IsTracked, sdr.ActualPriceCount,
-                               (SELECT COUNT(*) FROM data.BusinessCalendar bc WITH (NOLOCK)
-                                WHERE bc.IsBusinessDay = 1 AND bc.EffectiveDate >= sdr.FirstDate
-                                  AND bc.EffectiveDate <= sdr.LastDate) AS ExpectedPriceCount
-                        FROM SecurityDateRange sdr
+                          AND NOT EXISTS (SELECT 1 FROM data.Prices p WITH (NOLOCK) WHERE p.SecurityAlias = sm.SecurityAlias)
                     )
                     SELECT
-                        SUM(CASE WHEN ExpectedPriceCount > ActualPriceCount THEN 1 ELSE 0 END) AS TrackedWithGaps,
+                        ISNULL((SELECT GapCount FROM TrackedWithInternalGaps), 0) +
+                            ISNULL((SELECT NoPriceCount FROM TrackedNoPrices), 0) AS TrackedWithGaps,
                         0 AS UntrackedWithGaps,
-                        SUM(CASE WHEN ExpectedPriceCount > ActualPriceCount
-                            THEN ExpectedPriceCount - ActualPriceCount ELSE 0 END) AS TotalMissingDays
-                    FROM ExpectedCounts";
-            }
+                        ISNULL((SELECT MissingDays FROM TrackedWithInternalGaps), 0) +
+                            ISNULL((SELECT MissingDays FROM TrackedNoPrices), 0) AS TotalMissingDays";
 
             gapCountCmd.CommandTimeout = 300;
 
@@ -1972,27 +1900,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
 
         using (var statsCmd = connection.CreateCommand())
         {
-            if (includeUntrackedSecurities)
-            {
-                statsCmd.CommandText = @"
-                    SELECT
-                        (SELECT COUNT(*) FROM data.SecurityMaster WITH (NOLOCK)
-                         WHERE IsActive = 1 AND IsEodhdUnavailable = 0) AS TotalSecurities,
-                        (SELECT COUNT(DISTINCT p.SecurityAlias) FROM data.Prices p WITH (NOLOCK)
-                         INNER JOIN data.SecurityMaster sm WITH (NOLOCK) ON sm.SecurityAlias = p.SecurityAlias
-                         WHERE sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0) AS SecuritiesWithData,
-                        (SELECT COUNT(*) FROM data.Prices p WITH (NOLOCK)
-                         INNER JOIN data.SecurityMaster sm WITH (NOLOCK) ON sm.SecurityAlias = p.SecurityAlias
-                         WHERE sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0) AS TotalPriceRecords,
-                        (SELECT COUNT(*) FROM data.SecurityMaster WITH (NOLOCK)
-                         WHERE IsActive = 1 AND IsEodhdUnavailable = 0 AND IsTracked = 1) AS TotalTrackedSecurities,
-                        (SELECT COUNT(*) FROM data.SecurityMaster WITH (NOLOCK)
-                         WHERE IsActive = 1 AND IsEodhdUnavailable = 0 AND IsTracked = 0) AS TotalUntrackedSecurities";
-            }
-            else
-            {
-                // Tracked-only: avoid COUNT(DISTINCT) and COUNT(*) on full Prices table
-                statsCmd.CommandText = @"
+            statsCmd.CommandText = @"
                     SELECT
                         (SELECT COUNT(*) FROM data.SecurityMaster WITH (NOLOCK)
                          WHERE IsActive = 1 AND IsEodhdUnavailable = 0 AND IsTracked = 1) AS TotalSecurities,
@@ -2004,8 +1912,8 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                          WHERE sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0 AND sm.IsTracked = 1) AS TotalPriceRecords,
                         (SELECT COUNT(*) FROM data.SecurityMaster WITH (NOLOCK)
                          WHERE IsActive = 1 AND IsEodhdUnavailable = 0 AND IsTracked = 1) AS TotalTrackedSecurities,
-                        0 AS TotalUntrackedSecurities";
-            }
+                        (SELECT COUNT(*) FROM data.SecurityMaster WITH (NOLOCK)
+                         WHERE IsActive = 1 AND IsEodhdUnavailable = 0 AND IsTracked = 0) AS TotalUntrackedSecurities";
 
             statsCmd.CommandTimeout = 300;
 
@@ -2028,7 +1936,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
         {
             success = true,
             market = marketFilter,
-            includeUntracked = includeUntrackedSecurities,
+            includeUntracked = false,
             summary = new
             {
                 totalSecurities,
@@ -2057,7 +1965,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
             error = "Query timed out. The gap analysis query is too expensive for the current database tier.",
             timedOut = true,
             market = market?.ToUpperInvariant() ?? "US",
-            includeUntracked = includeUntracked ?? false,
+            includeUntracked = false,
             gaps = Array.Empty<object>()
         });
     }
@@ -2477,6 +2385,120 @@ app.MapPost("/api/admin/securities/calculate-importance", async (IServiceProvide
     }
 })
 .WithName("CalculateImportanceScores")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status500InternalServerError);
+
+// POST /api/admin/securities/promote-untracked - Promote untracked securities to tracked
+// Selects top N untracked securities by ImportanceScore (highest first), marks them as tracked.
+// Used by the crawler to incrementally grow the tracked universe without expensive gap queries.
+app.MapPost("/api/admin/securities/promote-untracked", async (IServiceProvider serviceProvider, int? count) =>
+{
+    var promoteCount = Math.Clamp(count ?? 100, 1, 500);
+
+    using var scope = serviceProvider.CreateScope();
+    var context = scope.ServiceProvider.GetService<StockAnalyzerDbContext>();
+
+    if (context == null)
+        return Results.BadRequest(new { error = "Database context not configured" });
+
+    try
+    {
+        var connection = context.Database.GetDbConnection();
+        await connection.OpenAsync();
+
+        // Select top N untracked securities by ImportanceScore DESC
+        using var selectCmd = connection.CreateCommand();
+        selectCmd.CommandText = @"
+            SELECT TOP (@count) SecurityAlias, TickerSymbol
+            FROM data.SecurityMaster WITH (NOLOCK)
+            WHERE IsActive = 1 AND IsEodhdUnavailable = 0 AND IsTracked = 0
+            ORDER BY ImportanceScore DESC, TickerSymbol";
+
+        var countParam = selectCmd.CreateParameter();
+        countParam.ParameterName = "@count";
+        countParam.Value = promoteCount;
+        selectCmd.Parameters.Add(countParam);
+
+        var toPromote = new List<(int SecurityAlias, string Ticker)>();
+        using (var reader = await selectCmd.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                toPromote.Add((reader.GetInt32(0), reader.GetString(1)));
+            }
+        }
+
+        if (toPromote.Count == 0)
+        {
+            return Results.Ok(new
+            {
+                success = true,
+                promoted = 0,
+                tickers = Array.Empty<string>(),
+                message = "No untracked securities remaining to promote."
+            });
+        }
+
+        // Insert into TrackedSecurities + update IsTracked flag using temp table
+        using var tx = await connection.BeginTransactionAsync();
+
+        // Create temp table and populate with parameterized inserts
+        using var createTempCmd = connection.CreateCommand();
+        createTempCmd.Transaction = (System.Data.Common.DbTransaction)tx;
+        createTempCmd.CommandText = "CREATE TABLE #PromoteAliases (SecurityAlias INT NOT NULL PRIMARY KEY);";
+        await createTempCmd.ExecuteNonQueryAsync();
+
+        // Insert each alias individually with parameter
+        foreach (var (alias, _) in toPromote)
+        {
+            using var insertAliasCmd = connection.CreateCommand();
+            insertAliasCmd.Transaction = (System.Data.Common.DbTransaction)tx;
+            insertAliasCmd.CommandText = "INSERT INTO #PromoteAliases (SecurityAlias) VALUES (@alias);";
+            var aliasParam = insertAliasCmd.CreateParameter();
+            aliasParam.ParameterName = "@alias";
+            aliasParam.Value = alias;
+            insertAliasCmd.Parameters.Add(aliasParam);
+            await insertAliasCmd.ExecuteNonQueryAsync();
+        }
+
+        // Promote: insert into TrackedSecurities + update IsTracked
+        using var promoteCmd = connection.CreateCommand();
+        promoteCmd.Transaction = (System.Data.Common.DbTransaction)tx;
+        promoteCmd.CommandText = @"
+            INSERT INTO data.TrackedSecurities (SecurityAlias, Source, Priority, Notes, AddedBy)
+            SELECT sm.SecurityAlias, 'auto-promote', 5, 'Promoted from untracked by crawler', 'crawler'
+            FROM data.SecurityMaster sm
+            INNER JOIN #PromoteAliases pa ON pa.SecurityAlias = sm.SecurityAlias
+            WHERE NOT EXISTS (SELECT 1 FROM data.TrackedSecurities ts WHERE ts.SecurityAlias = sm.SecurityAlias);
+
+            UPDATE sm SET sm.IsTracked = 1, sm.UpdatedAt = GETUTCDATE()
+            FROM data.SecurityMaster sm
+            INNER JOIN #PromoteAliases pa ON pa.SecurityAlias = sm.SecurityAlias
+            WHERE sm.IsTracked = 0;";
+
+        await promoteCmd.ExecuteNonQueryAsync();
+        await tx.CommitAsync();
+
+        var tickers = toPromote.Select(t => t.Ticker).ToArray();
+        Log.Information("Promoted {Count} securities to tracked: {Tickers}", tickers.Length, string.Join(", ", tickers.Take(10)));
+
+        return Results.Ok(new
+        {
+            success = true,
+            promoted = tickers.Length,
+            tickers,
+            message = $"Promoted {tickers.Length} securities to tracked status."
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Failed to promote untracked securities");
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("PromoteUntrackedSecurities")
 .WithOpenApi()
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest)
