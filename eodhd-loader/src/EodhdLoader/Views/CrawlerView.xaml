@@ -1,7 +1,8 @@
 <UserControl x:Class="EodhdLoader.Views.CrawlerView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:local="clr-namespace:EodhdLoader">
+             xmlns:local="clr-namespace:EodhdLoader"
+             xmlns:controls="clr-namespace:EodhdLoader.Controls">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisConverter"/>
         <local:InverseBoolConverter x:Key="InverseBoolConverter"/>
@@ -9,40 +10,35 @@
         <local:EnvironmentConverter x:Key="EnvironmentConverter"/>
     </UserControl.Resources>
 
-    <Border Background="#1a1a2e" Padding="20">
+    <Border Background="#0a0a15" Padding="16">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="280"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <!-- Header -->
-            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,16">
-                <TextBlock Text="🕷️" FontSize="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                <StackPanel>
-                    <TextBlock Text="Price Data Crawler" FontSize="20" FontWeight="Bold" Foreground="White"/>
-                    <TextBlock Text="Autonomous gap-filling agent" FontSize="11" Foreground="#888"/>
+            <!-- Row 0: Header + Connection Controls -->
+            <Grid Grid.Row="0" Margin="0,0,0,12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Title -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="DATA COMMAND CENTER" FontSize="18" FontWeight="Bold"
+                               Foreground="White" FontFamily="Consolas" VerticalAlignment="Center"/>
+                    <TextBlock Text="  autonomous gap-filling agent" FontSize="10"
+                               Foreground="#555" VerticalAlignment="Center" Margin="4,2,0,0"/>
                 </StackPanel>
-            </StackPanel>
 
-            <!-- Connection + Controls -->
-            <Border Grid.Row="1" Background="#16213e" CornerRadius="8" Padding="16" Margin="0,0,0,16">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-
-                    <!-- Connection Status -->
-                    <Ellipse Grid.Column="0" Width="12" Height="12" Margin="0,0,8,0">
+                <!-- Controls -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Ellipse Width="10" Height="10" Margin="0,0,6,0">
                         <Ellipse.Style>
                             <Style TargetType="Ellipse">
                                 <Setter Property="Fill" Value="#f44336"/>
@@ -54,41 +50,33 @@
                             </Style>
                         </Ellipse.Style>
                     </Ellipse>
-                    <TextBlock Grid.Column="1" Text="{Binding ConnectionStatus}" Foreground="White"
-                               VerticalAlignment="Center" FontSize="12" Margin="0,0,16,0"/>
-
-                    <!-- Environment Selector -->
-                    <ComboBox Grid.Column="2" SelectedIndex="{Binding SelectedEnvironment, Converter={StaticResource EnvironmentConverter}}"
-                              Width="100" Margin="0,0,10,0" IsEnabled="{Binding IsCrawling, Converter={StaticResource InverseBoolConverter}}">
+                    <TextBlock Text="{Binding ConnectionStatus}" Foreground="#aaa" FontSize="11"
+                               VerticalAlignment="Center" Margin="0,0,12,0"/>
+                    <ComboBox SelectedIndex="{Binding SelectedEnvironment, Converter={StaticResource EnvironmentConverter}}"
+                              Width="90" Margin="0,0,8,0"
+                              IsEnabled="{Binding IsCrawling, Converter={StaticResource InverseBoolConverter}}">
                         <ComboBoxItem Content="Local"/>
                         <ComboBoxItem Content="Production"/>
                     </ComboBox>
-
-                    <!-- Test Button -->
-                    <Button Grid.Column="3" Content="Test" Command="{Binding TestConnectionCommand}"
-                            Width="60" Height="30" Margin="0,0,10,0"
+                    <Button Content="Test" Command="{Binding TestConnectionCommand}"
+                            Width="50" Height="28" Margin="0,0,8,0"
                             Background="#0f3460" Foreground="White" BorderBrush="#1a508b"
                             IsEnabled="{Binding IsCrawling, Converter={StaticResource InverseBoolConverter}}"/>
-
-                    <!-- Start Button -->
-                    <Button Grid.Column="4" Command="{Binding StartCrawlCommand}"
-                            Width="90" Height="30" Margin="0,0,10,0"
-                            Content="▶ START" Background="#4CAF50" Foreground="White"
+                    <Button Command="{Binding StartCrawlCommand}" Width="80" Height="28" Margin="0,0,4,0"
+                            Content="START" Background="#4CAF50" Foreground="White"
                             FontWeight="Bold" BorderBrush="#388E3C"
                             Visibility="{Binding IsCrawling, Converter={StaticResource InverseBoolVisibilityConverter}}"/>
-
-                    <!-- Stop Button -->
-                    <Button Grid.Column="5" Command="{Binding StopCrawlCommand}"
-                            Width="90" Height="30"
-                            Content="■ STOP" Background="#f44336" Foreground="White"
+                    <Button Command="{Binding StopCrawlCommand}" Width="80" Height="28"
+                            Content="STOP" Background="#f44336" Foreground="White"
                             FontWeight="Bold" BorderBrush="#d32f2f"
                             Visibility="{Binding IsCrawling, Converter={StaticResource BoolToVisConverter}}"/>
-                </Grid>
-            </Border>
+                </StackPanel>
+            </Grid>
 
-            <!-- Progress Stats -->
-            <Grid Grid.Row="2" Margin="0,0,0,16">
+            <!-- Row 1: Metric Cards -->
+            <Grid Grid.Row="1" Margin="0,0,0,12">
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
@@ -96,60 +84,103 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- Completion -->
-                <Border Grid.Column="0" Background="#0f3460" CornerRadius="8" Padding="12" Margin="0,0,4,0">
+                <!-- Total Records -->
+                <Border Grid.Column="0" Background="#1a1a2e" CornerRadius="8" Padding="12,10" Margin="0,0,4,0">
                     <StackPanel HorizontalAlignment="Center">
-                        <TextBlock Text="COMPLETE" FontSize="10" Foreground="#888" HorizontalAlignment="Center" FontWeight="Bold"/>
-                        <TextBlock FontSize="24" FontWeight="Bold" Foreground="#4CAF50" HorizontalAlignment="Center" FontFamily="Consolas">
-                            <Run Text="{Binding CompletionPercent, StringFormat={}{0:F1}}"/><Run Text="%"/>
-                        </TextBlock>
-                    </StackPanel>
-                </Border>
-
-                <!-- Securities with Gaps -->
-                <Border Grid.Column="1" Background="#0f3460" CornerRadius="8" Padding="12" Margin="4,0">
-                    <StackPanel HorizontalAlignment="Center">
-                        <TextBlock Text="SECURITIES" FontSize="10" Foreground="#888" HorizontalAlignment="Center" FontWeight="Bold"/>
-                        <TextBlock FontSize="24" FontWeight="Bold" Foreground="#ff6b6b" HorizontalAlignment="Center" FontFamily="Consolas">
-                            <Run Text="{Binding SecuritiesWithGaps}"/><Run Text="/" Foreground="#666"/><Run Text="{Binding TotalSecurities}" Foreground="#666"/>
-                        </TextBlock>
-                    </StackPanel>
-                </Border>
-
-                <!-- Days Missing -->
-                <Border Grid.Column="2" Background="#0f3460" CornerRadius="8" Padding="12" Margin="4,0">
-                    <StackPanel HorizontalAlignment="Center">
-                        <TextBlock Text="MISSING DAYS" FontSize="10" Foreground="#888" HorizontalAlignment="Center" FontWeight="Bold"/>
-                        <TextBlock Text="{Binding TotalMissingDays, StringFormat=N0}" FontSize="24" FontWeight="Bold"
-                                   Foreground="#ff9f43" HorizontalAlignment="Center" FontFamily="Consolas"/>
-                    </StackPanel>
-                </Border>
-
-                <!-- Securities Processed This Session -->
-                <Border Grid.Column="3" Background="#0f3460" CornerRadius="8" Padding="12" Margin="4,0">
-                    <StackPanel HorizontalAlignment="Center">
-                        <TextBlock Text="SESSION" FontSize="10" Foreground="#888" HorizontalAlignment="Center" FontWeight="Bold"/>
-                        <TextBlock Text="{Binding SecuritiesProcessedThisSession, StringFormat=N0}" FontSize="24" FontWeight="Bold"
+                        <TextBlock Text="{Binding TotalRecordsDisplay}" FontSize="22" FontWeight="Bold"
                                    Foreground="#00d4ff" HorizontalAlignment="Center" FontFamily="Consolas"/>
+                        <TextBlock Text="PRICE RECORDS" FontSize="9" Foreground="#666"
+                                   HorizontalAlignment="Center" FontWeight="Bold"/>
+                        <TextBlock FontSize="9" Foreground="#444" HorizontalAlignment="Center">
+                            <Run Text="Latest: "/><Run Text="{Binding LatestDateDisplay, Mode=OneWay}"/>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+                <!-- Total Securities -->
+                <Border Grid.Column="1" Background="#1a1a2e" CornerRadius="8" Padding="12,10" Margin="4,0">
+                    <StackPanel HorizontalAlignment="Center">
+                        <TextBlock Text="{Binding TotalSecuritiesDisplay}" FontSize="22" FontWeight="Bold"
+                                   Foreground="#feca57" HorizontalAlignment="Center" FontFamily="Consolas"/>
+                        <TextBlock Text="SECURITIES" FontSize="9" Foreground="#666"
+                                   HorizontalAlignment="Center" FontWeight="Bold"/>
+                        <TextBlock FontSize="9" Foreground="#444" HorizontalAlignment="Center">
+                            <Run Text="{Binding UnavailableDisplay, Mode=OneWay}"/><Run Text=" unavailable"/>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+                <!-- Tracked -->
+                <Border Grid.Column="2" Background="#1a1a2e" CornerRadius="8" Padding="12,10" Margin="4,0">
+                    <StackPanel HorizontalAlignment="Center">
+                        <TextBlock Text="{Binding TrackedDisplay}" FontSize="22" FontWeight="Bold"
+                                   Foreground="#00ff88" HorizontalAlignment="Center" FontFamily="Consolas"/>
+                        <TextBlock Text="TRACKED" FontSize="9" Foreground="#666"
+                                   HorizontalAlignment="Center" FontWeight="Bold"/>
+                        <TextBlock Text="curated universe" FontSize="9" Foreground="#444" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Data Span -->
+                <Border Grid.Column="3" Background="#1a1a2e" CornerRadius="8" Padding="12,10" Margin="4,0">
+                    <StackPanel HorizontalAlignment="Center">
+                        <TextBlock Text="{Binding DataSpanDisplay}" FontSize="20" FontWeight="Bold"
+                                   Foreground="#ff9f43" HorizontalAlignment="Center" FontFamily="Consolas"/>
+                        <TextBlock Text="DATA SPAN" FontSize="9" Foreground="#666"
+                                   HorizontalAlignment="Center" FontWeight="Bold"/>
+                        <TextBlock Text="historical coverage" FontSize="9" Foreground="#444" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Session Processed -->
+                <Border Grid.Column="4" Background="#1a1a2e" CornerRadius="8" Padding="12,10" Margin="4,0">
+                    <StackPanel HorizontalAlignment="Center">
+                        <TextBlock Text="{Binding SecuritiesProcessedThisSession, StringFormat=N0}" FontSize="22" FontWeight="Bold"
+                                   Foreground="#00d4ff" HorizontalAlignment="Center" FontFamily="Consolas"/>
+                        <TextBlock Text="SESSION" FontSize="9" Foreground="#666"
+                                   HorizontalAlignment="Center" FontWeight="Bold"/>
+                        <TextBlock Text="processed today" FontSize="9" Foreground="#444" HorizontalAlignment="Center"/>
                     </StackPanel>
                 </Border>
 
                 <!-- Records Loaded -->
-                <Border Grid.Column="4" Background="#0f3460" CornerRadius="8" Padding="12" Margin="4,0,0,0">
+                <Border Grid.Column="5" Background="#1a1a2e" CornerRadius="8" Padding="12,10" Margin="4,0,0,0">
                     <StackPanel HorizontalAlignment="Center">
-                        <TextBlock Text="RECORDS" FontSize="10" Foreground="#888" HorizontalAlignment="Center" FontWeight="Bold"/>
-                        <TextBlock Text="{Binding RecordsLoadedThisSession, StringFormat=N0}" FontSize="24" FontWeight="Bold"
+                        <TextBlock Text="{Binding RecordsLoadedThisSession, StringFormat=N0}" FontSize="22" FontWeight="Bold"
                                    Foreground="#feca57" HorizontalAlignment="Center" FontFamily="Consolas"/>
+                        <TextBlock Text="LOADED" FontSize="9" Foreground="#666"
+                                   HorizontalAlignment="Center" FontWeight="Bold"/>
+                        <TextBlock Text="this session" FontSize="9" Foreground="#444" HorizontalAlignment="Center"/>
                     </StackPanel>
                 </Border>
             </Grid>
 
-            <!-- Current Activity -->
-            <Border Grid.Row="3" Background="#16213e" CornerRadius="8" Padding="16" Margin="0,0,0,16">
+            <!-- Row 2: Coverage Heatmap (Year x ImportanceScore) -->
+            <Border Grid.Row="2" Background="#1a1a2e" CornerRadius="8" Padding="12,8" Margin="0,0,0,12">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="4,0,0,4">
+                        <TextBlock Text="COVERAGE HEATMAP" FontSize="10" Foreground="#888" FontWeight="Bold"/>
+                        <TextBlock Text="  Year x Importance Score" FontSize="9" Foreground="#555"/>
+                    </StackPanel>
+                    <controls:CoverageHeatmapControl Grid.Row="1"
+                        HeatmapData="{Binding HeatmapData}"
+                        IsLoading="{Binding IsHeatmapLoading}"
+                        ActiveYear="{Binding ActiveHeatmapYear}"
+                        ActiveScore="{Binding ActiveHeatmapScore}"/>
+                </Grid>
+            </Border>
+
+            <!-- Row 3: Current Activity -->
+            <Border Grid.Row="3" Background="#16213e" CornerRadius="8" Padding="12,8" Margin="0,0,0,8">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
@@ -177,52 +208,55 @@
                                 <RotateTransform/>
                             </TextBlock.RenderTransform>
                         </TextBlock>
-                        <TextBlock Text="{Binding CurrentAction}" Foreground="White" FontSize="14" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding CurrentAction}" Foreground="White" FontSize="13" VerticalAlignment="Center"/>
                     </StackPanel>
 
                     <TextBlock Grid.Column="1" Text="{Binding CurrentTicker}" Foreground="#00d4ff" FontSize="16"
                                FontWeight="Bold" FontFamily="Consolas" HorizontalAlignment="Center" VerticalAlignment="Center"/>
 
-                    <StackPanel Grid.Column="2" Orientation="Horizontal">
-                        <TextBlock Text="Errors: " Foreground="#888" FontSize="12" VerticalAlignment="Center"/>
-                        <TextBlock Text="{Binding ErrorsThisSession}" Foreground="#ff6b6b" FontSize="12"
+                    <TextBlock Grid.Column="2" Text="{Binding CurrentPhase}" Foreground="#ff9f43" FontSize="11"
+                               VerticalAlignment="Center" Margin="0,0,16,0"/>
+
+                    <StackPanel Grid.Column="3" Orientation="Horizontal">
+                        <TextBlock Text="Errors: " Foreground="#666" FontSize="11" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding ErrorsThisSession}" Foreground="#ff6b6b" FontSize="11"
                                    FontWeight="Bold" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Grid>
             </Border>
 
-            <!-- Activity Log -->
-            <Border Grid.Row="4" Background="#16213e" CornerRadius="8" Padding="16">
+            <!-- Row 4: Activity Log -->
+            <Border Grid.Row="4" Background="#1a1a2e" CornerRadius="8" Padding="12,8">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <TextBlock Grid.Row="0" Text="📋 ACTIVITY LOG" FontSize="12" Foreground="White"
-                               FontWeight="Bold" Margin="0,0,0,12"/>
+                    <TextBlock Grid.Row="0" Text="ACTIVITY LOG" FontSize="10" Foreground="#888"
+                               FontWeight="Bold" Margin="4,0,0,8"/>
 
                     <ListBox Grid.Row="1" ItemsSource="{Binding ActivityLog}"
                              Background="Transparent" BorderThickness="0"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <Border Background="#0f3460" CornerRadius="4" Padding="10,6" Margin="0,0,0,4">
+                                <Border Background="#0f3460" CornerRadius="4" Padding="10,5" Margin="0,0,0,3">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="24"/>
+                                            <ColumnDefinition Width="22"/>
                                             <ColumnDefinition Width="140"/>
                                             <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="60"/>
+                                            <ColumnDefinition Width="55"/>
                                         </Grid.ColumnDefinitions>
 
-                                        <TextBlock Grid.Column="0" Text="{Binding Icon}" FontSize="12"/>
+                                        <TextBlock Grid.Column="0" Text="{Binding Icon}" FontSize="11"/>
                                         <TextBlock Grid.Column="1" Text="{Binding Date}" Foreground="#00d4ff"
-                                                   FontFamily="Consolas" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                                   FontFamily="Consolas" FontSize="10" TextTrimming="CharacterEllipsis"/>
                                         <TextBlock Grid.Column="2" Text="{Binding Details}" Foreground="White"
-                                                   FontSize="11" TextTrimming="CharacterEllipsis"/>
-                                        <TextBlock Grid.Column="3" Text="{Binding Timestamp}" Foreground="#666"
-                                                   FontSize="10" HorizontalAlignment="Right"/>
+                                                   FontSize="10" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="3" Text="{Binding Timestamp}" Foreground="#555"
+                                                   FontSize="9" HorizontalAlignment="Right"/>
                                     </Grid>
                                 </Border>
                             </DataTemplate>
@@ -231,9 +265,29 @@
                 </Grid>
             </Border>
 
-            <!-- Status Bar -->
-            <Border Grid.Row="5" Background="#0a0a15" CornerRadius="4" Padding="12,8" Margin="0,16,0,0">
-                <TextBlock Text="{Binding StatusText}" Foreground="#888" FontSize="11" TextTrimming="CharacterEllipsis"/>
+            <!-- Row 5: Status Bar -->
+            <Border Grid.Row="5" Background="#0f0f1a" CornerRadius="4" Padding="10,6" Margin="0,8,0,0">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0" Text="{Binding StatusText}" Foreground="#666" FontSize="10"
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+
+                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        <TextBlock Text="Complete: " Foreground="#444" FontSize="10" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding CompletionPercent, StringFormat={}{0:F1}%}"
+                                   Foreground="#4CAF50" FontSize="10" FontWeight="Bold" VerticalAlignment="Center"/>
+                        <TextBlock Text="  |  Gaps: " Foreground="#444" FontSize="10" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding SecuritiesWithGaps, StringFormat=N0}"
+                                   Foreground="#ff6b6b" FontSize="10" FontWeight="Bold" VerticalAlignment="Center"/>
+                        <TextBlock Text="/" Foreground="#555" FontSize="10" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding TotalSecurities, StringFormat=N0}"
+                                   Foreground="#888" FontSize="10" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Grid>
             </Border>
         </Grid>
     </Border>

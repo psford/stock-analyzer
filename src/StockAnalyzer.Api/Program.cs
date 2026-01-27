@@ -1740,6 +1740,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
             ),
             SecurityDateRange AS (
                 -- Part 1: Securities that HAVE prices - check for internal gaps
+                -- Cap LastDate at today to exclude future price data
                 SELECT
                     sm.SecurityAlias,
                     sm.TickerSymbol,
@@ -1748,8 +1749,10 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                     sm.ImportanceScore,
                     COALESCE(ts.Priority, 999) AS Priority,
                     MIN(p.EffectiveDate) AS FirstDate,
-                    MAX(p.EffectiveDate) AS LastDate,
-                    COUNT(*) AS ActualPriceCount
+                    CASE WHEN MAX(p.EffectiveDate) > CAST(GETDATE() AS DATE)
+                         THEN CAST(GETDATE() AS DATE)
+                         ELSE MAX(p.EffectiveDate) END AS LastDate,
+                    COUNT(CASE WHEN p.EffectiveDate <= CAST(GETDATE() AS DATE) THEN 1 END) AS ActualPriceCount
                 FROM data.SecurityMaster sm WITH (NOLOCK)
                 INNER JOIN data.Prices p WITH (NOLOCK) ON p.SecurityAlias = sm.SecurityAlias
                 LEFT JOIN data.TrackedSecurities ts WITH (NOLOCK) ON ts.SecurityAlias = sm.SecurityAlias
@@ -1857,7 +1860,8 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                 LastDate,
                 ActualPriceCount,
                 ExpectedPriceCount,
-                MissingDays
+                MissingDays,
+                ImportanceScore
             FROM AllGaps
             ORDER BY
                 IsTracked DESC,                                    -- Tracked first
@@ -1895,7 +1899,8 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                     lastDate = reader.GetDateTime(4).ToString("yyyy-MM-dd"),
                     actualDays = reader.GetInt32(5),
                     expectedDays = reader.GetInt32(6),
-                    missingDays = reader.GetInt32(7)
+                    missingDays = reader.GetInt32(7),
+                    importanceScore = reader.GetInt32(8)
                 });
             }
         }
@@ -2154,6 +2159,12 @@ app.MapGet("/api/admin/prices/gaps/{securityAlias}", async (IServiceProvider ser
             lastDate = DateTime.Today;
         }
 
+        // Never look for gaps beyond today - future dates cannot have price data
+        if (lastDate > DateTime.Today)
+        {
+            lastDate = DateTime.Today;
+        }
+
         // Find missing trading days within the security's date range
         var missingDates = new List<string>();
 
@@ -2276,6 +2287,98 @@ app.MapPost("/api/admin/prices/mark-eodhd-unavailable/{securityAlias}", async (I
 .Produces(StatusCodes.Status404NotFound)
 .Produces(StatusCodes.Status500InternalServerError);
 
+// POST /api/admin/securities/reset-unavailable - Reset IsEodhdUnavailable flag for all or recently-marked securities
+// Use this to roll back incorrect unavailable markings (e.g., caused by future-date bug)
+app.MapPost("/api/admin/securities/reset-unavailable", async (IServiceProvider serviceProvider, HttpContext httpContext) =>
+{
+    using var scope = serviceProvider.CreateScope();
+    var context = scope.ServiceProvider.GetService<StockAnalyzerDbContext>();
+
+    if (context == null)
+        return Results.BadRequest(new { error = "Database context not configured" });
+
+    try
+    {
+        // Optional: only reset securities marked unavailable within the last N days
+        var daysBack = 7; // default: last 7 days
+        if (httpContext.Request.Query.TryGetValue("days", out var daysStr) && int.TryParse(daysStr, out var d))
+            daysBack = d;
+
+        var resetAll = httpContext.Request.Query.ContainsKey("all");
+
+        List<object> resetSecurities;
+
+        if (resetAll)
+        {
+            // Reset ALL unavailable securities
+            var unavailable = await context.SecurityMaster
+                .Where(s => s.IsEodhdUnavailable && s.IsActive)
+                .ToListAsync();
+
+            foreach (var sec in unavailable)
+            {
+                sec.IsEodhdUnavailable = false;
+                sec.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await context.SaveChangesAsync();
+
+            resetSecurities = unavailable.Select(s => (object)new
+            {
+                securityAlias = s.SecurityAlias,
+                ticker = s.TickerSymbol,
+                exchange = s.Exchange
+            }).ToList();
+
+            Log.Information("Reset IsEodhdUnavailable for ALL {Count} securities", unavailable.Count);
+        }
+        else
+        {
+            // Reset securities marked unavailable within the last N days (by UpdatedAt)
+            var cutoff = DateTime.UtcNow.AddDays(-daysBack);
+            var recentlyMarked = await context.SecurityMaster
+                .Where(s => s.IsEodhdUnavailable && s.IsActive && s.UpdatedAt >= cutoff)
+                .ToListAsync();
+
+            foreach (var sec in recentlyMarked)
+            {
+                sec.IsEodhdUnavailable = false;
+                sec.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await context.SaveChangesAsync();
+
+            resetSecurities = recentlyMarked.Select(s => (object)new
+            {
+                securityAlias = s.SecurityAlias,
+                ticker = s.TickerSymbol,
+                exchange = s.Exchange
+            }).ToList();
+
+            Log.Information("Reset IsEodhdUnavailable for {Count} securities marked in last {Days} days", recentlyMarked.Count, daysBack);
+        }
+
+        return Results.Ok(new
+        {
+            success = true,
+            message = resetAll
+                ? $"Reset {resetSecurities.Count} unavailable securities (all)"
+                : $"Reset {resetSecurities.Count} securities marked unavailable in last {daysBack} days",
+            count = resetSecurities.Count,
+            securities = resetSecurities
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Failed to reset unavailable securities");
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("ResetUnavailableSecurities")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status500InternalServerError);
+
 // POST /api/admin/securities/calculate-importance - Calculate importance scores for untracked securities
 // Scores are based on security type, exchange, ticker length, and name patterns (1-10 scale, 10=most important)
 app.MapPost("/api/admin/securities/calculate-importance", async (IServiceProvider serviceProvider) =>
@@ -2341,11 +2444,11 @@ app.MapPost("/api/admin/securities/calculate-importance", async (IServiceProvide
 
     try
     {
-        Log.Information("Starting importance score calculation for untracked securities");
+        Log.Information("Starting importance score calculation for all active securities");
 
-        // Get all untracked securities
+        // Get all active securities (tracked + untracked) so heatmap has proper score distribution
         var untrackedSecurities = await context.SecurityMaster
-            .Where(s => s.IsActive && !s.IsTracked)
+            .Where(s => s.IsActive)
             .ToListAsync();
 
         if (!untrackedSecurities.Any())
@@ -2353,7 +2456,7 @@ app.MapPost("/api/admin/securities/calculate-importance", async (IServiceProvide
             return Results.Ok(new
             {
                 success = true,
-                message = "No untracked securities found",
+                message = "No active securities found",
                 updated = 0,
                 distribution = new Dictionary<int, int>()
             });
@@ -2386,7 +2489,7 @@ app.MapPost("/api/admin/securities/calculate-importance", async (IServiceProvide
         return Results.Ok(new
         {
             success = true,
-            message = $"Calculated importance scores for {untrackedSecurities.Count} untracked securities",
+            message = $"Calculated importance scores for {untrackedSecurities.Count} active securities",
             totalProcessed = untrackedSecurities.Count,
             updated,
             distribution = scoreDistribution.OrderByDescending(x => x.Key).ToDictionary(x => x.Key, x => x.Value)
@@ -2403,6 +2506,262 @@ app.MapPost("/api/admin/securities/calculate-importance", async (IServiceProvide
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status500InternalServerError);
+
+// GET /api/admin/dashboard/stats - Consolidated dashboard stats for EODHD Loader
+app.MapGet("/api/admin/dashboard/stats", async (IServiceProvider serviceProvider) =>
+{
+    using var scope = serviceProvider.CreateScope();
+    var context = scope.ServiceProvider.GetService<StockAnalyzerDbContext>();
+
+    if (context == null)
+        return Results.BadRequest(new { error = "Database context not configured" });
+
+    try
+    {
+        var connection = context.Database.GetDbConnection();
+        await connection.OpenAsync();
+
+        // All dashboard stats in a single query batch for efficiency
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"
+            -- Universe counts
+            SELECT
+                COUNT(*) AS TotalSecurities,
+                SUM(CASE WHEN IsTracked = 1 THEN 1 ELSE 0 END) AS Tracked,
+                SUM(CASE WHEN IsTracked = 0 THEN 1 ELSE 0 END) AS Untracked,
+                SUM(CASE WHEN IsEodhdUnavailable = 1 THEN 1 ELSE 0 END) AS Unavailable
+            FROM data.SecurityMaster WITH (NOLOCK)
+            WHERE IsActive = 1;
+
+            -- Price record counts
+            SELECT
+                COUNT(*) AS TotalRecords,
+                COUNT(DISTINCT SecurityAlias) AS DistinctSecurities,
+                MIN(EffectiveDate) AS OldestDate,
+                MAX(EffectiveDate) AS LatestDate
+            FROM data.Prices WITH (NOLOCK);
+
+            -- ImportanceScore tier distribution with completion status
+            SELECT
+                sm.ImportanceScore,
+                COUNT(*) AS Total,
+                SUM(CASE WHEN p.SecurityAlias IS NOT NULL THEN 1 ELSE 0 END) AS WithPrices,
+                SUM(CASE WHEN sm.IsEodhdUnavailable = 1 THEN 1 ELSE 0 END) AS Unavailable
+            FROM data.SecurityMaster sm WITH (NOLOCK)
+            LEFT JOIN (SELECT DISTINCT SecurityAlias FROM data.Prices WITH (NOLOCK)) p
+                ON p.SecurityAlias = sm.SecurityAlias
+            WHERE sm.IsActive = 1 AND sm.IsTracked = 0
+            GROUP BY sm.ImportanceScore
+            ORDER BY sm.ImportanceScore DESC;
+
+            -- Coverage by decade (records per decade)
+            SELECT
+                (YEAR(EffectiveDate) / 10) * 10 AS Decade,
+                COUNT(*) AS Records,
+                COUNT(DISTINCT SecurityAlias) AS Securities,
+                COUNT(DISTINCT EffectiveDate) AS TradingDays,
+                MIN(EffectiveDate) AS FirstDate,
+                MAX(EffectiveDate) AS LastDate
+            FROM data.Prices WITH (NOLOCK)
+            GROUP BY (YEAR(EffectiveDate) / 10) * 10
+            ORDER BY Decade DESC;
+
+            -- Coverage by year (for heatmap)
+            SELECT
+                YEAR(EffectiveDate) AS Year,
+                COUNT(*) AS Records,
+                COUNT(DISTINCT SecurityAlias) AS Securities,
+                COUNT(DISTINCT EffectiveDate) AS TradingDays
+            FROM data.Prices WITH (NOLOCK)
+            GROUP BY YEAR(EffectiveDate)
+            ORDER BY Year DESC;
+        ";
+        cmd.CommandTimeout = 60;
+
+        // Parse all result sets
+        object? universeData = null;
+        object? pricesData = null;
+        var tiers = new List<object>();
+        var decades = new List<object>();
+        var years = new List<object>();
+
+        using var reader = await cmd.ExecuteReaderAsync();
+
+        // Result set 1: Universe counts
+        if (await reader.ReadAsync())
+        {
+            universeData = new
+            {
+                totalSecurities = reader.GetInt32(0),
+                tracked = reader.GetInt32(1),
+                untracked = reader.GetInt32(2),
+                unavailable = reader.GetInt32(3)
+            };
+        }
+
+        // Result set 2: Price records
+        if (await reader.NextResultAsync() && await reader.ReadAsync())
+        {
+            pricesData = new
+            {
+                totalRecords = reader.GetInt32(0),
+                distinctSecurities = reader.GetInt32(1),
+                oldestDate = reader.IsDBNull(2) ? null : reader.GetDateTime(2).ToString("yyyy-MM-dd"),
+                latestDate = reader.IsDBNull(3) ? null : reader.GetDateTime(3).ToString("yyyy-MM-dd")
+            };
+        }
+
+        // Result set 3: ImportanceScore tiers
+        if (await reader.NextResultAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                tiers.Add(new
+                {
+                    score = reader.GetInt32(0),
+                    total = reader.GetInt32(1),
+                    withPrices = reader.GetInt32(2),
+                    unavailable = reader.GetInt32(3)
+                });
+            }
+        }
+
+        // Result set 4: Coverage by decade
+        if (await reader.NextResultAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                decades.Add(new
+                {
+                    decade = $"{reader.GetInt32(0)}s",
+                    records = reader.GetInt32(1),
+                    securities = reader.GetInt32(2),
+                    tradingDays = reader.GetInt32(3),
+                    firstDate = reader.GetDateTime(4).ToString("yyyy-MM-dd"),
+                    lastDate = reader.GetDateTime(5).ToString("yyyy-MM-dd")
+                });
+            }
+        }
+
+        // Result set 5: Coverage by year
+        if (await reader.NextResultAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                years.Add(new
+                {
+                    year = reader.GetInt32(0),
+                    records = reader.GetInt32(1),
+                    securities = reader.GetInt32(2),
+                    tradingDays = reader.GetInt32(3)
+                });
+            }
+        }
+
+        return Results.Ok(new
+        {
+            success = true,
+            timestamp = DateTime.UtcNow.ToString("o"),
+            universe = universeData,
+            prices = pricesData,
+            importanceTiers = tiers,
+            coverageByDecade = decades,
+            coverageByYear = years
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("GetDashboardStats")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK);
+
+// GET /api/admin/dashboard/heatmap - Bivariate heatmap data (Year x ImportanceScore)
+// Returns tracked/untracked record counts per (year, score) cell for the coverage heatmap
+app.MapGet("/api/admin/dashboard/heatmap", async (IServiceProvider serviceProvider) =>
+{
+    using var scope = serviceProvider.CreateScope();
+    var context = scope.ServiceProvider.GetService<StockAnalyzerDbContext>();
+
+    if (context == null)
+        return Results.BadRequest(new { error = "Database context not configured" });
+
+    try
+    {
+        var connection = context.Database.GetDbConnection();
+        await connection.OpenAsync();
+
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"
+            SELECT
+                YEAR(p.EffectiveDate) AS [Year],
+                sm.ImportanceScore AS Score,
+                SUM(CASE WHEN sm.IsTracked = 1 THEN 1 ELSE 0 END) AS TrackedRecords,
+                SUM(CASE WHEN sm.IsTracked = 0 THEN 1 ELSE 0 END) AS UntrackedRecords,
+                COUNT(DISTINCT CASE WHEN sm.IsTracked = 1 THEN sm.SecurityAlias END) AS TrackedSecurities,
+                COUNT(DISTINCT CASE WHEN sm.IsTracked = 0 THEN sm.SecurityAlias END) AS UntrackedSecurities
+            FROM data.Prices p WITH (NOLOCK)
+            INNER JOIN data.SecurityMaster sm WITH (NOLOCK)
+                ON p.SecurityAlias = sm.SecurityAlias
+            WHERE sm.IsActive = 1
+            GROUP BY YEAR(p.EffectiveDate), sm.ImportanceScore
+            ORDER BY [Year], Score;
+        ";
+        cmd.CommandTimeout = 120;
+
+        var cells = new List<object>();
+        long maxTrackedRecords = 0;
+        long maxUntrackedRecords = 0;
+        int minYear = int.MaxValue;
+        int maxYear = int.MinValue;
+
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var year = reader.GetInt32(0);
+            var trackedRec = reader.GetInt32(2);
+            var untrackedRec = reader.GetInt32(3);
+
+            if (year < minYear) minYear = year;
+            if (year > maxYear) maxYear = year;
+            if (trackedRec > maxTrackedRecords) maxTrackedRecords = trackedRec;
+            if (untrackedRec > maxUntrackedRecords) maxUntrackedRecords = untrackedRec;
+
+            cells.Add(new
+            {
+                year,
+                score = reader.GetInt32(1),
+                trackedRecords = trackedRec,
+                untrackedRecords = untrackedRec,
+                trackedSecurities = reader.GetInt32(4),
+                untrackedSecurities = reader.GetInt32(5)
+            });
+        }
+
+        return Results.Ok(new
+        {
+            success = true,
+            cells,
+            metadata = new
+            {
+                minYear = cells.Count > 0 ? minYear : 0,
+                maxYear = cells.Count > 0 ? maxYear : 0,
+                totalCells = cells.Count,
+                maxTrackedRecords,
+                maxUntrackedRecords
+            }
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("GetDashboardHeatmap")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK);
 
 // GET /api/admin/prices/holidays/analyze - Analyze holidays missing price data
 app.MapGet("/api/admin/prices/holidays/analyze", async (IServiceProvider serviceProvider) =>

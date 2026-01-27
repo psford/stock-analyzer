@@ -426,6 +426,50 @@ public class StockAnalyzerApiClient
             return new PricesExportResult { Success = false, Error = ex.Message };
         }
     }
+
+    // ============================================================================
+    // Dashboard Methods (consolidated stats for command center UI)
+    // ============================================================================
+
+    /// <summary>
+    /// Gets consolidated dashboard stats including universe counts, price stats,
+    /// importance tier distribution, and coverage by decade/year.
+    /// </summary>
+    public async Task<DashboardStatsResult?> GetDashboardStatsAsync(CancellationToken ct = default)
+    {
+        if (_httpClient == null) return null;
+
+        try
+        {
+            var response = await _httpClient.GetAsync("/api/admin/dashboard/stats", ct);
+            response.EnsureSuccessStatusCode();
+
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<DashboardStatsResult>(options, ct);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<HeatmapDataResult?> GetHeatmapDataAsync(CancellationToken ct = default)
+    {
+        if (_httpClient == null) return null;
+
+        try
+        {
+            var response = await _httpClient.GetAsync("/api/admin/dashboard/heatmap", ct);
+            response.EnsureSuccessStatusCode();
+
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<HeatmapDataResult>(options, ct);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }
 
 public class ApiResponse<T>
@@ -663,6 +707,9 @@ public class SecurityGapInfo
 
     [JsonPropertyName("missingDays")]
     public int MissingDays { get; set; }
+
+    [JsonPropertyName("importanceScore")]
+    public int ImportanceScore { get; set; } = 5;
 }
 
 public class SecurityGapsResult
@@ -746,4 +793,168 @@ public class MarkUnavailableResult
 
     [JsonPropertyName("securityAlias")]
     public int SecurityAlias { get; set; }
+}
+
+// ============================================================================
+// Dashboard DTOs (for command center UI)
+// ============================================================================
+
+public class DashboardStatsResult
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("timestamp")]
+    public string Timestamp { get; set; } = "";
+
+    [JsonPropertyName("universe")]
+    public UniverseStats? Universe { get; set; }
+
+    [JsonPropertyName("prices")]
+    public PriceStats? Prices { get; set; }
+
+    [JsonPropertyName("importanceTiers")]
+    public List<ImportanceTierInfo> ImportanceTiers { get; set; } = [];
+
+    [JsonPropertyName("coverageByDecade")]
+    public List<DashboardDecadeCoverage> CoverageByDecade { get; set; } = [];
+
+    [JsonPropertyName("coverageByYear")]
+    public List<YearCoverageInfo> CoverageByYear { get; set; } = [];
+}
+
+public class UniverseStats
+{
+    [JsonPropertyName("totalSecurities")]
+    public int TotalSecurities { get; set; }
+
+    [JsonPropertyName("tracked")]
+    public int Tracked { get; set; }
+
+    [JsonPropertyName("untracked")]
+    public int Untracked { get; set; }
+
+    [JsonPropertyName("unavailable")]
+    public int Unavailable { get; set; }
+}
+
+public class PriceStats
+{
+    [JsonPropertyName("totalRecords")]
+    public int TotalRecords { get; set; }
+
+    [JsonPropertyName("distinctSecurities")]
+    public int DistinctSecurities { get; set; }
+
+    [JsonPropertyName("oldestDate")]
+    public string? OldestDate { get; set; }
+
+    [JsonPropertyName("latestDate")]
+    public string? LatestDate { get; set; }
+}
+
+public class ImportanceTierInfo
+{
+    [JsonPropertyName("score")]
+    public int Score { get; set; }
+
+    [JsonPropertyName("total")]
+    public int Total { get; set; }
+
+    [JsonPropertyName("withPrices")]
+    public int WithPrices { get; set; }
+
+    [JsonPropertyName("unavailable")]
+    public int Unavailable { get; set; }
+}
+
+public class DashboardDecadeCoverage
+{
+    [JsonPropertyName("decade")]
+    public string Decade { get; set; } = "";
+
+    [JsonPropertyName("records")]
+    public int Records { get; set; }
+
+    [JsonPropertyName("securities")]
+    public int Securities { get; set; }
+
+    [JsonPropertyName("tradingDays")]
+    public int TradingDays { get; set; }
+
+    [JsonPropertyName("firstDate")]
+    public string FirstDate { get; set; } = "";
+
+    [JsonPropertyName("lastDate")]
+    public string LastDate { get; set; } = "";
+}
+
+public class YearCoverageInfo
+{
+    [JsonPropertyName("year")]
+    public int Year { get; set; }
+
+    [JsonPropertyName("records")]
+    public int Records { get; set; }
+
+    [JsonPropertyName("securities")]
+    public int Securities { get; set; }
+
+    [JsonPropertyName("tradingDays")]
+    public int TradingDays { get; set; }
+}
+
+// ============================================================================
+// Heatmap DTOs (for bivariate coverage heatmap)
+// ============================================================================
+
+public class HeatmapDataResult
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("cells")]
+    public List<HeatmapCell> Cells { get; set; } = [];
+
+    [JsonPropertyName("metadata")]
+    public HeatmapMetadata? Metadata { get; set; }
+}
+
+public class HeatmapCell
+{
+    [JsonPropertyName("year")]
+    public int Year { get; set; }
+
+    [JsonPropertyName("score")]
+    public int Score { get; set; }
+
+    [JsonPropertyName("trackedRecords")]
+    public long TrackedRecords { get; set; }
+
+    [JsonPropertyName("untrackedRecords")]
+    public long UntrackedRecords { get; set; }
+
+    [JsonPropertyName("trackedSecurities")]
+    public int TrackedSecurities { get; set; }
+
+    [JsonPropertyName("untrackedSecurities")]
+    public int UntrackedSecurities { get; set; }
+}
+
+public class HeatmapMetadata
+{
+    [JsonPropertyName("minYear")]
+    public int MinYear { get; set; }
+
+    [JsonPropertyName("maxYear")]
+    public int MaxYear { get; set; }
+
+    [JsonPropertyName("totalCells")]
+    public int TotalCells { get; set; }
+
+    [JsonPropertyName("maxTrackedRecords")]
+    public long MaxTrackedRecords { get; set; }
+
+    [JsonPropertyName("maxUntrackedRecords")]
+    public long MaxUntrackedRecords { get; set; }
 }

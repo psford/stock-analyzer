@@ -68,6 +68,17 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        // Prevent unhandled UI-thread exceptions from crashing the app
+        DispatcherUnhandledException += (_, args) =>
+        {
+            MessageBox.Show(
+                $"An error occurred:\n\n{args.Exception.Message}\n\n{args.Exception.StackTrace}",
+                "Error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            args.Handled = true;
+        };
+
         var mainWindow = _serviceProvider.GetRequiredService<MainWindow>();
         mainWindow.Show();
     }

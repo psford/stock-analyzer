@@ -1,7 +1,7 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.23
-**Last Updated:** 2026-01-26
+**Version:** 2.26
+**Last Updated:** 2026-01-27
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
 
@@ -2158,18 +2158,51 @@ Maintains the historical price database with automatic daily updates.
 | `POST /api/admin/prices/sync-securities` | Sync SecurityMaster from Symbols table |
 | `POST /api/admin/prices/refresh-date` | Fetch prices for specific date (body: `{Date: "yyyy-MM-dd"}`) |
 | `POST /api/admin/prices/bulk-load` | Start bulk historical load (body: `{StartDate, EndDate}`) |
-| `POST /api/admin/securities/calculate-importance` | Calculate importance scores for untracked securities |
+| `POST /api/admin/securities/calculate-importance` | Calculate importance scores for all active securities |
+| `POST /api/admin/securities/reset-unavailable` | Reset IsEodhdUnavailable flag (query: `days`, `all`) |
+| `GET /api/admin/dashboard/stats` | Consolidated dashboard stats: universe, prices, tiers, decade/year coverage |
+| `GET /api/admin/dashboard/heatmap` | Bivariate heatmap data: Year x ImportanceScore with tracked/untracked split |
+
+**Dashboard Stats (`/api/admin/dashboard/stats`):**
+- Single consolidated endpoint returning all dashboard metrics in one query batch (5 SQL result sets)
+- Used by EODHD Loader's Data Command Center UI
+- Returns: universe counts (total/tracked/untracked/unavailable), price record stats (total/distinct/oldest/latest), ImportanceScore tier distribution with completion status, coverage by decade, coverage by year
+- **Performance:** 60s query timeout, all tables use `WITH (NOLOCK)` for read consistency
+- **Response structure:** `{ success, timestamp, universe, prices, importanceTiers[], coverageByDecade[], coverageByYear[] }`
+
+**Heatmap Data (`/api/admin/dashboard/heatmap`):**
+- Returns Year x ImportanceScore cross-tabulation with tracked/untracked price record counts
+- Used by EODHD Loader's bivariate coverage heatmap (SkiaSharp custom control)
+- SQL: `GROUP BY YEAR(p.EffectiveDate), sm.ImportanceScore` with tracked/untracked splits via `CASE WHEN sm.IsTracked`
+- Response: `{ success, cells[{ year, score, trackedRecords, untrackedRecords, trackedSecurities, untrackedSecurities }], metadata{ minYear, maxYear, totalCells, maxTrackedRecords, maxUntrackedRecords } }`
+- ~230 cells (47 years × ~5 populated scores); 120s query timeout
+
+**Reset Unavailable (`/api/admin/securities/reset-unavailable`):**
+- Resets `IsEodhdUnavailable = false` for securities incorrectly marked unavailable
+- Default: Reset securities marked in last 7 days (by `UpdatedAt`); `?days=N` to customize
+- `?all`: Reset ALL unavailable active securities
+- Returns list of reset securities with ticker and exchange
 
 **Gap Detection (`/api/admin/prices/gaps`):**
 - Default: Returns only tracked securities (`IsTracked = 1`) with price gaps
 - With `includeUntracked=true`: Returns all active securities, ordered by tracked first
-- Response includes `isTracked` flag per security and summary counts for tracked/untracked gaps
+- Response includes `isTracked` flag and `importanceScore` per security, plus summary counts
 - Used by EODHD Loader crawler for two-phase gap filling (tracked first, then untracked)
 - **Ordering:** IsTracked DESC → Priority → ImportanceScore DESC → SecurityType → TickerLength → MissingDays DESC
+- **Date capping:** `LastDate` is capped at `GETDATE()` to exclude future price data; `ActualPriceCount` excludes future dates
+- **Query Structure (3 CTEs combined via UNION):**
+  1. **GapsInExistingData:** Securities with prices that have internal gaps (expected > actual in date range)
+  2. **NoPriceData:** Securities with zero prices (need initial 2-year backfill)
+  3. **StaleData:** Securities with prices but nothing recent (latest price >30 days old)
+- **Performance Optimization:** Pre-computes `SecuritiesWithPrices` CTE using `GROUP BY` for O(n) scan, then uses `LEFT JOIN + IS NULL` pattern instead of expensive `NOT EXISTS` subquery (avoids O(n*m) complexity on 29K securities × 5M prices)
+
+**Gap Detail (`/api/admin/prices/gaps/{securityAlias}`):**
+- Returns specific missing dates for a security
+- **Date capping:** `lastDate` is capped at `DateTime.Today` to prevent requesting future dates from EODHD
 
 **Importance Score Calculation (`/api/admin/securities/calculate-importance`):**
-- Calculates importance scores (1-10, 10=most important) for untracked securities
-- Used to prioritize gap-filling order for the ~29,000 untracked securities
+- Calculates importance scores (1-10, 10=most important) for all active securities
+- Used to prioritize gap-filling order and as Y-axis for the coverage heatmap
 - Scoring algorithm (base score: 5):
   - **Security Type:** Common Stock +2, ETF +1, Preferred/Warrant/Right -2, OTC indicators -3
   - **Exchange:** NYSE/NASDAQ +2, ARCA/BATS +1, OTC/PINK/GREY -2, Unknown -1
@@ -2576,6 +2609,9 @@ const [stockInfo, history, analysis, significantMoves, news] = await Promise.all
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.26 | 2026-01-27 | **Bivariate Coverage Heatmap:** New `/api/admin/dashboard/heatmap` endpoint returning Year × ImportanceScore cross-tabulation with tracked/untracked split. Custom SkiaSharp heatmap control (`CoverageHeatmapControl.cs`) with bivariate color mapping (blue=tracked, yellow=untracked, green=both), pulsing active cell indicator (sine-wave animation at 30fps), live cell updates during crawling, hover tooltips, and bivariate legend. **Future Date Bug Fix:** Capped `LastDate` at `GETDATE()` in gaps CTE and specific dates endpoint to prevent crawler from requesting future dates from EODHD (was causing valid tickers like AA, AG to be incorrectly marked unavailable). **Reset Unavailable Endpoint:** New `POST /api/admin/securities/reset-unavailable` to roll back incorrect IsEodhdUnavailable markings (supports `?days=N` and `?all`). **Calculate-importance expanded** to process ALL active securities (not just untracked) for proper heatmap Y-axis distribution. |
+| 2.25 | 2026-01-27 | **Dashboard Command Center:** New consolidated `/api/admin/dashboard/stats` endpoint returning universe counts, price record stats, ImportanceScore tier distribution, decade coverage, and year-by-year coverage in a single 5-result-set SQL batch. EODHD Loader UI redesigned with LiveChartsCore charts: horizontal bar chart for coverage by decade, stacked column chart for importance tier completion, 6 metric cards (price records, securities, tracked, data span, session, loaded). Target framework updated to `net8.0-windows10.0.19041` for LiveChartsCore.SkiaSharpView.WPF compatibility. |
+| 2.24 | 2026-01-27 | **Gap Query Performance Fix:** Fixed Cloudflare 524 timeout when calling `/api/admin/prices/gaps?includeUntracked=true`. Root cause was expensive `NOT EXISTS` subquery checking 29K securities against 5M+ prices (O(n*m)). Fix: Pre-compute `SecuritiesWithPrices` CTE via `GROUP BY` (single table scan), replace `NOT EXISTS` with `LEFT JOIN + IS NULL` (O(n)). Added third CTE `StaleData` to detect securities with outdated prices (>30 days since last update). Same optimization applied to gap count summary query. |
 | 2.23 | 2026-01-26 | **EODHD Unavailable Security Tracking:** Added `IsEodhdUnavailable` column to SecurityMaster via EF Core migration. Securities where EODHD has no data (typically OTC/Pink Sheet) are automatically detected and marked by the crawler. Gap detection queries filter out unavailable securities to prevent endless retry loops. New `POST /api/admin/prices/mark-eodhd-unavailable/{securityAlias}` endpoint. Crawler detects 10 consecutive dates with 0 records and marks security as unavailable (threshold accounts for extended market closures like 9/11). |
 | 2.22 | 2026-01-26 | **Gap Count Query Fix:** The `/api/admin/prices/gaps` endpoint was incorrectly counting `trackedWithGaps` and `untrackedWithGaps` from the LIMITED results (TOP N) instead of actual totals. Added separate count query to compute true totals of all securities with gaps. This fix ensures the crawler UI displays accurate counts even when more gaps exist than the limit parameter. |
 | 2.21 | 2026-01-26 | **Gap Detection Includes Zero-Data Securities:** `/api/admin/prices/gaps` endpoint now uses UNION query to include both (1) securities with internal gaps in existing price data, and (2) untracked securities with zero price records. Securities with no data use 2-year lookback window for expected date range. `/api/admin/prices/gaps/{securityAlias}` endpoint updated to return business days for securities with no prices (2-year range). Enables crawler to populate historical data for previously untouched securities. |

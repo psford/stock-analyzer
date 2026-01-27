@@ -89,6 +89,42 @@ public partial class CrawlerViewModel : ViewModelBase
     [ObservableProperty]
     private ObservableCollection<CrawlActivity> _activityLog = [];
 
+    // Dashboard stats (populated on connect)
+    [ObservableProperty]
+    private string _totalRecordsDisplay = "—";
+
+    [ObservableProperty]
+    private string _totalSecuritiesDisplay = "—";
+
+    [ObservableProperty]
+    private string _trackedDisplay = "—";
+
+    [ObservableProperty]
+    private string _untrackedDisplay = "—";
+
+    [ObservableProperty]
+    private string _unavailableDisplay = "—";
+
+    [ObservableProperty]
+    private string _dataSpanDisplay = "—";
+
+    [ObservableProperty]
+    private string _latestDateDisplay = "—";
+
+    // Heatmap data (bound to CoverageHeatmapControl)
+    [ObservableProperty]
+    private HeatmapDataResult? _heatmapData;
+
+    [ObservableProperty]
+    private bool _isHeatmapLoading;
+
+    // Active cell for pulsing indicator (year, score of currently loading data)
+    [ObservableProperty]
+    private int _activeHeatmapYear = -1;
+
+    [ObservableProperty]
+    private int _activeHeatmapScore = -1;
+
     // Queue of securities to process
     private Queue<SecurityGapInfo> _securityQueue = new();
     // Current security's missing dates
@@ -97,6 +133,9 @@ public partial class CrawlerViewModel : ViewModelBase
     // Track consecutive dates with no data returned for detecting unavailable securities
     private int _consecutiveNoDataCount;
     private const int NoDataThreshold = 10; // Mark as unavailable after 10 consecutive dates with no data (accounts for extended closures like 9/11)
+    // Track records loaded since last full heatmap refresh
+    private int _recordsSinceHeatmapRefresh;
+    private const int HeatmapFullRefreshInterval = 100; // Full re-fetch every N records
 
     public CrawlerViewModel(StockAnalyzerApiClient apiClient)
     {
@@ -128,6 +167,10 @@ public partial class CrawlerViewModel : ViewModelBase
                 IsConnected = true;
                 ConnectionStatus = $"Connected ({envName})";
 
+                // Load dashboard stats in parallel with gap status
+                StatusText = "Loading dashboard data...";
+                var dashboardTask = LoadDashboardStatsAsync();
+
                 // Fetch initial gap status (tracked only for initial display)
                 await RefreshGapsAsync();
 
@@ -135,6 +178,7 @@ public partial class CrawlerViewModel : ViewModelBase
                 var untrackedGaps = await _apiClient.GetPriceGapsAsync("US", 1, true, _cts?.Token ?? default);
                 var untrackedCount = untrackedGaps.Success ? untrackedGaps.Summary.UntrackedWithGaps : 0;
 
+                await dashboardTask;
                 StatusText = $"Connected. Tracked: {TrackedSecuritiesWithGaps} with gaps. Untracked: {untrackedCount:N0} with gaps. Click Start to begin.";
             }
             else
@@ -240,6 +284,8 @@ public partial class CrawlerViewModel : ViewModelBase
         _crawlTimer.Stop();
         _cts?.Cancel();
         IsCrawling = false;
+        ActiveHeatmapYear = -1;
+        ActiveHeatmapScore = -1;
         CurrentAction = "Stopped";
         StatusText = $"Stopped. Processed {SecuritiesProcessedThisSession} securities, loaded {RecordsLoadedThisSession:N0} records.";
     }
@@ -351,6 +397,9 @@ public partial class CrawlerViewModel : ViewModelBase
             // Use load-tickers endpoint to load just this ticker for this date
             if (DateTime.TryParse(dateStr, out var date))
             {
+                // Update active heatmap cell for pulsing indicator
+                ActiveHeatmapYear = date.Year;
+                ActiveHeatmapScore = _currentSecurity.ImportanceScore;
                 var result = await _apiClient.LoadTickersAsync(
                     [_currentSecurity.Ticker],
                     date,
@@ -366,6 +415,10 @@ public partial class CrawlerViewModel : ViewModelBase
                         AddActivity("✓", $"{_currentSecurity.Ticker} {dateStr}", $"{result.Data.RecordsInserted} records");
                         // Reset no-data counter since we got data
                         _consecutiveNoDataCount = 0;
+
+                        // Live-update heatmap cell (pulse timer re-renders at 30fps)
+                        UpdateHeatmapCellLocally(date.Year, _currentSecurity.ImportanceScore,
+                            result.Data.RecordsInserted, _currentSecurity.IsTracked);
                     }
                     else
                     {
@@ -411,6 +464,56 @@ public partial class CrawlerViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// Updates a heatmap cell in-place for instant visual feedback.
+    /// The pulse timer (30fps) re-renders the control, so modified cells appear brighter immediately.
+    /// Every HeatmapFullRefreshInterval records, does a full API re-fetch to catch new cells and correct drift.
+    /// </summary>
+    private void UpdateHeatmapCellLocally(int year, int score, long recordsInserted, bool isTracked)
+    {
+        var data = HeatmapData;
+        if (data?.Cells == null) return;
+
+        // Find existing cell by year + score
+        var cell = data.Cells.Find(c => c.Year == year && c.Score == score);
+        if (cell != null)
+        {
+            // Update in-place - the control's _cellLookup references the same object
+            if (isTracked)
+                cell.TrackedRecords += recordsInserted;
+            else
+                cell.UntrackedRecords += recordsInserted;
+        }
+        // If cell doesn't exist, the periodic full refresh will pick it up
+
+        // Periodic full refresh from API to catch new cells and re-normalize
+        _recordsSinceHeatmapRefresh += (int)recordsInserted;
+        if (_recordsSinceHeatmapRefresh >= HeatmapFullRefreshInterval)
+        {
+            _recordsSinceHeatmapRefresh = 0;
+            _ = RefreshHeatmapFromApiAsync();
+        }
+    }
+
+    /// <summary>
+    /// Full heatmap re-fetch from API. Catches new cells and re-normalizes max values.
+    /// </summary>
+    private async Task RefreshHeatmapFromApiAsync()
+    {
+        try
+        {
+            var heatmap = await _apiClient.GetHeatmapDataAsync(_cts?.Token ?? default);
+            if (heatmap?.Success == true)
+            {
+                HeatmapData = heatmap;
+            }
+        }
+        catch
+        {
+            // Non-critical - local updates continue working
+        }
+    }
+
+    /// <summary>
     /// Marks a security as EODHD unavailable when we detect no data is returned.
     /// Clears the date queue and moves to the next security.
     /// </summary>
@@ -449,6 +552,64 @@ public partial class CrawlerViewModel : ViewModelBase
             : 100;
         _currentSecurity = null;
         _consecutiveNoDataCount = 0;
+    }
+
+    private async Task LoadDashboardStatsAsync()
+    {
+        try
+        {
+            var stats = await _apiClient.GetDashboardStatsAsync(_cts?.Token ?? default);
+            if (stats == null || !stats.Success) return;
+
+            // Populate metric cards
+            if (stats.Universe != null)
+            {
+                TotalSecuritiesDisplay = stats.Universe.TotalSecurities.ToString("N0");
+                TrackedDisplay = stats.Universe.Tracked.ToString("N0");
+                UntrackedDisplay = stats.Universe.Untracked.ToString("N0");
+                UnavailableDisplay = stats.Universe.Unavailable.ToString("N0");
+            }
+
+            if (stats.Prices != null)
+            {
+                TotalRecordsDisplay = FormatLargeNumber(stats.Prices.TotalRecords);
+                LatestDateDisplay = stats.Prices.LatestDate ?? "—";
+
+                if (stats.Prices.OldestDate != null && stats.Prices.LatestDate != null
+                    && DateTime.TryParse(stats.Prices.OldestDate, out var oldest)
+                    && DateTime.TryParse(stats.Prices.LatestDate, out var latest))
+                {
+                    var years = (int)((latest - oldest).Days / 365.25);
+                    DataSpanDisplay = $"{years}yr ({oldest.Year}-{latest.Year})";
+                }
+            }
+
+            // Load heatmap data (Year x ImportanceScore bivariate coverage)
+            IsHeatmapLoading = true;
+            try
+            {
+                var heatmap = await _apiClient.GetHeatmapDataAsync(_cts?.Token ?? default);
+                if (heatmap?.Success == true)
+                {
+                    HeatmapData = heatmap;
+                }
+            }
+            finally
+            {
+                IsHeatmapLoading = false;
+            }
+        }
+        catch
+        {
+            // Dashboard stats are non-critical - don't block on failure
+        }
+    }
+
+    private static string FormatLargeNumber(double value)
+    {
+        if (value >= 1_000_000) return $"{value / 1_000_000:F1}M";
+        if (value >= 1_000) return $"{value / 1_000:F0}K";
+        return $"{value:N0}";
     }
 
     private void AddActivity(string icon, string item, string details)
