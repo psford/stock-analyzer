@@ -1,3 +1,4 @@
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
@@ -1398,39 +1399,69 @@ app.MapPost("/api/admin/data/reset-tracked", async (IServiceProvider serviceProv
             reset = (int)(await cmd.ExecuteScalarAsync() ?? 0);
         }
 
-        // Step 3: Build ticker list for SQL IN clause (sanitized)
-        var sanitizedTickers = request.Tickers
+        // Step 3: Clean ticker list (no SQL escaping needed - using parameters)
+        var cleanTickers = request.Tickers
             .Where(t => !string.IsNullOrWhiteSpace(t))
-            .Select(t => t.Trim().ToUpperInvariant().Replace("'", "''"))
+            .Select(t => t.Trim().ToUpperInvariant())
             .Distinct()
             .ToList();
 
-        if (sanitizedTickers.Count == 0)
-            return Results.BadRequest(new { error = "No valid tickers after sanitization" });
+        if (cleanTickers.Count == 0)
+            return Results.BadRequest(new { error = "No valid tickers provided" });
 
-        var tickerList = string.Join("','", sanitizedTickers);
         var source = request.Source ?? "S&P 500";
         var priority = request.Priority ?? 1;
 
-        // Step 4: Insert into TrackedSecurities for matching tickers
-        // Note: Tickers are sanitized above (single quotes escaped, whitespace trimmed)
+        // Step 4: Insert tickers into temp table using parameterized batches
+        // Using temp table approach for large ticker lists (S&P 500 has ~500)
         using (var cmd = connection.CreateCommand())
         {
-#pragma warning disable CA2100 // Input is sanitized above
-            cmd.CommandText = $@"
+            cmd.CommandText = "CREATE TABLE #ImportTickers (Ticker NVARCHAR(20) PRIMARY KEY)";
+            cmd.CommandTimeout = 30;
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        // Insert tickers in batches of 100 using parameterized queries
+        const int batchSize = 100;
+        for (int i = 0; i < cleanTickers.Count; i += batchSize)
+        {
+            var batch = cleanTickers.Skip(i).Take(batchSize).ToList();
+            using var cmd = (SqlCommand)connection.CreateCommand();
+
+            var paramNames = new List<string>();
+            for (int j = 0; j < batch.Count; j++)
+            {
+                var paramName = $"@t{j}";
+                paramNames.Add($"({paramName})");
+                cmd.Parameters.AddWithValue(paramName, batch[j]);
+            }
+
+            // paramNames contains only parameter placeholders (@t0, @t1, etc.) - safe
+#pragma warning disable CA2100
+            cmd.CommandText = $"INSERT INTO #ImportTickers (Ticker) VALUES {string.Join(",", paramNames)}";
+#pragma warning restore CA2100
+            cmd.CommandTimeout = 30;
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        // Step 5: Insert into TrackedSecurities from temp table (fully parameterized)
+        using (var cmd = (SqlCommand)connection.CreateCommand())
+        {
+            cmd.CommandText = @"
                 INSERT INTO data.TrackedSecurities (SecurityAlias, Source, Priority, Notes, AddedBy)
-                SELECT sm.SecurityAlias, '{source.Replace("'", "''")}', {priority}, 'Imported via reset-tracked API', 'api'
+                SELECT sm.SecurityAlias, @source, @priority, 'Imported via reset-tracked API', 'api'
                 FROM data.SecurityMaster sm
-                WHERE sm.TickerSymbol IN ('{tickerList}')
-                  AND sm.IsActive = 1
+                INNER JOIN #ImportTickers t ON sm.TickerSymbol = t.Ticker
+                WHERE sm.IsActive = 1
                   AND NOT EXISTS (SELECT 1 FROM data.TrackedSecurities ts WHERE ts.SecurityAlias = sm.SecurityAlias);
                 SELECT @@ROWCOUNT";
-#pragma warning restore CA2100
+            cmd.Parameters.AddWithValue("@source", source);
+            cmd.Parameters.AddWithValue("@priority", priority);
             cmd.CommandTimeout = 60;
             matched = (int)(await cmd.ExecuteScalarAsync() ?? 0);
         }
 
-        // Step 5: Update IsTracked flag on SecurityMaster
+        // Step 6: Update IsTracked flag on SecurityMaster
         using (var cmd = connection.CreateCommand())
         {
             cmd.CommandText = @"
@@ -1444,26 +1475,30 @@ app.MapPost("/api/admin/data/reset-tracked", async (IServiceProvider serviceProv
             tracked = (int)(await cmd.ExecuteScalarAsync() ?? 0);
         }
 
-        // Step 6: Get list of tickers that weren't found
-        // Note: Tickers are sanitized above (single quotes escaped, whitespace trimmed)
+        // Step 7: Get list of tickers that weren't found (using temp table)
         var notFound = new List<string>();
         using (var cmd = connection.CreateCommand())
         {
-#pragma warning disable CA2100 // Input is sanitized above
-            cmd.CommandText = $@"
+            cmd.CommandText = @"
                 SELECT t.Ticker
-                FROM (VALUES {string.Join(",", sanitizedTickers.Select(t => $"('{t}')"))}) AS t(Ticker)
+                FROM #ImportTickers t
                 WHERE NOT EXISTS (
                     SELECT 1 FROM data.SecurityMaster sm
                     WHERE sm.TickerSymbol = t.Ticker AND sm.IsActive = 1
                 )";
-#pragma warning restore CA2100
             cmd.CommandTimeout = 30;
             using var reader = await cmd.ExecuteReaderAsync();
             while (await reader.ReadAsync())
             {
                 notFound.Add(reader.GetString(0));
             }
+        }
+
+        // Cleanup temp table
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = "DROP TABLE #ImportTickers";
+            await cmd.ExecuteNonQueryAsync();
         }
 
         Log.Information("Reset tracked securities: cleared {Cleared}, reset {Reset}, matched {Matched}, tracked {Tracked}",
@@ -1477,7 +1512,7 @@ app.MapPost("/api/admin/data/reset-tracked", async (IServiceProvider serviceProv
             {
                 trackedSecuritiesCleared = cleared,
                 isTrackedFlagsReset = reset,
-                tickersProvided = sanitizedTickers.Count,
+                tickersProvided = cleanTickers.Count,
                 tickersMatched = matched,
                 isTrackedFlagsSet = tracked,
                 tickersNotFound = notFound.Count,
