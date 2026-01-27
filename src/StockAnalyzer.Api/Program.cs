@@ -1705,24 +1705,20 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
         // When includeUntracked=false (default): Only tracked securities (IsTracked = 1)
         // When includeUntracked=true: All active securities, but tracked ones come first
         //
-        // This query:
-        // 1. Gets active securities from Security Master (filtered by IsTracked unless includeUntracked)
-        // 2. Finds the min/max date of existing prices for each
-        // 3. Counts trading days (from BusinessCalendar) in that range
-        // 4. Compares to actual price count - any difference is a gap
-        // 5. Returns securities with gaps, ordered by: IsTracked DESC, Priority, most gaps
+        // Performance optimization for Azure SQL Basic (5 DTU):
+        // Internal gap analysis (comparing expected vs actual business days) is ONLY done for
+        // tracked securities (~420). This avoids expensive correlated subqueries across 23K+ securities.
+        // Untracked securities are detected via lighter queries: NoPriceData and StaleData.
 
         using var cmd = connection.CreateCommand();
 
         // Use parameterized query to avoid CA2100 SQL injection warning
-        // When @includeUntracked = 0, only tracked securities are included
-        // When @includeUntracked = 1, all securities are included (tracked come first)
         // This query has THREE parts via UNION:
-        // 1. Securities WITH prices that have internal gaps (missing days within date range)
-        // 2. Securities WITHOUT any prices (need initial load) - only when includeUntracked=1
-        // 3. Securities with STALE data (latest price > 7 days old) - only when includeUntracked=1
-        // Performance optimized: Pre-compute securities with prices and business day counts
-        // to avoid expensive NOT EXISTS and correlated subqueries
+        // 1. Tracked securities WITH prices that have internal gaps (missing days within date range)
+        // 2. Untracked securities WITHOUT any prices (need initial load) - only when includeUntracked=1
+        // 3. Untracked securities with STALE data (latest price > 30 days old) - only when includeUntracked=1
+        // Performance: Internal gap analysis (SecurityDateRange → ExpectedCounts) only runs
+        // for tracked securities to avoid 23K+ correlated subqueries that timeout on 5 DTU
         cmd.CommandText = @"
             WITH TwoYearBusinessDays AS (
                 -- Pre-compute once: business days in last 2 years
@@ -1739,7 +1735,8 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                 GROUP BY SecurityAlias
             ),
             SecurityDateRange AS (
-                -- Part 1: Securities that HAVE prices - check for internal gaps
+                -- Part 1: TRACKED securities that HAVE prices - check for internal gaps
+                -- Only tracked (not all securities) to avoid 23K+ correlated subqueries on 5 DTU
                 -- Cap LastDate at today to exclude future price data
                 SELECT
                     sm.SecurityAlias,
@@ -1758,7 +1755,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                 LEFT JOIN data.TrackedSecurities ts WITH (NOLOCK) ON ts.SecurityAlias = sm.SecurityAlias
                 WHERE sm.IsActive = 1
                   AND sm.IsEodhdUnavailable = 0
-                  AND (sm.IsTracked = 1 OR @includeUntracked = 1)
+                  AND sm.IsTracked = 1
                 GROUP BY sm.SecurityAlias, sm.TickerSymbol, sm.IsTracked, sm.SecurityType, sm.ImportanceScore, ts.Priority
             ),
             ExpectedCounts AS (
@@ -1935,6 +1932,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                     GROUP BY SecurityAlias
                 ),
                 SecurityDateRange AS (
+                    -- Only tracked securities for internal gap analysis (5 DTU performance)
                     SELECT
                         sm.SecurityAlias,
                         sm.IsTracked,
@@ -1945,7 +1943,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                     INNER JOIN data.Prices p WITH (NOLOCK) ON p.SecurityAlias = sm.SecurityAlias
                     WHERE sm.IsActive = 1
                       AND sm.IsEodhdUnavailable = 0
-                      AND (sm.IsTracked = 1 OR @includeUntracked = 1)
+                      AND sm.IsTracked = 1
                     GROUP BY sm.SecurityAlias, sm.IsTracked
                 ),
                 ExpectedCounts AS (

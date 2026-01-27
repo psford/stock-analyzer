@@ -221,6 +221,13 @@ public partial class CrawlerViewModel : ViewModelBase
                 _securityQueue.Enqueue(secGap);
             }
         }
+        else
+        {
+            // API call failed (timeout, server error, network issue) — surface the error
+            var errorMsg = string.IsNullOrEmpty(gaps.Error) ? "Unknown error" : gaps.Error;
+            AddActivity("✗", "Error", $"Gap query failed: {errorMsg}");
+            StatusText = $"Error fetching gaps: {errorMsg}";
+        }
     }
 
     private bool CanStartCrawl() => IsConnected && !IsCrawling;
