@@ -252,18 +252,20 @@ public partial class CrawlerViewModel : ViewModelBase
             return;
         }
 
-        // If we have dates queued for current security, process next date
-        if (_dateQueue.Count > 0 && _currentSecurity != null)
+        try
         {
-            await ProcessNextDateAsync();
-            return;
-        }
+            // If we have dates queued for current security, process next date
+            if (_dateQueue.Count > 0 && _currentSecurity != null)
+            {
+                await ProcessNextDateAsync();
+                return;
+            }
 
-        // Need to get next security
-        if (_securityQueue.Count == 0)
-        {
-            CurrentAction = "Refreshing gaps...";
-            await RefreshGapsAsync();
+            // Need to get next security
+            if (_securityQueue.Count == 0)
+            {
+                CurrentAction = "Refreshing gaps...";
+                await RefreshGapsAsync();
 
             if (_securityQueue.Count == 0)
             {
@@ -326,6 +328,14 @@ public partial class CrawlerViewModel : ViewModelBase
             // No gaps for this security (maybe already filled)
             SecuritiesProcessedThisSession++;
             _currentSecurity = null;
+        }
+        }
+        catch (Exception ex)
+        {
+            ErrorsThisSession++;
+            AddActivity("✗", "Error", $"Crawler error: {ex.Message}");
+            StatusText = $"Error: {ex.Message}";
+            // Don't stop crawling on error - try to continue with next item
         }
     }
 
