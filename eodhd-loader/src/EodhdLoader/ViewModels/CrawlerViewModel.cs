@@ -174,12 +174,8 @@ public partial class CrawlerViewModel : ViewModelBase
                 // Fetch initial gap status (tracked only for initial display)
                 await RefreshGapsAsync();
 
-                // Also get a quick count of untracked gaps for the status display
-                var untrackedGaps = await _apiClient.GetPriceGapsAsync("US", 1, true, _cts?.Token ?? default);
-                var untrackedCount = untrackedGaps.Success ? untrackedGaps.Summary.UntrackedWithGaps : 0;
-
                 await dashboardTask;
-                StatusText = $"Connected. Tracked: {TrackedSecuritiesWithGaps} with gaps. Untracked: {untrackedCount:N0} with gaps. Click Start to begin.";
+                StatusText = $"Connected. {TrackedSecuritiesWithGaps} tracked securities with gaps. Click Start to begin.";
             }
             else
             {
@@ -221,9 +217,15 @@ public partial class CrawlerViewModel : ViewModelBase
                 _securityQueue.Enqueue(secGap);
             }
         }
+        else if (gaps.TimedOut)
+        {
+            // SQL query timed out — expected on Azure SQL Basic (5 DTU) for large queries
+            AddActivity("⏱", "Timeout", $"Gap query timed out ({(IsInUntrackedPhase ? "untracked" : "tracked")} phase)");
+            StatusText = $"Gap query timed out (Azure SQL Basic limitation)";
+        }
         else
         {
-            // API call failed (timeout, server error, network issue) — surface the error
+            // API call failed (server error, network issue) — surface the error
             var errorMsg = string.IsNullOrEmpty(gaps.Error) ? "Unknown error" : gaps.Error;
             AddActivity("✗", "Error", $"Gap query failed: {errorMsg}");
             StatusText = $"Error fetching gaps: {errorMsg}";

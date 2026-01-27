@@ -634,6 +634,9 @@ public class PriceGapsResult
     [JsonPropertyName("error")]
     public string? Error { get; set; }
 
+    [JsonPropertyName("timedOut")]
+    public bool TimedOut { get; set; }
+
     [JsonPropertyName("market")]
     public string Market { get; set; } = "";
 

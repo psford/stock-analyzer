@@ -1835,7 +1835,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
         limitParam.Value = maxResults;
         cmd.Parameters.Add(limitParam);
 
-        cmd.CommandTimeout = includeUntrackedSecurities ? 300 : 120; // 5 min untracked, 2 min tracked
+        cmd.CommandTimeout = 300; // 5 min — Azure SQL Basic (5 DTU) is variable under load
 
         var securitiesWithGaps = new List<object>();
 
@@ -1959,7 +1959,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                     FROM ExpectedCounts";
             }
 
-            gapCountCmd.CommandTimeout = includeUntrackedSecurities ? 300 : 120;
+            gapCountCmd.CommandTimeout = 300;
 
             using var gapCountReader = await gapCountCmd.ExecuteReaderAsync();
             if (await gapCountReader.ReadAsync())
@@ -2007,7 +2007,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                         0 AS TotalUntrackedSecurities";
             }
 
-            statsCmd.CommandTimeout = includeUntrackedSecurities ? 180 : 60;
+            statsCmd.CommandTimeout = 300;
 
             using var statsReader = await statsCmd.ExecuteReaderAsync();
             if (await statsReader.ReadAsync())
@@ -2046,6 +2046,19 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                 ? Math.Round(securitiesComplete * 100.0 / totalSecurities, 1)
                 : 0,
             gaps = securitiesWithGaps
+        });
+    }
+    catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == -2) // SQL timeout
+    {
+        Log.Warning(ex, "Price gaps query timed out (SQL CommandTimeout exceeded)");
+        return Results.Ok(new
+        {
+            success = false,
+            error = "Query timed out. The gap analysis query is too expensive for the current database tier.",
+            timedOut = true,
+            market = market?.ToUpperInvariant() ?? "US",
+            includeUntracked = includeUntracked ?? false,
+            gaps = Array.Empty<object>()
         });
     }
     catch (Exception ex)
