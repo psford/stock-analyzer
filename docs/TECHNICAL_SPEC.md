@@ -2018,6 +2018,7 @@ CREATE TABLE data.SecurityMaster (
     IsActive BIT DEFAULT 1,                         -- Whether actively traded
     IsTracked BIT DEFAULT 0,                        -- Whether in tracked universe for gap-filling
     IsEodhdUnavailable BIT DEFAULT 0,               -- Whether EODHD has no data for this security
+    ImportanceScore INT DEFAULT 5,                  -- Calculated importance (1-10, 10=most important)
     CreatedAt DATETIME2 DEFAULT GETUTCDATE(),
     UpdatedAt DATETIME2 DEFAULT GETUTCDATE()
 );
@@ -2157,12 +2158,24 @@ Maintains the historical price database with automatic daily updates.
 | `POST /api/admin/prices/sync-securities` | Sync SecurityMaster from Symbols table |
 | `POST /api/admin/prices/refresh-date` | Fetch prices for specific date (body: `{Date: "yyyy-MM-dd"}`) |
 | `POST /api/admin/prices/bulk-load` | Start bulk historical load (body: `{StartDate, EndDate}`) |
+| `POST /api/admin/securities/calculate-importance` | Calculate importance scores for untracked securities |
 
 **Gap Detection (`/api/admin/prices/gaps`):**
 - Default: Returns only tracked securities (`IsTracked = 1`) with price gaps
 - With `includeUntracked=true`: Returns all active securities, ordered by tracked first
 - Response includes `isTracked` flag per security and summary counts for tracked/untracked gaps
 - Used by EODHD Loader crawler for two-phase gap filling (tracked first, then untracked)
+- **Ordering:** IsTracked DESC → Priority → ImportanceScore DESC → SecurityType → TickerLength → MissingDays DESC
+
+**Importance Score Calculation (`/api/admin/securities/calculate-importance`):**
+- Calculates importance scores (1-10, 10=most important) for untracked securities
+- Used to prioritize gap-filling order for the ~29,000 untracked securities
+- Scoring algorithm (base score: 5):
+  - **Security Type:** Common Stock +2, ETF +1, Preferred/Warrant/Right -2, OTC indicators -3
+  - **Exchange:** NYSE/NASDAQ +2, ARCA/BATS +1, OTC/PINK/GREY -2, Unknown -1
+  - **Ticker Length:** 1-3 chars +1, 5+ chars -1
+  - **Name Patterns:** Inc/Corp/Ltd +1, Warrant/Right/Unit -2, Liquidating/Bankrupt -3
+- Run on-demand after adding new securities; scores are persisted in SecurityMaster.ImportanceScore
 
 **Bulk Load Flow:**
 1. Call `/api/admin/prices/sync-securities` to populate SecurityMaster

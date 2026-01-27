@@ -1730,6 +1730,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                     sm.TickerSymbol,
                     sm.IsTracked,
                     sm.SecurityType,
+                    sm.ImportanceScore,
                     COALESCE(ts.Priority, 999) AS Priority,
                     MIN(p.EffectiveDate) AS FirstDate,
                     MAX(p.EffectiveDate) AS LastDate,
@@ -1740,7 +1741,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                 WHERE sm.IsActive = 1
                   AND sm.IsEodhdUnavailable = 0
                   AND (sm.IsTracked = 1 OR @includeUntracked = 1)
-                GROUP BY sm.SecurityAlias, sm.TickerSymbol, sm.IsTracked, sm.SecurityType, ts.Priority
+                GROUP BY sm.SecurityAlias, sm.TickerSymbol, sm.IsTracked, sm.SecurityType, sm.ImportanceScore, ts.Priority
             ),
             ExpectedCounts AS (
                 SELECT
@@ -1748,6 +1749,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                     sdr.TickerSymbol,
                     sdr.IsTracked,
                     sdr.SecurityType,
+                    sdr.ImportanceScore,
                     sdr.Priority,
                     sdr.FirstDate,
                     sdr.LastDate,
@@ -1764,6 +1766,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                     TickerSymbol,
                     IsTracked,
                     SecurityType,
+                    ImportanceScore,
                     Priority,
                     FirstDate,
                     LastDate,
@@ -1781,6 +1784,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                     sm.TickerSymbol,
                     sm.IsTracked,
                     sm.SecurityType,
+                    sm.ImportanceScore,
                     COALESCE(ts.Priority, 999) AS Priority,
                     DATEADD(YEAR, -2, GETDATE()) AS FirstDate,
                     CAST(GETDATE() AS DATE) AS LastDate,
@@ -1818,7 +1822,8 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
             FROM AllGaps
             ORDER BY
                 IsTracked DESC,                                    -- Tracked first
-                Priority,                                          -- Then by priority
+                Priority,                                          -- Then by priority (for tracked)
+                ImportanceScore DESC,                              -- Then by importance score (for untracked)
                 CASE WHEN SecurityType = 'Common Stock' THEN 0 ELSE 1 END, -- Common Stock before others
                 LEN(TickerSymbol),                                 -- Shorter tickers first (likely NYSE/NASDAQ)
                 MissingDays DESC,                                  -- Then most gaps
@@ -1834,7 +1839,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
         includeUntrackedParam.Value = includeUntrackedSecurities ? 1 : 0;
         cmd.Parameters.Add(includeUntrackedParam);
 
-        cmd.CommandTimeout = 60;
+        cmd.CommandTimeout = 180; // 3 minutes for large untracked queries
 
         var securitiesWithGaps = new List<object>();
 
@@ -1937,7 +1942,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
             gapCountIncludeUntrackedParam.Value = includeUntrackedSecurities ? 1 : 0;
             gapCountCmd.Parameters.Add(gapCountIncludeUntrackedParam);
 
-            gapCountCmd.CommandTimeout = 60;
+            gapCountCmd.CommandTimeout = 180; // 3 minutes for large untracked queries
 
             using var gapCountReader = await gapCountCmd.ExecuteReaderAsync();
             if (await gapCountReader.ReadAsync())
@@ -1971,7 +1976,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
             statsIncludeUntrackedParam.Value = includeUntrackedSecurities ? 1 : 0;
             statsCmd.Parameters.Add(statsIncludeUntrackedParam);
 
-            statsCmd.CommandTimeout = 30;
+            statsCmd.CommandTimeout = 120; // 2 minutes for large untracked queries
 
             using var statsReader = await statsCmd.ExecuteReaderAsync();
             if (await statsReader.ReadAsync())
@@ -2205,6 +2210,134 @@ app.MapPost("/api/admin/prices/mark-eodhd-unavailable/{securityAlias}", async (I
 .WithOpenApi()
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status404NotFound)
+.Produces(StatusCodes.Status500InternalServerError);
+
+// POST /api/admin/securities/calculate-importance - Calculate importance scores for untracked securities
+// Scores are based on security type, exchange, ticker length, and name patterns (1-10 scale, 10=most important)
+app.MapPost("/api/admin/securities/calculate-importance", async (IServiceProvider serviceProvider) =>
+{
+    using var scope = serviceProvider.CreateScope();
+    var context = scope.ServiceProvider.GetService<StockAnalyzerDbContext>();
+
+    if (context == null)
+        return Results.BadRequest(new { error = "Database context not configured" });
+
+    // Local function to calculate importance score
+    int CalculateImportanceScore(SecurityMasterEntity sec)
+    {
+        var score = 5; // Base score
+
+        // Security Type scoring
+        var secType = sec.SecurityType?.ToUpperInvariant() ?? "";
+        if (secType.Contains("COMMON STOCK"))
+            score += 2;
+        else if (secType.Contains("ETF") || secType.Contains("EXCHANGE TRADED"))
+            score += 1;
+        else if (secType.Contains("PREFERRED") || secType.Contains("WARRANT") || secType.Contains("RIGHT"))
+            score -= 2;
+        // OTC indicators in security type
+        if (secType.Contains("OTC") || secType.Contains("PINK") || secType.Contains("GREY"))
+            score -= 3;
+
+        // Exchange scoring
+        var exchange = sec.Exchange?.ToUpperInvariant() ?? "";
+        if (exchange.Contains("NYSE") && !exchange.Contains("ARCA"))
+            score += 2;
+        else if (exchange.Contains("NASDAQ"))
+            score += 2;
+        else if (exchange.Contains("ARCA") || exchange.Contains("BATS") || exchange.Contains("IEX"))
+            score += 1;
+        else if (exchange.Contains("OTC") || exchange.Contains("PINK") || exchange.Contains("GREY"))
+            score -= 2;
+        else if (string.IsNullOrEmpty(exchange))
+            score -= 1;
+
+        // Ticker length scoring (shorter = typically major exchanges)
+        var tickerLen = sec.TickerSymbol?.Length ?? 0;
+        if (tickerLen >= 1 && tickerLen <= 3)
+            score += 1;
+        else if (tickerLen >= 5)
+            score -= 1;
+
+        // Name pattern scoring
+        var name = sec.IssueName?.ToUpperInvariant() ?? "";
+        // Positive patterns (established companies)
+        if (name.Contains(" INC") || name.Contains(" CORP") || name.Contains(" LTD") || name.Contains(" CO ") || name.Contains(" COMPANY"))
+            score += 1;
+        // Negative patterns (special securities)
+        if (name.Contains("WARRANT") || name.Contains("RIGHT") || name.Contains(" UNIT") || name.Contains("UNITS"))
+            score -= 2;
+        // Strong negative patterns (distressed/special situations)
+        if (name.Contains("LIQUIDATING") || name.Contains("BANKRUPT") || name.Contains("LIQUIDATION"))
+            score -= 3;
+
+        // Clamp to 1-10
+        return Math.Clamp(score, 1, 10);
+    }
+
+    try
+    {
+        Log.Information("Starting importance score calculation for untracked securities");
+
+        // Get all untracked securities
+        var untrackedSecurities = await context.SecurityMaster
+            .Where(s => s.IsActive && !s.IsTracked)
+            .ToListAsync();
+
+        if (!untrackedSecurities.Any())
+        {
+            return Results.Ok(new
+            {
+                success = true,
+                message = "No untracked securities found",
+                updated = 0,
+                distribution = new Dictionary<int, int>()
+            });
+        }
+
+        var scoreDistribution = new Dictionary<int, int>();
+        var updated = 0;
+
+        foreach (var security in untrackedSecurities)
+        {
+            var score = CalculateImportanceScore(security);
+
+            if (security.ImportanceScore != score)
+            {
+                security.ImportanceScore = score;
+                security.UpdatedAt = DateTime.UtcNow;
+                updated++;
+            }
+
+            // Track distribution
+            if (!scoreDistribution.ContainsKey(score))
+                scoreDistribution[score] = 0;
+            scoreDistribution[score]++;
+        }
+
+        await context.SaveChangesAsync();
+
+        Log.Information("Updated importance scores for {Count} securities", updated);
+
+        return Results.Ok(new
+        {
+            success = true,
+            message = $"Calculated importance scores for {untrackedSecurities.Count} untracked securities",
+            totalProcessed = untrackedSecurities.Count,
+            updated,
+            distribution = scoreDistribution.OrderByDescending(x => x.Key).ToDictionary(x => x.Key, x => x.Value)
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Failed to calculate importance scores");
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("CalculateImportanceScores")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status500InternalServerError);
 
 // GET /api/admin/prices/holidays/analyze - Analyze holidays missing price data

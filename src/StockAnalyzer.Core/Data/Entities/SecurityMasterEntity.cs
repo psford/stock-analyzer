@@ -79,6 +79,18 @@ public class SecurityMasterEntity
     public bool IsEodhdUnavailable { get; set; } = false;
 
     /// <summary>
+    /// Calculated importance score (1-10, 10=most important).
+    /// Used to prioritize gap-filling for untracked securities.
+    /// Calculated based on security type, exchange, and name patterns.
+    /// Score algorithm: Base 5, adjusted by:
+    ///   - Security Type: Common Stock +2, ETF +1, Preferred/Warrant -2, OTC indicators -3
+    ///   - Exchange: NYSE/NASDAQ +2, ARCA/BATS +1, OTC/PINK -2, Unknown -1
+    ///   - Ticker Length: 1-3 chars +1, 5+ chars -1
+    ///   - Name Patterns: Inc/Corp/Ltd +1, Warrant/Right/Unit -2, Liquidating/Bankrupt -3
+    /// </summary>
+    public int ImportanceScore { get; set; } = 5;
+
+    /// <summary>
     /// Timestamp when this record was created (UTC).
     /// </summary>
     public DateTime CreatedAt { get; set; }

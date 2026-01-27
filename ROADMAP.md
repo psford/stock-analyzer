@@ -131,6 +131,8 @@ Planned features and improvements for the Stock Analyzer .NET application.
 
 | Feature | Description | Status |
 |---------|-------------|--------|
+| Unified importance scoring | Unify ImportanceScore (for untracked) and TrackedSecurities.Priority (for tracked) into a single scoring system for consistent gap-filling prioritization | Planned |
+| EODHD Loader calculate-importance client | Add `CalculateImportanceScoresAsync()` to StockAnalyzerApiClient for triggering score calculation from loader UI | Planned |
 | Customizable UI panels | Allow users to choose or rearrange tiled panels | Planned |
 | Real-time streaming | WebSocket-based live price updates | Planned |
 | Options chain | Options data retrieval and Greeks calculation | Planned |
@@ -174,6 +176,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 
 | Date | Change |
 |------|--------|
+| 01/26/2026 | **v3.0.4** - ImportanceScore for untracked securities: algorithmic prioritization (1-10 scale) based on security type, exchange, ticker length, and name patterns; `/api/admin/securities/calculate-importance` endpoint; gap query ordering updated |
 | 01/23/2026 | **v3.0** - Data infrastructure: SecurityMaster & Prices tables (3.5M+ rows), EODHD API integration, database-first price lookup with background backfill, sub-second chart loading for pre-cached securities |
 | 01/23/2026 | **v2.17** - Lazy news loading: decoupled news from chart load, new `/api/stock/{ticker}/news/move` endpoint, 162ms vs 22s initial load |
 | 01/22/2026 | **v2.14** - Weighted relevance search: scoreMatch() with popularity boost, Ford/Apple now surface before substring matches |
