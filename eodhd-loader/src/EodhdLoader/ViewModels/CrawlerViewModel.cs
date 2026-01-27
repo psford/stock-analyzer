@@ -128,6 +128,10 @@ public partial class CrawlerViewModel : ViewModelBase
     // Track records loaded since last full heatmap refresh
     private int _recordsSinceHeatmapRefresh;
     private const int HeatmapFullRefreshInterval = 100; // Full re-fetch every N records
+    // Re-entrancy guard: DispatcherTimer fires every 1.2s regardless of whether the previous
+    // async handler completed. Without this guard, concurrent ProcessNextAsync calls cause
+    // race conditions on _currentSecurity, _dateQueue, and _securityQueue.
+    private bool _isProcessing;
 
     public CrawlerViewModel(StockAnalyzerApiClient apiClient)
     {
@@ -317,14 +321,21 @@ public partial class CrawlerViewModel : ViewModelBase
 
     private async Task ProcessNextAsync()
     {
-        if (_cts?.Token.IsCancellationRequested == true)
-        {
-            _crawlTimer.Stop();
-            return;
-        }
+        // Re-entrancy guard: DispatcherTimer fires every 1.2s regardless of whether the
+        // previous async handler completed. Without this, concurrent calls cause race
+        // conditions on _currentSecurity/_dateQueue AND can hammer the database with
+        // parallel gap queries, causing DTU exhaustion (HTTP 500).
+        if (_isProcessing) return;
+        _isProcessing = true;
 
         try
         {
+            if (_cts?.Token.IsCancellationRequested == true)
+            {
+                _crawlTimer.Stop();
+                return;
+            }
+
             // If we have dates queued for current security, process next date
             if (_dateQueue.Count > 0 && _currentSecurity != null)
             {
@@ -400,16 +411,22 @@ public partial class CrawlerViewModel : ViewModelBase
             ErrorsThisSession++;
             AddActivity("✗", "Error", $"Crawler error: {ex.Message}");
             StatusText = $"Error: {ex.Message}";
-            // Don't stop crawling on error - try to continue with next item
+        }
+        finally
+        {
+            _isProcessing = false;
         }
     }
 
     private async Task ProcessNextDateAsync()
     {
-        if (_currentSecurity == null || _dateQueue.Count == 0) return;
+        // Capture to local variable — _currentSecurity is a shared field that could be
+        // mutated by concurrent timer ticks (even with re-entrancy guard, defensive coding).
+        var security = _currentSecurity;
+        if (security == null || _dateQueue.Count == 0) return;
 
         var dateStr = _dateQueue.Dequeue();
-        CurrentAction = $"Loading {_currentSecurity.Ticker} {dateStr}";
+        CurrentAction = $"Loading {security.Ticker} {dateStr}";
 
         try
         {
@@ -418,9 +435,9 @@ public partial class CrawlerViewModel : ViewModelBase
             {
                 // Update active heatmap cell for pulsing indicator
                 ActiveHeatmapYear = date.Year;
-                ActiveHeatmapScore = _currentSecurity.ImportanceScore;
+                ActiveHeatmapScore = security.ImportanceScore;
                 var result = await _apiClient.LoadTickersAsync(
-                    [_currentSecurity.Ticker],
+                    [security.Ticker],
                     date,
                     date,
                     _cts?.Token ?? default);
@@ -431,13 +448,13 @@ public partial class CrawlerViewModel : ViewModelBase
 
                     if (result.Data.RecordsInserted > 0)
                     {
-                        AddActivity("✓", $"{_currentSecurity.Ticker} {dateStr}", $"{result.Data.RecordsInserted} records");
+                        AddActivity("✓", $"{security.Ticker} {dateStr}", $"{result.Data.RecordsInserted} records");
                         // Reset no-data counter since we got data
                         _consecutiveNoDataCount = 0;
 
                         // Live-update heatmap cell (pulse timer re-renders at 30fps)
-                        UpdateHeatmapCellLocally(date.Year, _currentSecurity.ImportanceScore,
-                            result.Data.RecordsInserted, _currentSecurity.IsTracked);
+                        UpdateHeatmapCellLocally(date.Year, security.ImportanceScore,
+                            result.Data.RecordsInserted, security.IsTracked);
                     }
                     else
                     {
@@ -447,7 +464,7 @@ public partial class CrawlerViewModel : ViewModelBase
                         if (_consecutiveNoDataCount >= NoDataThreshold)
                         {
                             // Mark this security as EODHD unavailable and move on
-                            await MarkSecurityUnavailableAsync(_currentSecurity);
+                            await MarkSecurityUnavailableAsync(security);
                             return;
                         }
                     }
@@ -466,19 +483,19 @@ public partial class CrawlerViewModel : ViewModelBase
                         _currentSecurity = null;
                     }
 
-                    StatusText = $"Loaded {_currentSecurity?.Ticker ?? "?"} {dateStr}. {_dateQueue.Count} dates remaining for this security.";
+                    StatusText = $"Loaded {security.Ticker} {dateStr}. {_dateQueue.Count} dates remaining for this security.";
                 }
                 else
                 {
                     ErrorsThisSession++;
-                    AddActivity("✗", $"{_currentSecurity.Ticker} {dateStr}", result.Error ?? "Failed");
+                    AddActivity("✗", $"{security.Ticker} {dateStr}", result.Error ?? "Failed");
                 }
             }
         }
         catch (Exception ex)
         {
             ErrorsThisSession++;
-            AddActivity("✗", $"{_currentSecurity?.Ticker ?? "?"} {dateStr}", ex.Message);
+            AddActivity("✗", $"{security.Ticker} {dateStr}", ex.Message);
         }
     }
 
