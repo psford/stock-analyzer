@@ -55,8 +55,10 @@ public class ConfigurationService
 
         // Load Production environment settings
         ProductionConnectionString = Environment.GetEnvironmentVariable("PROD_SQL_CONNECTION");
+        // Use direct Azure App Service URL to bypass Cloudflare's ~100s proxy timeout.
+        // Gap queries and refresh-summary can take 2-3 minutes on Azure SQL Basic (5 DTU).
         ProductionApiUrl = Environment.GetEnvironmentVariable("PROD_API_URL")
-            ?? "https://psfordtaurus.com";
+            ?? "https://app-stockanalyzer-prod.azurewebsites.net";
 
         IsLoaded = !string.IsNullOrEmpty(EodhdApiKey);
     }

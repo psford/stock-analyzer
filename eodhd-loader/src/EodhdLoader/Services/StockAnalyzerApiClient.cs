@@ -52,6 +52,7 @@ public class StockAnalyzerApiClient
         {
             _httpClient = _httpClientFactory.CreateClient();
             _httpClient.BaseAddress = new Uri(baseUrl);
+            _httpClient.Timeout = TimeSpan.FromMinutes(5); // Gap queries can take 2-3 min on Azure SQL Basic (5 DTU)
             _currentBaseUrl = baseUrl;
         }
     }
