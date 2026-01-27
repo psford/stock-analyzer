@@ -1742,11 +1742,11 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
         var marketFilter = market?.ToUpperInvariant() ?? "US";
         var maxResults = limit ?? 50;
 
+        // SINGLE QUERY: Fetch ALL gaps (no TOP), count in C#.
+        // Previous design ran 3 sequential queries (main + count + stats), each scanning
+        // the 5M+ row Prices table. On Azure SQL Basic (5 DTU) this exhausted the DTU budget.
         using var cmd = connection.CreateCommand();
 
-        // Tracked-only gap query with two sources:
-        // 1. Tracked securities with price data but internal gaps (INNER JOIN Prices)
-        // 2. Tracked securities with zero price data (NOT EXISTS Prices)
         cmd.CommandText = @"
                 WITH TwoYearBusinessDays AS (
                     SELECT COUNT(*) AS DayCount
@@ -1799,138 +1799,74 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                     UNION ALL
                     SELECT * FROM TrackedNoPrices
                 )
-                SELECT TOP (@limit)
-                    SecurityAlias, TickerSymbol, IsTracked, FirstDate, LastDate,
-                    ActualPriceCount, ExpectedPriceCount, MissingDays, ImportanceScore
+                SELECT SecurityAlias, TickerSymbol, IsTracked, FirstDate, LastDate,
+                    ActualPriceCount, ExpectedPriceCount, MissingDays, ImportanceScore, Priority
                 FROM AllTrackedGaps
                 ORDER BY Priority, MissingDays DESC, TickerSymbol";
 
-        var limitParam = cmd.CreateParameter();
-        limitParam.ParameterName = "@limit";
-        limitParam.Value = maxResults;
-        cmd.Parameters.Add(limitParam);
-
         cmd.CommandTimeout = 300; // 5 min — Azure SQL Basic (5 DTU) is variable under load
 
-        var securitiesWithGaps = new List<object>();
+        // Read ALL gaps (typically <500 rows for tracked securities), count in C#
+        var allGaps = new List<(int securityAlias, string ticker, bool isTracked, DateTime firstDate,
+            DateTime lastDate, int actualDays, int expectedDays, int missingDays, int importanceScore)>();
 
         using (var reader = await cmd.ExecuteReaderAsync())
         {
             while (await reader.ReadAsync())
             {
-                securitiesWithGaps.Add(new
-                {
-                    securityAlias = reader.GetInt32(0),
-                    ticker = reader.GetString(1),
-                    isTracked = reader.GetBoolean(2),
-                    firstDate = reader.GetDateTime(3).ToString("yyyy-MM-dd"),
-                    lastDate = reader.GetDateTime(4).ToString("yyyy-MM-dd"),
-                    actualDays = reader.GetInt32(5),
-                    expectedDays = reader.GetInt32(6),
-                    missingDays = reader.GetInt32(7),
-                    importanceScore = reader.GetInt32(8)
-                });
+                allGaps.Add((
+                    reader.GetInt32(0), reader.GetString(1), reader.GetBoolean(2),
+                    reader.GetDateTime(3), reader.GetDateTime(4),
+                    reader.GetInt32(5), reader.GetInt32(6), reader.GetInt32(7), reader.GetInt32(8)
+                ));
             }
         }
 
-        // Get summary stats based on mode
-        int totalSecurities = 0;
-        int securitiesWithData = 0;
-        int totalPriceRecords = 0;
+        // Compute counts in C# — eliminates the separate count query (was scanning Prices a 2nd time)
+        var totalTrackedWithGaps = allGaps.Count;
+        var totalAllMissingDays = allGaps.Sum(g => g.missingDays);
+
+        // Cheap stats: SecurityMaster-only counts (no Prices table scan)
+        // Previous design ran COUNT(DISTINCT) and COUNT(*) on Prices — a 3rd full table scan
         int totalTrackedSecurities = 0;
         int totalUntrackedSecurities = 0;
-        int totalTrackedWithGaps = 0;
-        int totalUntrackedWithGaps = 0;
-        int totalAllMissingDays = 0;
-
-        // Count ALL tracked securities with gaps (not limited by TOP clause)
-        using (var gapCountCmd = connection.CreateCommand())
-        {
-            gapCountCmd.CommandText = @"
-                    WITH TwoYearBusinessDays AS (
-                        SELECT COUNT(*) AS DayCount FROM data.BusinessCalendar bc WITH (NOLOCK)
-                        WHERE bc.IsBusinessDay = 1 AND bc.EffectiveDate >= DATEADD(YEAR, -2, GETDATE())
-                          AND bc.EffectiveDate <= GETDATE()
-                    ),
-                    SecurityDateRange AS (
-                        SELECT sm.SecurityAlias,
-                               MIN(p.EffectiveDate) AS FirstDate, MAX(p.EffectiveDate) AS LastDate,
-                               COUNT(*) AS ActualPriceCount
-                        FROM data.SecurityMaster sm WITH (NOLOCK)
-                        INNER JOIN data.Prices p WITH (NOLOCK) ON p.SecurityAlias = sm.SecurityAlias
-                        WHERE sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0 AND sm.IsTracked = 1
-                        GROUP BY sm.SecurityAlias
-                    ),
-                    ExpectedCounts AS (
-                        SELECT sdr.SecurityAlias, sdr.ActualPriceCount,
-                               (SELECT COUNT(*) FROM data.BusinessCalendar bc WITH (NOLOCK)
-                                WHERE bc.IsBusinessDay = 1 AND bc.EffectiveDate >= sdr.FirstDate
-                                  AND bc.EffectiveDate <= sdr.LastDate) AS ExpectedPriceCount
-                        FROM SecurityDateRange sdr
-                    ),
-                    TrackedWithInternalGaps AS (
-                        SELECT COUNT(*) AS GapCount,
-                               SUM(ExpectedPriceCount - ActualPriceCount) AS MissingDays
-                        FROM ExpectedCounts WHERE ExpectedPriceCount > ActualPriceCount
-                    ),
-                    TrackedNoPrices AS (
-                        SELECT COUNT(*) AS NoPriceCount,
-                               (SELECT DayCount FROM TwoYearBusinessDays) * COUNT(*) AS MissingDays
-                        FROM data.SecurityMaster sm WITH (NOLOCK)
-                        WHERE sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0 AND sm.IsTracked = 1
-                          AND NOT EXISTS (SELECT 1 FROM data.Prices p WITH (NOLOCK) WHERE p.SecurityAlias = sm.SecurityAlias)
-                    )
-                    SELECT
-                        ISNULL((SELECT GapCount FROM TrackedWithInternalGaps), 0) +
-                            ISNULL((SELECT NoPriceCount FROM TrackedNoPrices), 0) AS TrackedWithGaps,
-                        0 AS UntrackedWithGaps,
-                        ISNULL((SELECT MissingDays FROM TrackedWithInternalGaps), 0) +
-                            ISNULL((SELECT MissingDays FROM TrackedNoPrices), 0) AS TotalMissingDays";
-
-            gapCountCmd.CommandTimeout = 300;
-
-            using var gapCountReader = await gapCountCmd.ExecuteReaderAsync();
-            if (await gapCountReader.ReadAsync())
-            {
-                totalTrackedWithGaps = gapCountReader.IsDBNull(0) ? 0 : gapCountReader.GetInt32(0);
-                totalUntrackedWithGaps = gapCountReader.IsDBNull(1) ? 0 : gapCountReader.GetInt32(1);
-                totalAllMissingDays = gapCountReader.IsDBNull(2) ? 0 : gapCountReader.GetInt32(2);
-            }
-        }
 
         using (var statsCmd = connection.CreateCommand())
         {
             statsCmd.CommandText = @"
                     SELECT
                         (SELECT COUNT(*) FROM data.SecurityMaster WITH (NOLOCK)
-                         WHERE IsActive = 1 AND IsEodhdUnavailable = 0 AND IsTracked = 1) AS TotalSecurities,
-                        (SELECT COUNT(DISTINCT p.SecurityAlias) FROM data.Prices p WITH (NOLOCK)
-                         INNER JOIN data.SecurityMaster sm WITH (NOLOCK) ON sm.SecurityAlias = p.SecurityAlias
-                         WHERE sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0 AND sm.IsTracked = 1) AS SecuritiesWithData,
-                        (SELECT COUNT(*) FROM data.Prices p WITH (NOLOCK)
-                         INNER JOIN data.SecurityMaster sm WITH (NOLOCK) ON sm.SecurityAlias = p.SecurityAlias
-                         WHERE sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0 AND sm.IsTracked = 1) AS TotalPriceRecords,
+                         WHERE IsActive = 1 AND IsEodhdUnavailable = 0 AND IsTracked = 1) AS TotalTracked,
                         (SELECT COUNT(*) FROM data.SecurityMaster WITH (NOLOCK)
-                         WHERE IsActive = 1 AND IsEodhdUnavailable = 0 AND IsTracked = 1) AS TotalTrackedSecurities,
-                        (SELECT COUNT(*) FROM data.SecurityMaster WITH (NOLOCK)
-                         WHERE IsActive = 1 AND IsEodhdUnavailable = 0 AND IsTracked = 0) AS TotalUntrackedSecurities";
+                         WHERE IsActive = 1 AND IsEodhdUnavailable = 0 AND IsTracked = 0) AS TotalUntracked";
 
-            statsCmd.CommandTimeout = 300;
+            statsCmd.CommandTimeout = 30;
 
             using var statsReader = await statsCmd.ExecuteReaderAsync();
             if (await statsReader.ReadAsync())
             {
-                totalSecurities = statsReader.GetInt32(0);
-                securitiesWithData = statsReader.GetInt32(1);
-                totalPriceRecords = statsReader.GetInt32(2);
-                totalTrackedSecurities = statsReader.GetInt32(3);
-                totalUntrackedSecurities = statsReader.GetInt32(4);
+                totalTrackedSecurities = statsReader.GetInt32(0);
+                totalUntrackedSecurities = statsReader.GetInt32(1);
             }
         }
 
-        var totalGapsCount = totalTrackedWithGaps + totalUntrackedWithGaps;
-        var securitiesComplete = totalGapsCount == 0 ? securitiesWithData :
-            securitiesWithData - totalGapsCount;
+        var totalSecurities = totalTrackedSecurities;
+        var securitiesWithData = totalTrackedSecurities - allGaps.Count(g => g.actualDays == 0);
+        var securitiesComplete = totalSecurities - totalTrackedWithGaps;
+
+        // Return limited subset for the crawler, but with accurate total counts
+        var securitiesWithGaps = allGaps.Take(maxResults).Select(g => new
+        {
+            securityAlias = g.securityAlias,
+            ticker = g.ticker,
+            isTracked = g.isTracked,
+            firstDate = g.firstDate.ToString("yyyy-MM-dd"),
+            lastDate = g.lastDate.ToString("yyyy-MM-dd"),
+            actualDays = g.actualDays,
+            expectedDays = g.expectedDays,
+            missingDays = g.missingDays,
+            importanceScore = g.importanceScore
+        }).ToList();
 
         return Results.Ok(new
         {
@@ -1943,11 +1879,11 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                 totalTrackedSecurities,
                 totalUntrackedSecurities,
                 securitiesWithData,
-                securitiesWithGaps = totalGapsCount,
+                securitiesWithGaps = totalTrackedWithGaps,
                 trackedWithGaps = totalTrackedWithGaps,
-                untrackedWithGaps = totalUntrackedWithGaps,
+                untrackedWithGaps = 0,
                 securitiesComplete,
-                totalPriceRecords,
+                totalPriceRecords = 0, // removed: was scanning 5M+ Prices table; use /dashboard/stats instead
                 totalMissingDays = totalAllMissingDays
             },
             completionPercent = totalSecurities > 0
