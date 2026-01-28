@@ -125,6 +125,12 @@ public partial class CrawlerViewModel : ViewModelBase
     // Track consecutive dates with no data returned for detecting unavailable securities
     private int _consecutiveNoDataCount;
     private const int NoDataThreshold = 10; // Mark as unavailable after 10 consecutive dates with no data (accounts for extended closures like 9/11)
+    private int _lastNoDataAlias; // Track which security the no-data counter applies to
+    // Track records loaded per security to detect zero-result completions
+    private int _recordsForCurrentSecurity;
+    // Securities that completed all their dates with 0 records loaded this session —
+    // skip them on subsequent gap refreshes to prevent infinite loops.
+    private readonly HashSet<int> _zeroResultAliases = new();
     // Track records loaded since last full heatmap refresh
     private int _recordsSinceHeatmapRefresh;
     private const int HeatmapFullRefreshInterval = 100; // Full re-fetch every N records
@@ -271,6 +277,7 @@ public partial class CrawlerViewModel : ViewModelBase
         SecuritiesProcessedThisSession = 0;
         RecordsLoadedThisSession = 0;
         ErrorsThisSession = 0;
+        _zeroResultAliases.Clear();
 
         CurrentPhase = "Crawling";
         CurrentAction = "Starting...";
@@ -379,8 +386,40 @@ public partial class CrawlerViewModel : ViewModelBase
                 }
             }
 
-            // Get next security
-            _currentSecurity = _securityQueue.Dequeue();
+            // Get next security — skip any that already completed with 0 records this session
+            SecurityGapInfo? nextSecurity = null;
+            while (_securityQueue.Count > 0)
+            {
+                var candidate = _securityQueue.Dequeue();
+                if (_zeroResultAliases.Contains(candidate.SecurityAlias))
+                {
+                    // Already tried this security, got 0 records — skip it
+                    continue;
+                }
+                nextSecurity = candidate;
+                break;
+            }
+
+            if (nextSecurity == null)
+            {
+                // All remaining securities were in the skip set.
+                // Proceed directly to promote — don't just return, because next tick
+                // would RefreshGapsAsync, re-populate the queue with the same skipped
+                // securities, and loop forever without ever reaching the promote path.
+                var promoted = await PromoteAndRefreshAsync();
+                if (!promoted || _securityQueue.Count == 0)
+                {
+                    _crawlTimer.Stop();
+                    IsCrawling = false;
+                    CurrentAction = "Complete!";
+                    CurrentPhase = "Complete";
+                    StatusText = $"All gaps filled! Processed {SecuritiesProcessedThisSession} securities, loaded {RecordsLoadedThisSession:N0} records.";
+                    AddActivity("✓", "Complete", "All tracked securities complete, no more to promote");
+                }
+                return;
+            }
+
+            _currentSecurity = nextSecurity;
             CurrentTicker = _currentSecurity.Ticker;
 
             CurrentAction = $"Analyzing {_currentSecurity.Ticker}...";
@@ -397,7 +436,13 @@ public partial class CrawlerViewModel : ViewModelBase
 
                 AddActivity("📊", _currentSecurity.Ticker, $"{secGaps.MissingCount} missing dates ({secGaps.FirstDate} - {secGaps.LastDate})");
                 StatusText = $"Crawling: {_currentSecurity.Ticker} - {_dateQueue.Count} dates to load";
-                _consecutiveNoDataCount = 0;
+                _recordsForCurrentSecurity = 0;
+                // Only reset no-data counter when switching to a different security
+                if (_lastNoDataAlias != _currentSecurity.SecurityAlias)
+                {
+                    _consecutiveNoDataCount = 0;
+                    _lastNoDataAlias = _currentSecurity.SecurityAlias;
+                }
             }
             else
             {
@@ -445,6 +490,7 @@ public partial class CrawlerViewModel : ViewModelBase
                 if (result.Success && result.Data != null)
                 {
                     RecordsLoadedThisSession += result.Data.RecordsInserted;
+                    _recordsForCurrentSecurity += result.Data.RecordsInserted;
 
                     if (result.Data.RecordsInserted > 0)
                     {
@@ -480,6 +526,16 @@ public partial class CrawlerViewModel : ViewModelBase
                         CompletionPercent = TotalSecurities > 0
                             ? Math.Round((TotalSecurities - SecuritiesWithGaps) * 100.0 / TotalSecurities, 1)
                             : 100;
+
+                        // If we loaded 0 records for this entire security, skip it on future
+                        // gap refreshes this session. Without this, securities where EODHD has
+                        // no data loop infinitely (gap persists → re-queued → 0 records → repeat).
+                        if (_recordsForCurrentSecurity == 0)
+                        {
+                            _zeroResultAliases.Add(security.SecurityAlias);
+                            AddActivity("⏭", security.Ticker, "Skipped (no data available from EODHD)");
+                        }
+
                         _currentSecurity = null;
                     }
 
