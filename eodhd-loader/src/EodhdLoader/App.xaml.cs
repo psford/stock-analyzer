@@ -12,6 +12,8 @@ public partial class App : Application
 {
     private readonly IServiceProvider _serviceProvider;
 
+    public static IServiceProvider Services => ((App)Current)._serviceProvider;
+
     public App()
     {
         var services = new ServiceCollection();

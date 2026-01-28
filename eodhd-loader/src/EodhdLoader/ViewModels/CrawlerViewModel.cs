@@ -204,9 +204,9 @@ public partial class CrawlerViewModel : ViewModelBase
     /// Callers MUST check the return value — an empty queue after false means
     /// "query failed", NOT "no gaps exist."
     /// </summary>
-    private async Task<bool> RefreshGapsAsync()
+    private async Task<bool> RefreshGapsAsync(int? limitOverride = null)
     {
-        var gaps = await _apiClient.GetPriceGapsAsync("US", SecuritiesToFetch, _cts?.Token ?? default);
+        var gaps = await _apiClient.GetPriceGapsAsync("US", limitOverride ?? SecuritiesToFetch, _cts?.Token ?? default);
         if (gaps.Success)
         {
             TotalSecurities = gaps.Summary.TotalSecurities;
@@ -402,10 +402,25 @@ public partial class CrawlerViewModel : ViewModelBase
 
             if (nextSecurity == null)
             {
-                // All remaining securities were in the skip set.
-                // Proceed directly to promote — don't just return, because next tick
-                // would RefreshGapsAsync, re-populate the queue with the same skipped
-                // securities, and loop forever without ever reaching the promote path.
+                // All securities in the current batch were in the skip set.
+                // Before promoting, check if there are actionable tracked gaps beyond
+                // what the SecuritiesToFetch limit returned. Only promote when ALL
+                // tracked securities have 100% coverage or are in the skip set.
+                if (SecuritiesWithGaps > _zeroResultAliases.Count)
+                {
+                    // There are tracked securities with gaps we haven't tried yet.
+                    // Fetch a larger batch to find them past the skipped ones.
+                    var expandedLimit = _zeroResultAliases.Count + SecuritiesToFetch;
+                    AddActivity("🔄", "Refresh", $"Skipped {_zeroResultAliases.Count} zero-result securities, searching for remaining {SecuritiesWithGaps - _zeroResultAliases.Count} with gaps...");
+                    var largerOk = await RefreshGapsAsync(expandedLimit);
+                    if (largerOk && _securityQueue.Count > 0)
+                    {
+                        // Found more securities to process. Next tick will dequeue them.
+                        return;
+                    }
+                }
+
+                // All tracked gaps are either filled or in the skip set. Now promote.
                 var promoted = await PromoteAndRefreshAsync();
                 if (!promoted || _securityQueue.Count == 0)
                 {
@@ -520,23 +535,24 @@ public partial class CrawlerViewModel : ViewModelBase
                     // Update completion
                     if (_dateQueue.Count == 0)
                     {
-                        // Done with this security
-                        SecuritiesProcessedThisSession++;
-                        SecuritiesWithGaps = Math.Max(0, SecuritiesWithGaps - 1);
-                        CompletionPercent = TotalSecurities > 0
-                            ? Math.Round((TotalSecurities - SecuritiesWithGaps) * 100.0 / TotalSecurities, 1)
-                            : 100;
-
-                        // If we loaded 0 records for this entire security, skip it on future
-                        // gap refreshes this session. Without this, securities where EODHD has
-                        // no data loop infinitely (gap persists → re-queued → 0 records → repeat).
                         if (_recordsForCurrentSecurity == 0)
                         {
+                            // EODHD returned 0 records for ALL dates. Mark permanently
+                            // unavailable so it never appears in gap queries again.
                             _zeroResultAliases.Add(security.SecurityAlias);
-                            AddActivity("⏭", security.Ticker, "Skipped (no data available from EODHD)");
+                            await MarkSecurityUnavailableAsync(security);
+                            // MarkSecurityUnavailableAsync handles all state updates
                         }
-
-                        _currentSecurity = null;
+                        else
+                        {
+                            // Done with this security (loaded some records)
+                            SecuritiesProcessedThisSession++;
+                            SecuritiesWithGaps = Math.Max(0, SecuritiesWithGaps - 1);
+                            CompletionPercent = TotalSecurities > 0
+                                ? Math.Round((TotalSecurities - SecuritiesWithGaps) * 100.0 / TotalSecurities, 1)
+                                : 100;
+                            _currentSecurity = null;
+                        }
                     }
 
                     StatusText = $"Loaded {security.Ticker} {dateStr}. {_dateQueue.Count} dates remaining for this security.";
@@ -613,7 +629,7 @@ public partial class CrawlerViewModel : ViewModelBase
     {
         var trackedLabel = security.IsTracked ? "[T]" : "[U]";
         AddActivity("⚠️", $"{trackedLabel} {security.Ticker}", $"No EODHD data - marking as unavailable");
-        StatusText = $"Marking {security.Ticker} as EODHD unavailable (no data after {NoDataThreshold} dates)...";
+        StatusText = $"Marking {security.Ticker} as EODHD unavailable...";
 
         try
         {

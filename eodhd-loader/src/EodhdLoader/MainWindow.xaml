@@ -17,7 +17,12 @@
     </Window.Resources>
 
     <Grid>
-        <TabControl SelectedIndex="{Binding SelectedTabIndex}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TabControl Grid.Row="0" SelectedIndex="{Binding SelectedTabIndex}">
             <TabItem Header="🕷️ Boris">
                 <views:BorisView DataContext="{Binding Boris}"/>
             </TabItem>
@@ -34,5 +39,12 @@
                 <views:DashboardView DataContext="{Binding Dashboard}"/>
             </TabItem>
         </TabControl>
+
+        <!-- Dev Tools -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,8,4">
+            <Button Content="Heatmap V2" Click="OnHeatmapV2Click" Width="90" Height="24"
+                    FontSize="11" Background="#1a1a2e" Foreground="#888" BorderBrush="#3c3c50"
+                    ToolTip="Open Heatmap V2 test window (green blob rendering)"/>
+        </StackPanel>
     </Grid>
 </Window>

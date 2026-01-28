@@ -81,11 +81,11 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
                 <!-- Total Records -->
-                <Border Grid.Column="0" Background="#1a1a2e" CornerRadius="8" Padding="12,10" Margin="0,0,4,0">
+                <Border Grid.Column="0" Background="#1a1a2e" CornerRadius="8" Padding="12,10" Margin="0,0,4,0"
+                        ToolTip="Total price records stored in the database">
                     <StackPanel HorizontalAlignment="Center">
                         <TextBlock Text="{Binding TotalRecordsDisplay}" FontSize="22" FontWeight="Bold"
                                    Foreground="#00d4ff" HorizontalAlignment="Center" FontFamily="Consolas"/>
@@ -98,7 +98,8 @@
                 </Border>
 
                 <!-- Total Securities -->
-                <Border Grid.Column="1" Background="#1a1a2e" CornerRadius="8" Padding="12,10" Margin="4,0">
+                <Border Grid.Column="1" Background="#1a1a2e" CornerRadius="8" Padding="12,10" Margin="4,0"
+                        ToolTip="Total securities in the EODHD universe (tracked + untracked + unavailable)">
                     <StackPanel HorizontalAlignment="Center">
                         <TextBlock Text="{Binding TotalSecuritiesDisplay}" FontSize="22" FontWeight="Bold"
                                    Foreground="#feca57" HorizontalAlignment="Center" FontFamily="Consolas"/>
@@ -111,7 +112,8 @@
                 </Border>
 
                 <!-- Tracked -->
-                <Border Grid.Column="2" Background="#1a1a2e" CornerRadius="8" Padding="12,10" Margin="4,0">
+                <Border Grid.Column="2" Background="#1a1a2e" CornerRadius="8" Padding="12,10" Margin="4,0"
+                        ToolTip="Securities actively tracked for gap-filling by the crawler">
                     <StackPanel HorizontalAlignment="Center">
                         <TextBlock Text="{Binding TrackedDisplay}" FontSize="22" FontWeight="Bold"
                                    Foreground="#00ff88" HorizontalAlignment="Center" FontFamily="Consolas"/>
@@ -121,36 +123,27 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Data Span -->
-                <Border Grid.Column="3" Background="#1a1a2e" CornerRadius="8" Padding="12,10" Margin="4,0">
-                    <StackPanel HorizontalAlignment="Center">
-                        <TextBlock Text="{Binding DataSpanDisplay}" FontSize="20" FontWeight="Bold"
-                                   Foreground="#ff9f43" HorizontalAlignment="Center" FontFamily="Consolas"/>
-                        <TextBlock Text="DATA SPAN" FontSize="9" Foreground="#666"
-                                   HorizontalAlignment="Center" FontWeight="Bold"/>
-                        <TextBlock Text="historical coverage" FontSize="9" Foreground="#444" HorizontalAlignment="Center"/>
-                    </StackPanel>
-                </Border>
-
-                <!-- Session Processed -->
-                <Border Grid.Column="4" Background="#1a1a2e" CornerRadius="8" Padding="12,10" Margin="4,0">
+                <!-- Tickers Processed -->
+                <Border Grid.Column="3" Background="#1a1a2e" CornerRadius="8" Padding="12,10" Margin="4,0"
+                        ToolTip="Individual securities fully processed during this crawler session">
                     <StackPanel HorizontalAlignment="Center">
                         <TextBlock Text="{Binding SecuritiesProcessedThisSession, StringFormat=N0}" FontSize="22" FontWeight="Bold"
                                    Foreground="#00d4ff" HorizontalAlignment="Center" FontFamily="Consolas"/>
-                        <TextBlock Text="SESSION" FontSize="9" Foreground="#666"
+                        <TextBlock Text="TICKERS" FontSize="9" Foreground="#666"
                                    HorizontalAlignment="Center" FontWeight="Bold"/>
-                        <TextBlock Text="processed today" FontSize="9" Foreground="#444" HorizontalAlignment="Center"/>
+                        <TextBlock Text="processed this session" FontSize="9" Foreground="#444" HorizontalAlignment="Center"/>
                     </StackPanel>
                 </Border>
 
                 <!-- Records Loaded -->
-                <Border Grid.Column="5" Background="#1a1a2e" CornerRadius="8" Padding="12,10" Margin="4,0,0,0">
+                <Border Grid.Column="4" Background="#1a1a2e" CornerRadius="8" Padding="12,10" Margin="4,0,0,0"
+                        ToolTip="Price records inserted into the database during this crawler session">
                     <StackPanel HorizontalAlignment="Center">
                         <TextBlock Text="{Binding RecordsLoadedThisSession, StringFormat=N0}" FontSize="22" FontWeight="Bold"
                                    Foreground="#feca57" HorizontalAlignment="Center" FontFamily="Consolas"/>
-                        <TextBlock Text="LOADED" FontSize="9" Foreground="#666"
+                        <TextBlock Text="RECORDS" FontSize="9" Foreground="#666"
                                    HorizontalAlignment="Center" FontWeight="Bold"/>
-                        <TextBlock Text="this session" FontSize="9" Foreground="#444" HorizontalAlignment="Center"/>
+                        <TextBlock Text="loaded this session" FontSize="9" Foreground="#444" HorizontalAlignment="Center"/>
                     </StackPanel>
                 </Border>
             </Grid>
