@@ -159,7 +159,7 @@
                         <TextBlock Text="COVERAGE HEATMAP" FontSize="10" Foreground="#888" FontWeight="Bold"/>
                         <TextBlock Text="  Year x Importance Score" FontSize="9" Foreground="#555"/>
                     </StackPanel>
-                    <controls:CoverageHeatmapControl Grid.Row="1"
+                    <controls:HeatmapV2Control Grid.Row="1"
                         HeatmapData="{Binding HeatmapData}"
                         IsLoading="{Binding IsHeatmapLoading}"
                         ActiveYear="{Binding ActiveHeatmapYear}"

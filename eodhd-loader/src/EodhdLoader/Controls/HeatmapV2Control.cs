@@ -59,6 +59,7 @@ public class HeatmapV2Control : UserControl
     // Colors
     private static readonly SKColor BrightGreen = new(0, 255, 136);  // #00ff88
     private static readonly SKColor DarkBg = new(10, 10, 21);        // #0a0a15
+    private static readonly SKTypeface ConsolasTypeface = SKTypeface.FromFamilyName("Consolas");
 
     // Layout
     private const float LeftMargin = 65f;
@@ -192,6 +193,8 @@ public class HeatmapV2Control : UserControl
 
     private void DrawBlobs(SKCanvas canvas, SKImageInfo info)
     {
+        if (_cellLookup == null) return;
+
         int yearSpan = _maxYear - _minYear + 1;
         int scoreCount = 10;
 
@@ -365,12 +368,11 @@ public class HeatmapV2Control : UserControl
         float cellWidth = (gridWidth - (yearSpan - 1) * CellPadding) / yearSpan;
         float cellHeight = (gridHeight - (scoreCount - 1) * CellPadding) / scoreCount;
 
+        using var labelFont = new SKFont(ConsolasTypeface, 16);
         using var labelPaint = new SKPaint
         {
             IsAntialias = true,
-            Color = new SKColor(150, 150, 150),
-            TextSize = 16,
-            Typeface = SKTypeface.FromFamilyName("Consolas")
+            Color = new SKColor(150, 150, 150)
         };
 
         // X-axis: Year labels (every 5 years)
@@ -383,8 +385,8 @@ public class HeatmapV2Control : UserControl
             float y = info.Height - 8;
 
             var text = year.ToString();
-            var textWidth = labelPaint.MeasureText(text);
-            canvas.DrawText(text, x - textWidth / 2, y, labelPaint);
+            var textWidth = labelFont.MeasureText(text);
+            canvas.DrawText(text, x - textWidth / 2, y, labelFont, labelPaint);
         }
 
         // Y-axis: Score labels (1-10)
@@ -394,28 +396,27 @@ public class HeatmapV2Control : UserControl
             float y = TopMargin + si * (cellHeight + CellPadding) + cellHeight / 2 + 5;
 
             var text = score.ToString();
-            var textWidth = labelPaint.MeasureText(text);
-            canvas.DrawText(text, LeftMargin - textWidth - 8, y, labelPaint);
+            var textWidth = labelFont.MeasureText(text);
+            canvas.DrawText(text, LeftMargin - textWidth - 8, y, labelFont, labelPaint);
         }
 
         // Axis titles
+        using var titleFont = new SKFont(ConsolasTypeface, 13);
         using var titlePaint = new SKPaint
         {
             IsAntialias = true,
-            Color = new SKColor(100, 100, 100),
-            TextSize = 13,
-            Typeface = SKTypeface.FromFamilyName("Consolas")
+            Color = new SKColor(100, 100, 100)
         };
 
         var yearTitle = "YEAR";
-        var yearTitleWidth = titlePaint.MeasureText(yearTitle);
-        canvas.DrawText(yearTitle, LeftMargin + gridWidth / 2 - yearTitleWidth / 2, info.Height - 28, titlePaint);
+        var yearTitleWidth = titleFont.MeasureText(yearTitle);
+        canvas.DrawText(yearTitle, LeftMargin + gridWidth / 2 - yearTitleWidth / 2, info.Height - 28, titleFont, titlePaint);
 
         canvas.Save();
         canvas.RotateDegrees(-90, 16, TopMargin + gridHeight / 2);
         var scoreTitle = "IMPORTANCE SCORE";
-        var scoreTitleWidth = titlePaint.MeasureText(scoreTitle);
-        canvas.DrawText(scoreTitle, 16 - scoreTitleWidth / 2, TopMargin + gridHeight / 2 + 5, titlePaint);
+        var scoreTitleWidth = titleFont.MeasureText(scoreTitle);
+        canvas.DrawText(scoreTitle, 16 - scoreTitleWidth / 2, TopMargin + gridHeight / 2 + 5, titleFont, titlePaint);
         canvas.Restore();
     }
 
@@ -425,14 +426,13 @@ public class HeatmapV2Control : UserControl
         float legendY = TopMargin + 10;
 
         // Title
+        using var titleFont = new SKFont(ConsolasTypeface, 13);
         using var titlePaint = new SKPaint
         {
             IsAntialias = true,
-            Color = new SKColor(150, 150, 150),
-            TextSize = 13,
-            Typeface = SKTypeface.FromFamilyName("Consolas")
+            Color = new SKColor(150, 150, 150)
         };
-        canvas.DrawText("COVERAGE", legendX, legendY, titlePaint);
+        canvas.DrawText("COVERAGE", legendX, legendY, titleFont, titlePaint);
         legendY += 22;
 
         // Vertical gradient bar: black at bottom → green at top
@@ -469,29 +469,27 @@ public class HeatmapV2Control : UserControl
         canvas.DrawRoundRect(legendX, legendY, barWidth, barHeight, 3, 3, borderPaint);
 
         // Labels
+        using var labelFont = new SKFont(ConsolasTypeface, 11);
         using var labelPaint = new SKPaint
         {
             IsAntialias = true,
-            Color = new SKColor(120, 120, 120),
-            TextSize = 11,
-            Typeface = SKTypeface.FromFamilyName("Consolas")
+            Color = new SKColor(120, 120, 120)
         };
 
-        canvas.DrawText("Full", legendX + barWidth + 6, legendY + 10, labelPaint);
-        canvas.DrawText("None", legendX + barWidth + 6, legendY + barHeight, labelPaint);
+        canvas.DrawText("Full", legendX + barWidth + 6, legendY + 10, labelFont, labelPaint);
+        canvas.DrawText("None", legendX + barWidth + 6, legendY + barHeight, labelFont, labelPaint);
     }
 
     private static void DrawCenteredText(SKCanvas canvas, SKImageInfo info, string text, float size, SKColor color)
     {
+        using var font = new SKFont(ConsolasTypeface, size);
         using var paint = new SKPaint
         {
             IsAntialias = true,
-            Color = color,
-            TextSize = size,
-            Typeface = SKTypeface.FromFamilyName("Consolas")
+            Color = color
         };
-        var textWidth = paint.MeasureText(text);
-        canvas.DrawText(text, (info.Width - textWidth) / 2, info.Height / 2, paint);
+        var textWidth = font.MeasureText(text);
+        canvas.DrawText(text, (info.Width - textWidth) / 2, info.Height / 2, font, paint);
     }
 
     private void OnMouseMove(object sender, MouseEventArgs e)

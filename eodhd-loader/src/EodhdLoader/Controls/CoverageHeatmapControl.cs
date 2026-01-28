@@ -63,6 +63,7 @@ public class CoverageHeatmapControl : UserControl
     private static readonly SKColor YellowTint = new(255, 200, 30);   // Untracked only
     private static readonly SKColor DarkBg = new(10, 10, 21);         // Empty cell
     private static readonly SKColor CardBg = new(26, 26, 46);         // #1a1a2e
+    private static readonly SKTypeface ConsolasTypeface = SKTypeface.FromFamilyName("Consolas");
 
     // Layout constants
     private const float LeftMargin = 65f;
@@ -326,12 +327,11 @@ public class CoverageHeatmapControl : UserControl
         float cellWidth = (gridWidth - (yearSpan - 1) * CellPadding) / yearSpan;
         float cellHeight = (gridHeight - (scoreCount - 1) * CellPadding) / scoreCount;
 
+        using var labelFont = new SKFont(ConsolasTypeface, 16);
         using var labelPaint = new SKPaint
         {
             IsAntialias = true,
-            Color = new SKColor(150, 150, 150),
-            TextSize = 16,
-            Typeface = SKTypeface.FromFamilyName("Consolas")
+            Color = new SKColor(150, 150, 150)
         };
 
         // X-axis: Year labels (every 5 years)
@@ -344,8 +344,8 @@ public class CoverageHeatmapControl : UserControl
             float y = info.Height - 8;
 
             var text = year.ToString();
-            var textWidth = labelPaint.MeasureText(text);
-            canvas.DrawText(text, x - textWidth / 2, y, labelPaint);
+            var textWidth = labelFont.MeasureText(text);
+            canvas.DrawText(text, x - textWidth / 2, y, labelFont, labelPaint);
         }
 
         // Y-axis: Score labels (1-10)
@@ -353,33 +353,31 @@ public class CoverageHeatmapControl : UserControl
         {
             int score = 10 - si;
             float y = TopMargin + si * (cellHeight + CellPadding) + cellHeight / 2 + 5;
-            float x = 8;
 
             var text = score.ToString();
-            var textWidth = labelPaint.MeasureText(text);
-            canvas.DrawText(text, LeftMargin - textWidth - 8, y, labelPaint);
+            var textWidth = labelFont.MeasureText(text);
+            canvas.DrawText(text, LeftMargin - textWidth - 8, y, labelFont, labelPaint);
         }
 
         // Axis titles
+        using var titleFont = new SKFont(ConsolasTypeface, 13);
         using var titlePaint = new SKPaint
         {
             IsAntialias = true,
-            Color = new SKColor(100, 100, 100),
-            TextSize = 13,
-            Typeface = SKTypeface.FromFamilyName("Consolas")
+            Color = new SKColor(100, 100, 100)
         };
 
         // "YEAR" at bottom center
         var yearTitle = "YEAR";
-        var yearTitleWidth = titlePaint.MeasureText(yearTitle);
-        canvas.DrawText(yearTitle, LeftMargin + gridWidth / 2 - yearTitleWidth / 2, info.Height - 28, titlePaint);
+        var yearTitleWidth = titleFont.MeasureText(yearTitle);
+        canvas.DrawText(yearTitle, LeftMargin + gridWidth / 2 - yearTitleWidth / 2, info.Height - 28, titleFont, titlePaint);
 
         // "SCORE" rotated on left
         canvas.Save();
         canvas.RotateDegrees(-90, 16, TopMargin + gridHeight / 2);
         var scoreTitle = "IMPORTANCE SCORE";
-        var scoreTitleWidth = titlePaint.MeasureText(scoreTitle);
-        canvas.DrawText(scoreTitle, 16 - scoreTitleWidth / 2, TopMargin + gridHeight / 2 + 5, titlePaint);
+        var scoreTitleWidth = titleFont.MeasureText(scoreTitle);
+        canvas.DrawText(scoreTitle, 16 - scoreTitleWidth / 2, TopMargin + gridHeight / 2 + 5, titleFont, titlePaint);
         canvas.Restore();
     }
 
@@ -392,14 +390,13 @@ public class CoverageHeatmapControl : UserControl
         float cellSize = legendSize / 5;
 
         // Title
+        using var titleFont = new SKFont(ConsolasTypeface, 13);
         using var titlePaint = new SKPaint
         {
             IsAntialias = true,
-            Color = new SKColor(150, 150, 150),
-            TextSize = 13,
-            Typeface = SKTypeface.FromFamilyName("Consolas")
+            Color = new SKColor(150, 150, 150)
         };
-        canvas.DrawText("LEGEND", legendX, legendY, titlePaint);
+        canvas.DrawText("LEGEND", legendX, legendY, titleFont, titlePaint);
         legendY += 18;
 
         using var cellPaint = new SKPaint { IsAntialias = false };
@@ -437,61 +434,58 @@ public class CoverageHeatmapControl : UserControl
         }
 
         // Axis labels for legend
+        using var labelFont = new SKFont(ConsolasTypeface, 12);
         using var labelPaint = new SKPaint
         {
             IsAntialias = true,
-            Color = new SKColor(120, 120, 120),
-            TextSize = 12,
-            Typeface = SKTypeface.FromFamilyName("Consolas")
+            Color = new SKColor(120, 120, 120)
         };
 
         // Bottom label: "Tracked →"
-        canvas.DrawText("Tracked \u2192", legendX, legendY + legendSize + 16, labelPaint);
+        canvas.DrawText("Tracked \u2192", legendX, legendY + legendSize + 16, labelFont, labelPaint);
 
         // Left label: "Untracked ↑" (rotated)
         canvas.Save();
         canvas.RotateDegrees(-90, legendX - 8, legendY + legendSize / 2);
-        canvas.DrawText("Untracked \u2192", legendX - 8 - 40, legendY + legendSize / 2 + 4, labelPaint);
+        canvas.DrawText("Untracked \u2192", legendX - 8 - 40, legendY + legendSize / 2 + 4, labelFont, labelPaint);
         canvas.Restore();
 
         // Color key labels
         float keyY = legendY + legendSize + 34;
         using var keyPaint = new SKPaint { IsAntialias = false };
+        using var keyLabelFont = new SKFont(ConsolasTypeface, 13);
         using var keyLabelPaint = new SKPaint
         {
             IsAntialias = true,
-            Color = new SKColor(150, 150, 150),
-            TextSize = 13,
-            Typeface = SKTypeface.FromFamilyName("Consolas")
+            Color = new SKColor(150, 150, 150)
         };
 
         // Blue = tracked
         keyPaint.Color = BlueTint;
         canvas.DrawRect(legendX, keyY, 14, 14, keyPaint);
-        canvas.DrawText("Tracked", legendX + 20, keyY + 12, keyLabelPaint);
+        canvas.DrawText("Tracked", legendX + 20, keyY + 12, keyLabelFont, keyLabelPaint);
 
         // Yellow = untracked
         keyPaint.Color = YellowTint;
         canvas.DrawRect(legendX, keyY + 22, 14, 14, keyPaint);
-        canvas.DrawText("Untracked", legendX + 20, keyY + 34, keyLabelPaint);
+        canvas.DrawText("Untracked", legendX + 20, keyY + 34, keyLabelFont, keyLabelPaint);
 
         // Green = both
         keyPaint.Color = GreenTint;
         canvas.DrawRect(legendX, keyY + 44, 14, 14, keyPaint);
-        canvas.DrawText("Both", legendX + 20, keyY + 56, keyLabelPaint);
+        canvas.DrawText("Both", legendX + 20, keyY + 56, keyLabelFont, keyLabelPaint);
     }
 
     private static void DrawCenteredText(SKCanvas canvas, SKImageInfo info, string text, float size, SKColor color)
     {
+        using var font = new SKFont(ConsolasTypeface, size);
         using var paint = new SKPaint
         {
             IsAntialias = true,
-            Color = color,
-            TextSize = size,
-            Typeface = SKTypeface.FromFamilyName("Consolas")
+            Color = color
         };
-        var textWidth = paint.MeasureText(text);
-        canvas.DrawText(text, (info.Width - textWidth) / 2, info.Height / 2, paint);
+        var textWidth = font.MeasureText(text);
+        canvas.DrawText(text, (info.Width - textWidth) / 2, info.Height / 2, font, paint);
     }
 
     private void OnMouseMove(object sender, MouseEventArgs e)

@@ -295,15 +295,10 @@ public partial class CrawlerViewModel : ViewModelBase
 
         if (_securityQueue.Count == 0)
         {
-            // No tracked gaps — try promoting untracked securities
-            var promoted = await PromoteAndRefreshAsync();
-            if (!promoted || _securityQueue.Count == 0)
-            {
-                CurrentAction = "Complete!";
-                StatusText = "No gaps found. All securities have complete price data!";
-                IsCrawling = false;
-                return;
-            }
+            CurrentAction = "Complete!";
+            StatusText = "No gaps found. All tracked securities have complete price data.";
+            IsCrawling = false;
+            return;
         }
 
         // Start the paced timer
@@ -366,22 +361,14 @@ public partial class CrawlerViewModel : ViewModelBase
 
                 if (_securityQueue.Count == 0)
                 {
-                    // No tracked gaps remain — try promoting a batch of untracked
-                    var promoted = await PromoteAndRefreshAsync();
-
-                    if (!promoted || _securityQueue.Count == 0)
-                    {
-                        // Nothing left to promote or promote returned empty — we're done
-                        _crawlTimer.Stop();
-                        IsCrawling = false;
-                        CurrentAction = "Complete!";
-                        CurrentPhase = "Complete";
-                        StatusText = $"All gaps filled! Processed {SecuritiesProcessedThisSession} securities, loaded {RecordsLoadedThisSession:N0} records.";
-                        AddActivity("✓", "Complete", "All tracked securities complete, no more to promote");
-                        return;
-                    }
-
-                    StatusText = $"Crawling: {_securityQueue.Count} securities queued";
+                    // All tracked gaps filled — stop. User must manually promote
+                    // untracked securities when ready.
+                    _crawlTimer.Stop();
+                    IsCrawling = false;
+                    CurrentAction = "Complete!";
+                    CurrentPhase = "Complete";
+                    StatusText = $"All tracked gaps filled! Processed {SecuritiesProcessedThisSession} securities, loaded {RecordsLoadedThisSession:N0} records.";
+                    AddActivity("✓", "Complete", "All tracked securities have complete price data");
                     return;
                 }
             }
@@ -420,17 +407,13 @@ public partial class CrawlerViewModel : ViewModelBase
                     }
                 }
 
-                // All tracked gaps are either filled or in the skip set. Now promote.
-                var promoted = await PromoteAndRefreshAsync();
-                if (!promoted || _securityQueue.Count == 0)
-                {
-                    _crawlTimer.Stop();
-                    IsCrawling = false;
-                    CurrentAction = "Complete!";
-                    CurrentPhase = "Complete";
-                    StatusText = $"All gaps filled! Processed {SecuritiesProcessedThisSession} securities, loaded {RecordsLoadedThisSession:N0} records.";
-                    AddActivity("✓", "Complete", "All tracked securities complete, no more to promote");
-                }
+                // All tracked gaps are either filled or in the skip set. Stop.
+                _crawlTimer.Stop();
+                IsCrawling = false;
+                CurrentAction = "Complete!";
+                CurrentPhase = "Complete";
+                StatusText = $"All tracked gaps filled! Processed {SecuritiesProcessedThisSession} securities, loaded {RecordsLoadedThisSession:N0} records.";
+                AddActivity("✓", "Complete", "All tracked securities have complete price data");
                 return;
             }
 
