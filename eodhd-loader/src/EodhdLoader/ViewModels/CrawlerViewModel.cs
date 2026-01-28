@@ -666,6 +666,30 @@ public partial class CrawlerViewModel : ViewModelBase
         {
             // Non-critical - local updates continue working
         }
+
+        // Refresh server-side stats (price records, securities, tracked counts)
+        try
+        {
+            var stats = await _apiClient.GetDashboardStatsAsync(_cts?.Token ?? default);
+            if (stats?.Success == true)
+            {
+                if (stats.Universe != null)
+                {
+                    TotalSecuritiesDisplay = stats.Universe.TotalSecurities.ToString("N0");
+                    TrackedDisplay = stats.Universe.Tracked.ToString("N0");
+                    UnavailableDisplay = stats.Universe.Unavailable.ToString("N0");
+                }
+                if (stats.Prices != null)
+                {
+                    TotalRecordsDisplay = FormatLargeNumber(stats.Prices.TotalRecords);
+                    LatestDateDisplay = stats.Prices.LatestDate ?? "—";
+                }
+            }
+        }
+        catch
+        {
+            // Non-critical
+        }
     }
 
     /// <summary>
