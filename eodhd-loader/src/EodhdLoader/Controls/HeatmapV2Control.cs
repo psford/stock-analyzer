@@ -77,10 +77,13 @@ public class HeatmapV2Control : UserControl
     private int _hoverYear = -1;
     private int _hoverScore = -1;
 
-    // Pulse animation
+    // Ripple animation
     private readonly DispatcherTimer _pulseTimer;
     private double _pulsePhase;
     private const double PulseSpeed = 0.15;
+    private const int RippleCount = 3;
+    private const double RipplePeriod = 6 * Math.PI;  // ~4.2s per ring cycle
+    private const double RippleSpacing = RipplePeriod / RippleCount;
 
     private readonly SKElement _skElement;
     private readonly ToolTip _tooltip;
@@ -103,7 +106,7 @@ public class HeatmapV2Control : UserControl
         _pulseTimer.Tick += (_, _) =>
         {
             _pulsePhase += PulseSpeed;
-            if (_pulsePhase > 2 * Math.PI) _pulsePhase -= 2 * Math.PI;
+            if (_pulsePhase > 1000 * Math.PI) _pulsePhase -= 1000 * Math.PI;
             _skElement.InvalidateVisual();
         };
 
@@ -204,11 +207,11 @@ public class HeatmapV2Control : UserControl
         float cellWidth = (gridWidth - (yearSpan - 1) * CellPadding) / yearSpan;
         float cellHeight = (gridHeight - (scoreCount - 1) * CellPadding) / scoreCount;
 
-        // Blob radius: overlap with neighbors for smooth blending
-        float blobRadius = Math.Max(cellWidth, cellHeight) * 1.4f;
+        // Blob radius: larger overlap for solid fill in dense areas
+        float blobRadius = Math.Max(cellWidth, cellHeight) * 1.6f;
 
         // Blur sigma proportional to cell size for smooth appearance
-        float blurSigma = Math.Max(cellWidth, cellHeight) * 0.6f;
+        float blurSigma = Math.Max(cellWidth, cellHeight) * 0.5f;
 
         // Create off-screen surface for blob rendering with Screen blend mode
         using var offscreenSurface = SKSurface.Create(info);
@@ -217,12 +220,47 @@ public class HeatmapV2Control : UserControl
         var offCanvas = offscreenSurface.Canvas;
         offCanvas.Clear(SKColors.Black);
 
-        // Clip to grid area so blobs don't bleed into margins
+        // Extend clip beyond grid to allow edge phantom blobs to render
         offCanvas.Save();
-        offCanvas.ClipRect(new SKRect(LeftMargin - blobRadius * 0.3f, TopMargin - blobRadius * 0.3f,
-            info.Width - RightMargin + blobRadius * 0.3f, info.Height - BottomMargin + blobRadius * 0.3f));
+        offCanvas.ClipRect(new SKRect(LeftMargin - blobRadius, TopMargin - blobRadius,
+            info.Width - RightMargin + blobRadius, info.Height - BottomMargin + blobRadius));
+
+        // Local function to draw a single blob at a position
+        void DrawBlob(float bx, float by, double intensity)
+        {
+            byte r = 0;
+            byte g = (byte)(255 * intensity);
+            byte b = (byte)(136 * intensity);
+            byte a = (byte)(245 * intensity);
+
+            // Hold color longer before fading — solid center, gradual fade at edge
+            var colors = new[]
+            {
+                new SKColor(r, g, b, a),
+                new SKColor(r, g, b, (byte)(a * 0.7)),
+                new SKColor(r, g, b, (byte)(a * 0.2)),
+                SKColors.Transparent
+            };
+            var positions = new[] { 0f, 0.45f, 0.75f, 1f };
+
+            using var shader = SKShader.CreateRadialGradient(
+                new SKPoint(bx, by), blobRadius,
+                colors, positions, SKShaderTileMode.Clamp);
+
+            using var paint = new SKPaint
+            {
+                IsAntialias = true,
+                Shader = shader,
+                BlendMode = SKBlendMode.Screen
+            };
+
+            offCanvas.DrawCircle(bx, by, blobRadius, paint);
+        }
 
         // Draw radial gradient blob for each data point
+        float cellStepX = cellWidth + CellPadding;
+        float cellStepY = cellHeight + CellPadding;
+
         foreach (var kvp in _cellLookup)
         {
             var (year, score) = kvp.Key;
@@ -241,35 +279,40 @@ public class HeatmapV2Control : UserControl
             int yi = year - _minYear;
             int si = 10 - score; // Score 10 at top
 
-            float cx = LeftMargin + yi * (cellWidth + CellPadding) + cellWidth / 2;
-            float cy = TopMargin + si * (cellHeight + CellPadding) + cellHeight / 2;
+            float cx = LeftMargin + yi * cellStepX + cellWidth / 2;
+            float cy = TopMargin + si * cellStepY + cellHeight / 2;
 
-            // Green color at computed intensity: #00ff88 scaled
-            byte r = 0;
-            byte g = (byte)(255 * intensity);
-            byte b = (byte)(136 * intensity);
-            byte a = (byte)(220 * intensity);
+            // Draw the real blob
+            DrawBlob(cx, cy, intensity);
 
-            var colors = new[]
+            // Mirror phantom blobs for cells near edges (2 deep) to prevent fade at boundaries
+            int phantomDepth = 2;
+
+            for (int d = 1; d <= phantomDepth; d++)
             {
-                new SKColor(r, g, b, a),
-                new SKColor(r, g, b, (byte)(a * 0.3)),
-                SKColors.Transparent
-            };
-            var positions = new[] { 0f, 0.5f, 1f };
+                if (yi < phantomDepth) DrawBlob(cx - d * cellStepX, cy, intensity);
+                if (yi >= yearSpan - phantomDepth) DrawBlob(cx + d * cellStepX, cy, intensity);
+                if (si < phantomDepth) DrawBlob(cx, cy - d * cellStepY, intensity);
+                if (si >= scoreCount - phantomDepth) DrawBlob(cx, cy + d * cellStepY, intensity);
+            }
 
-            using var shader = SKShader.CreateRadialGradient(
-                new SKPoint(cx, cy), blobRadius,
-                colors, positions, SKShaderTileMode.Clamp);
-
-            using var paint = new SKPaint
-            {
-                IsAntialias = true,
-                Shader = shader,
-                BlendMode = SKBlendMode.Screen
-            };
-
-            offCanvas.DrawCircle(cx, cy, blobRadius, paint);
+            // Corner phantoms for cells near both edges
+            if (yi < phantomDepth && si < phantomDepth)
+                for (int dx = 1; dx <= phantomDepth; dx++)
+                    for (int dy = 1; dy <= phantomDepth; dy++)
+                        DrawBlob(cx - dx * cellStepX, cy - dy * cellStepY, intensity);
+            if (yi >= yearSpan - phantomDepth && si < phantomDepth)
+                for (int dx = 1; dx <= phantomDepth; dx++)
+                    for (int dy = 1; dy <= phantomDepth; dy++)
+                        DrawBlob(cx + dx * cellStepX, cy - dy * cellStepY, intensity);
+            if (yi < phantomDepth && si >= scoreCount - phantomDepth)
+                for (int dx = 1; dx <= phantomDepth; dx++)
+                    for (int dy = 1; dy <= phantomDepth; dy++)
+                        DrawBlob(cx - dx * cellStepX, cy + dy * cellStepY, intensity);
+            if (yi >= yearSpan - phantomDepth && si >= scoreCount - phantomDepth)
+                for (int dx = 1; dx <= phantomDepth; dx++)
+                    for (int dy = 1; dy <= phantomDepth; dy++)
+                        DrawBlob(cx + dx * cellStepX, cy + dy * cellStepY, intensity);
         }
 
         offCanvas.Restore();
@@ -302,7 +345,7 @@ public class HeatmapV2Control : UserControl
         float cellWidth = (gridWidth - (yearSpan - 1) * CellPadding) / yearSpan;
         float cellHeight = (gridHeight - (scoreCount - 1) * CellPadding) / scoreCount;
 
-        // Active cell: bright green dot + pulsing border (epicenter of ripple)
+        // Active cell: stone-drop ripple effect
         if (ActiveYear >= _minYear && ActiveYear <= _maxYear && ActiveScore >= 1 && ActiveScore <= 10)
         {
             int yi = ActiveYear - _minYear;
@@ -313,27 +356,56 @@ public class HeatmapV2Control : UserControl
             float cx = x + cellWidth / 2;
             float cy = y + cellHeight / 2;
 
-            double pulse = (Math.Sin(_pulsePhase) + 1.0) / 2.0;
-            byte glowAlpha = (byte)(80 + pulse * 175);
+            // Compute max ripple radius: distance from epicenter to farthest grid corner
+            float gridLeft = LeftMargin;
+            float gridTop = TopMargin;
+            float gridRight = info.Width - RightMargin;
+            float gridBottom = info.Height - BottomMargin;
 
-            // Bright green dot at epicenter
-            float dotRadius = Math.Min(cellWidth, cellHeight) * 0.35f;
+            float maxDx = Math.Max(cx - gridLeft, gridRight - cx);
+            float maxDy = Math.Max(cy - gridTop, gridBottom - cy);
+            float maxRippleRadius = (float)Math.Sqrt(maxDx * maxDx + maxDy * maxDy);
+
+            // Clip ripple rings to grid area
+            canvas.Save();
+            canvas.ClipRect(new SKRect(gridLeft, gridTop, gridRight, gridBottom));
+
+            // Draw expanding ripple rings
+            for (int i = 0; i < RippleCount; i++)
+            {
+                double ringPhase = (_pulsePhase + i * RippleSpacing) % RipplePeriod;
+                double t = ringPhase / RipplePeriod; // 0 to 1
+
+                float radius = (float)(t * maxRippleRadius);
+                float fade = (float)((1.0 - t) * (1.0 - t)); // quadratic fade
+                byte alpha = (byte)(fade * 180);
+                float strokeWidth = 2.5f * (1.0f - (float)t) + 0.5f;
+
+                if (alpha < 2) continue;
+
+                using var ringPaint = new SKPaint
+                {
+                    IsAntialias = true,
+                    Style = SKPaintStyle.Stroke,
+                    Color = new SKColor(0, 255, 170, alpha),
+                    StrokeWidth = strokeWidth
+                };
+                canvas.DrawCircle(cx, cy, radius, ringPaint);
+            }
+
+            canvas.Restore();
+
+            // Epicenter dot (drawn on top, outside clip)
+            double pulse = (Math.Sin(_pulsePhase * 3) + 1.0) / 2.0; // faster pulse for small dot
+            byte dotAlpha = (byte)(120 + pulse * 135);
+            float dotRadius = Math.Min(cellWidth, cellHeight) * 0.2f;
+
             using var dotPaint = new SKPaint
             {
                 IsAntialias = true,
-                Color = new SKColor(0, 255, 136, glowAlpha)
+                Color = new SKColor(0, 255, 136, dotAlpha)
             };
             canvas.DrawCircle(cx, cy, dotRadius, dotPaint);
-
-            // Outer glow ring
-            using var ringPaint = new SKPaint
-            {
-                IsAntialias = true,
-                Style = SKPaintStyle.Stroke,
-                Color = new SKColor(0, 255, 200, (byte)(glowAlpha / 2)),
-                StrokeWidth = 2
-            };
-            canvas.DrawCircle(cx, cy, dotRadius + 4, ringPaint);
         }
 
         // Hover highlight

@@ -477,7 +477,7 @@ public class StockAnalyzerApiClient
     }
 
     // ============================================================================
-    // Dashboard Methods (consolidated stats for command center UI)
+    // Dashboard Methods (consolidated stats for data load monitor UI)
     // ============================================================================
 
     /// <summary>
@@ -866,7 +866,7 @@ public class MarkUnavailableResult
 }
 
 // ============================================================================
-// Dashboard DTOs (for command center UI)
+// Dashboard DTOs (for data load monitor UI)
 // ============================================================================
 
 public class DashboardStatsResult

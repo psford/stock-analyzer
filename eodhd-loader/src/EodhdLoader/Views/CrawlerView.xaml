@@ -30,7 +30,7 @@
 
                 <!-- Title -->
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="DATA COMMAND CENTER" FontSize="18" FontWeight="Bold"
+                    <TextBlock Text="DATA LOAD MONITOR" FontSize="18" FontWeight="Bold"
                                Foreground="White" FontFamily="Consolas" VerticalAlignment="Center"/>
                     <TextBlock Text="  autonomous gap-filling agent" FontSize="10"
                                Foreground="#555" VerticalAlignment="Center" Margin="4,2,0,0"/>
