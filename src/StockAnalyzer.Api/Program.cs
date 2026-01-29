@@ -1766,7 +1766,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                     FROM data.SecurityMaster sm WITH (NOLOCK)
                     INNER JOIN data.Prices p WITH (NOLOCK) ON p.SecurityAlias = sm.SecurityAlias
                     LEFT JOIN data.TrackedSecurities ts WITH (NOLOCK) ON ts.SecurityAlias = sm.SecurityAlias
-                    WHERE sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0 AND sm.IsTracked = 1
+                    WHERE sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0 AND sm.IsEodhdComplete = 0 AND sm.IsTracked = 1
                     GROUP BY sm.SecurityAlias, sm.TickerSymbol, sm.IsTracked, sm.SecurityType, sm.ImportanceScore, ts.Priority
                 ),
                 ExpectedCounts AS (
@@ -1791,7 +1791,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                            (SELECT DayCount FROM TwoYearBusinessDays) AS MissingDays
                     FROM data.SecurityMaster sm WITH (NOLOCK)
                     LEFT JOIN data.TrackedSecurities ts WITH (NOLOCK) ON ts.SecurityAlias = sm.SecurityAlias
-                    WHERE sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0 AND sm.IsTracked = 1
+                    WHERE sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0 AND sm.IsEodhdComplete = 0 AND sm.IsTracked = 1
                       AND NOT EXISTS (SELECT 1 FROM data.Prices p WITH (NOLOCK) WHERE p.SecurityAlias = sm.SecurityAlias)
                 ),
                 AllTrackedGaps AS (
@@ -2101,6 +2101,61 @@ app.MapPost("/api/admin/prices/mark-eodhd-unavailable/{securityAlias}", async (I
     }
 })
 .WithName("MarkEodhdUnavailable")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status404NotFound)
+.Produces(StatusCodes.Status500InternalServerError);
+
+// POST /api/admin/prices/mark-eodhd-complete - Mark a security as having all available EODHD data loaded
+// Called by the crawler when a full-history load returns 0 new records (EODHD data fully synced,
+// remaining business-calendar gaps are unfillable). Prevents wasting API calls on future gap queries.
+app.MapPost("/api/admin/prices/mark-eodhd-complete/{securityAlias}", async (IServiceProvider serviceProvider, int securityAlias) =>
+{
+    using var scope = serviceProvider.CreateScope();
+    var context = scope.ServiceProvider.GetService<StockAnalyzerDbContext>();
+
+    if (context == null)
+        return Results.BadRequest(new { error = "Database context not configured" });
+
+    try
+    {
+        var security = await context.SecurityMaster.FindAsync(securityAlias);
+
+        if (security == null)
+            return Results.NotFound(new { error = $"Security {securityAlias} not found" });
+
+        if (security.IsEodhdComplete)
+        {
+            return Results.Ok(new
+            {
+                success = true,
+                message = $"Security {security.TickerSymbol} was already marked as EODHD complete",
+                ticker = security.TickerSymbol,
+                securityAlias
+            });
+        }
+
+        security.IsEodhdComplete = true;
+        security.UpdatedAt = DateTime.UtcNow;
+        await context.SaveChangesAsync();
+
+        Log.Information("Marked {Ticker} (alias {Alias}) as EODHD complete", security.TickerSymbol, securityAlias);
+
+        return Results.Ok(new
+        {
+            success = true,
+            message = $"Marked {security.TickerSymbol} as EODHD complete - will be skipped in future gap queries",
+            ticker = security.TickerSymbol,
+            securityAlias
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Failed to mark security {SecurityAlias} as EODHD complete", securityAlias);
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("MarkEodhdComplete")
 .WithOpenApi()
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status404NotFound)

@@ -32,6 +32,10 @@ public class HeatmapV2Control : UserControl
         DependencyProperty.Register(nameof(ActiveScore), typeof(int), typeof(HeatmapV2Control),
             new PropertyMetadata(-1, OnActiveCellChanged));
 
+    public static readonly DependencyProperty CellUpdateCounterProperty =
+        DependencyProperty.Register(nameof(CellUpdateCounter), typeof(long), typeof(HeatmapV2Control),
+            new PropertyMetadata(0L, OnCellUpdateCounterChanged));
+
     public HeatmapDataResult? HeatmapData
     {
         get => (HeatmapDataResult?)GetValue(HeatmapDataProperty);
@@ -56,6 +60,12 @@ public class HeatmapV2Control : UserControl
         set => SetValue(ActiveScoreProperty, value);
     }
 
+    public long CellUpdateCounter
+    {
+        get => (long)GetValue(CellUpdateCounterProperty);
+        set => SetValue(CellUpdateCounterProperty, value);
+    }
+
     // Colors
     private static readonly SKColor BrightGreen = new(0, 255, 136);  // #00ff88
     private static readonly SKColor DarkBg = new(10, 10, 21);        // #0a0a15
@@ -76,6 +86,11 @@ public class HeatmapV2Control : UserControl
     // Hover state
     private int _hoverYear = -1;
     private int _hoverScore = -1;
+
+    // Purple→green fade for recently updated cells
+    private readonly Dictionary<(int year, int score), DateTime> _recentlyUpdated = new();
+    private Dictionary<(int year, int score), (long tracked, long untracked)>? _previousCounts;
+    private const double FadeDurationSeconds = 10.0;
 
     // Ripple animation
     private readonly DispatcherTimer _pulseTimer;
@@ -107,6 +122,21 @@ public class HeatmapV2Control : UserControl
         {
             _pulsePhase += PulseSpeed;
             if (_pulsePhase > 1000 * Math.PI) _pulsePhase -= 1000 * Math.PI;
+
+            // Clean up expired fades
+            if (_recentlyUpdated.Count > 0)
+            {
+                var cutoff = DateTime.UtcNow.AddSeconds(-FadeDurationSeconds);
+                var expired = new List<(int, int)>();
+                foreach (var kvp in _recentlyUpdated)
+                    if (kvp.Value < cutoff) expired.Add(kvp.Key);
+                foreach (var key in expired)
+                    _recentlyUpdated.Remove(key);
+
+                if (_recentlyUpdated.Count == 0 && ActiveYear < 0 && ActiveScore < 0)
+                    _pulseTimer.Stop();
+            }
+
             _skElement.InvalidateVisual();
         };
 
@@ -143,9 +173,27 @@ public class HeatmapV2Control : UserControl
             }
             else if (!hasActiveCell && control._pulseTimer.IsEnabled)
             {
-                control._pulseTimer.Stop();
+                if (control._recentlyUpdated.Count == 0)
+                    control._pulseTimer.Stop();
                 control._skElement.InvalidateVisual();
             }
+        }
+    }
+
+    private static void OnCellUpdateCounterChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is HeatmapV2Control control && control.ActiveYear >= 0 && control.ActiveScore >= 0)
+        {
+            var key = (control.ActiveYear, control.ActiveScore);
+            control._recentlyUpdated[key] = DateTime.UtcNow;
+
+            if (!control._pulseTimer.IsEnabled)
+            {
+                control._pulsePhase = 0;
+                control._pulseTimer.Start();
+            }
+
+            control._skElement.InvalidateVisual();
         }
     }
 
@@ -158,12 +206,42 @@ public class HeatmapV2Control : UserControl
             return;
         }
 
-        _cellLookup = new Dictionary<(int, int), HeatmapCell>();
+        var newLookup = new Dictionary<(int, int), HeatmapCell>();
         foreach (var cell in data.Cells)
         {
-            _cellLookup[(cell.Year, cell.Score)] = cell;
+            newLookup[(cell.Year, cell.Score)] = cell;
         }
 
+        // Detect cells with increased record counts → mark for purple fade
+        if (_previousCounts != null)
+        {
+            var now = DateTime.UtcNow;
+            foreach (var kvp in newLookup)
+            {
+                var key = kvp.Key;
+                var cell = kvp.Value;
+                if (_previousCounts.TryGetValue(key, out var prev))
+                {
+                    if (cell.TrackedRecords > prev.tracked || cell.UntrackedRecords > prev.untracked)
+                        _recentlyUpdated[key] = now;
+                }
+                else if (cell.TrackedRecords > 0 || cell.UntrackedRecords > 0)
+                {
+                    _recentlyUpdated[key] = now;
+                }
+            }
+
+            // Start timer for fade animation if needed
+            if (_recentlyUpdated.Count > 0 && !_pulseTimer.IsEnabled)
+                _pulseTimer.Start();
+        }
+
+        // Store current counts for next comparison
+        _previousCounts = new Dictionary<(int, int), (long, long)>();
+        foreach (var kvp in newLookup)
+            _previousCounts[kvp.Key] = (kvp.Value.TrackedRecords, kvp.Value.UntrackedRecords);
+
+        _cellLookup = newLookup;
         _minYear = data.Metadata.MinYear;
         _maxYear = data.Metadata.MaxYear;
         _maxTracked = Math.Max(1, data.Metadata.MaxTrackedRecords);
@@ -225,12 +303,15 @@ public class HeatmapV2Control : UserControl
         offCanvas.ClipRect(new SKRect(LeftMargin - blobRadius, TopMargin - blobRadius,
             info.Width - RightMargin + blobRadius, info.Height - BottomMargin + blobRadius));
 
+        // Color state for current blob (captured by DrawBlob closure)
+        byte blobR = 0, blobG = 255, blobB = 136;
+
         // Local function to draw a single blob at a position
         void DrawBlob(float bx, float by, double intensity)
         {
-            byte r = 0;
-            byte g = (byte)(255 * intensity);
-            byte b = (byte)(136 * intensity);
+            byte r = (byte)(blobR * intensity);
+            byte g = (byte)(blobG * intensity);
+            byte b = (byte)(blobB * intensity);
             byte a = (byte)(245 * intensity);
 
             // Hold color longer before fading — solid center, gradual fade at edge
@@ -268,6 +349,21 @@ public class HeatmapV2Control : UserControl
 
             if (cell.TrackedRecords == 0 && cell.UntrackedRecords == 0)
                 continue;
+
+            // Determine color: purple→green fade for recently updated cells
+            if (_recentlyUpdated.TryGetValue((year, score), out var updatedAt))
+            {
+                double elapsed = (DateTime.UtcNow - updatedAt).TotalSeconds;
+                double fadeT = Math.Clamp(elapsed / FadeDurationSeconds, 0, 1);
+                // Soft purple (130, 50, 255) → green (0, 255, 136)
+                blobR = (byte)(130 * (1 - fadeT));
+                blobG = (byte)(50 + 205 * fadeT);
+                blobB = (byte)(255 + (136 - 255) * fadeT);
+            }
+            else
+            {
+                blobR = 0; blobG = 255; blobB = 136;
+            }
 
             // Normalize with sqrt perceptual scaling
             double t = Math.Sqrt(Math.Min(1.0, (double)cell.TrackedRecords / _maxTracked));

@@ -79,6 +79,15 @@ public class SecurityMasterEntity
     public bool IsEodhdUnavailable { get; set; } = false;
 
     /// <summary>
+    /// Whether all available EODHD data has been loaded for this security.
+    /// Set to true when a full-history load returns 0 new records, meaning any
+    /// remaining business-calendar gaps are unfillable via EODHD.
+    /// When true, the gap query skips this security to avoid wasting API calls.
+    /// Can be reset to false to re-check (e.g., if EODHD adds more historical data).
+    /// </summary>
+    public bool IsEodhdComplete { get; set; } = false;
+
+    /// <summary>
     /// Calculated importance score (1-10, 10=most important).
     /// Used to prioritize gap-filling for untracked securities.
     /// Calculated based on security type, exchange, and name patterns.

@@ -163,7 +163,8 @@
                         HeatmapData="{Binding HeatmapData}"
                         IsLoading="{Binding IsHeatmapLoading}"
                         ActiveYear="{Binding ActiveHeatmapYear}"
-                        ActiveScore="{Binding ActiveHeatmapScore}"/>
+                        ActiveScore="{Binding ActiveHeatmapScore}"
+                        CellUpdateCounter="{Binding HeatmapCellUpdateCounter}"/>
                 </Grid>
             </Border>
 

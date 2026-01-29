@@ -2018,6 +2018,7 @@ CREATE TABLE data.SecurityMaster (
     IsActive BIT DEFAULT 1,                         -- Whether actively traded
     IsTracked BIT DEFAULT 0,                        -- Whether in tracked universe for gap-filling
     IsEodhdUnavailable BIT DEFAULT 0,               -- Whether EODHD has no data for this security
+    IsEodhdComplete BIT DEFAULT 0,                  -- Whether all available EODHD data has been loaded
     ImportanceScore INT DEFAULT 5,                  -- Calculated importance (1-10, 10=most important)
     CreatedAt DATETIME2 DEFAULT GETUTCDATE(),
     UpdatedAt DATETIME2 DEFAULT GETUTCDATE()
@@ -2162,6 +2163,7 @@ Maintains the historical price database with automatic daily updates.
 | `POST /api/admin/prices/bulk-load` | Start bulk historical load (body: `{StartDate, EndDate}`) |
 | `POST /api/admin/securities/calculate-importance` | Calculate importance scores for all active securities |
 | `POST /api/admin/securities/promote-untracked` | Promote untracked securities to tracked (query: `count`, default 500, max 500) |
+| `POST /api/admin/prices/mark-eodhd-complete/{alias}` | Mark security as having all EODHD data loaded (unfillable gaps) |
 | `POST /api/admin/securities/reset-unavailable` | Reset IsEodhdUnavailable flag (query: `days`, `all`) |
 | `GET /api/admin/dashboard/stats` | Consolidated dashboard stats: universe, prices, tiers, decade/year coverage |
 | `GET /api/admin/dashboard/heatmap` | Bivariate heatmap data: Year x ImportanceScore with tracked/untracked split |
@@ -2270,6 +2272,7 @@ WPF desktop application (.NET 8, `net8.0-windows10.0.19041`) for managing price 
 - Server-side `BulkInsertAsync` deduplicates against existing `(SecurityAlias, EffectiveDate)` pairs before insert
 - ~15-20 seconds per security instead of processing individual dates (~25+ minutes per security with per-date approach)
 - Zero-result securities (no EODHD data available) are marked as `IsEodhdUnavailable` and added to a skip set
+- "Already complete" securities (0 new inserts, all EODHD data already loaded) are marked as `IsEodhdComplete` so the gap query skips them permanently, preventing wasted API calls on unfillable gaps
 
 **Crawler — Auto-Promotion Flow:**
 1. Query tracked securities with gaps (gap endpoint, limit 20)

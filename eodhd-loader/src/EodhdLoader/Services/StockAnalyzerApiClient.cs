@@ -349,6 +349,31 @@ public class StockAnalyzerApiClient
     }
 
     /// <summary>
+    /// Marks a security as having all available EODHD data already loaded.
+    /// Called when a full-history load returns 0 new records, meaning remaining
+    /// business-calendar gaps are unfillable via EODHD. The gap query will skip it.
+    /// </summary>
+    public async Task<MarkUnavailableResult> MarkEodhdCompleteAsync(int securityAlias, CancellationToken ct = default)
+    {
+        if (_httpClient == null)
+            return new MarkUnavailableResult { Success = false, Error = "HttpClient not configured" };
+
+        try
+        {
+            var response = await _httpClient.PostAsync($"/api/admin/prices/mark-eodhd-complete/{securityAlias}", null, ct);
+            response.EnsureSuccessStatusCode();
+
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var result = await response.Content.ReadFromJsonAsync<MarkUnavailableResult>(options, ct);
+            return result ?? new MarkUnavailableResult { Success = false, Error = "Empty response" };
+        }
+        catch (Exception ex)
+        {
+            return new MarkUnavailableResult { Success = false, Error = ex.Message };
+        }
+    }
+
+    /// <summary>
     /// Marks a security as having no data available from EODHD.
     /// Called when the crawler detects EODHD returns no data for a ticker.
     /// These securities will be skipped in future gap-filling.
