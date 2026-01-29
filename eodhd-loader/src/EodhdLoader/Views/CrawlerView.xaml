@@ -59,8 +59,13 @@
                         <ComboBoxItem Content="Production"/>
                     </ComboBox>
                     <Button Content="Test" Command="{Binding TestConnectionCommand}"
-                            Width="50" Height="28" Margin="0,0,8,0"
+                            Width="50" Height="28" Margin="0,0,4,0"
                             Background="#0f3460" Foreground="White" BorderBrush="#1a508b"
+                            IsEnabled="{Binding IsCrawling, Converter={StaticResource InverseBoolConverter}}"/>
+                    <Button Content="PURGE" Command="{Binding BulkMarkCompleteCommand}"
+                            Width="60" Height="28" Margin="0,0,8,0"
+                            Background="#FF8F00" Foreground="White" BorderBrush="#F57F17"
+                            FontWeight="Bold" ToolTip="Bulk mark securities with 50+ prices as EODHD complete"
                             IsEnabled="{Binding IsCrawling, Converter={StaticResource InverseBoolConverter}}"/>
                     <Button Command="{Binding StartCrawlCommand}" Width="80" Height="28" Margin="0,0,4,0"
                             Content="START" Background="#4CAF50" Foreground="White"

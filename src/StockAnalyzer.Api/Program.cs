@@ -2161,6 +2161,131 @@ app.MapPost("/api/admin/prices/mark-eodhd-complete/{securityAlias}", async (ISer
 .Produces(StatusCodes.Status404NotFound)
 .Produces(StatusCodes.Status500InternalServerError);
 
+// POST /api/admin/prices/bulk-mark-eodhd-complete - Bulk mark securities as EODHD complete
+// Marks all tracked securities that have at least N price records as IsEodhdComplete = true.
+// Logic: if we've loaded N+ records for a security, we've done a full-history load. Any remaining
+// gaps are unfillable (EODHD doesn't have data for those dates). This avoids burning API calls
+// one-by-one through the crawler. Use minPriceCount to control aggressiveness (default: 50).
+app.MapPost("/api/admin/prices/bulk-mark-eodhd-complete", async (IServiceProvider serviceProvider, HttpContext httpContext) =>
+{
+    using var scope = serviceProvider.CreateScope();
+    var context = scope.ServiceProvider.GetService<StockAnalyzerDbContext>();
+
+    if (context == null)
+        return Results.BadRequest(new { error = "Database context not configured" });
+
+    try
+    {
+        // Parse optional minPriceCount parameter (default: 50)
+        var minPriceCount = 50;
+        if (httpContext.Request.Query.TryGetValue("minPriceCount", out var countStr) && int.TryParse(countStr, out var c))
+            minPriceCount = c;
+
+        // Preview mode: if dryRun=true, just return what would be marked
+        var dryRun = httpContext.Request.Query.ContainsKey("dryRun");
+
+        var sql = @"
+            SELECT sm.SecurityAlias, sm.TickerSymbol, COUNT(p.SecurityAlias) AS PriceCount
+            FROM data.SecurityMaster sm
+            INNER JOIN data.Prices p ON p.SecurityAlias = sm.SecurityAlias
+            WHERE sm.IsTracked = 1
+              AND sm.IsEodhdComplete = 0
+              AND sm.IsEodhdUnavailable = 0
+            GROUP BY sm.SecurityAlias, sm.TickerSymbol
+            HAVING COUNT(p.SecurityAlias) >= @minPriceCount";
+
+        using var conn = context.Database.GetDbConnection();
+        await conn.OpenAsync();
+
+        // First, get the list of securities to mark
+        // CA2100: sql is a hardcoded constant string with parameterized @minPriceCount — no injection risk
+        using var cmd = conn.CreateCommand();
+#pragma warning disable CA2100
+        cmd.CommandText = sql;
+#pragma warning restore CA2100
+        var param = cmd.CreateParameter();
+        param.ParameterName = "@minPriceCount";
+        param.Value = minPriceCount;
+        cmd.Parameters.Add(param);
+
+        var candidates = new List<(int Alias, string Ticker, int Count)>();
+        using (var reader = await cmd.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                candidates.Add((reader.GetInt32(0), reader.GetString(1), reader.GetInt32(2)));
+            }
+        }
+
+        if (dryRun)
+        {
+            return Results.Ok(new
+            {
+                success = true,
+                dryRun = true,
+                message = $"Would mark {candidates.Count} securities as EODHD complete (minPriceCount={minPriceCount})",
+                count = candidates.Count,
+                minPriceCount,
+                securities = candidates.Select(c => new { alias = c.Alias, ticker = c.Ticker, priceCount = c.Count })
+            });
+        }
+
+        if (candidates.Count == 0)
+        {
+            return Results.Ok(new
+            {
+                success = true,
+                message = "No securities matched criteria for bulk marking",
+                count = 0,
+                minPriceCount
+            });
+        }
+
+        // Bulk update using parameterized IN clause
+        var aliases = candidates.Select(c => c.Alias).ToList();
+        using var updateCmd = conn.CreateCommand();
+        var paramNames = new List<string>();
+        for (int i = 0; i < aliases.Count; i++)
+        {
+            var pName = $"@a{i}";
+            paramNames.Add(pName);
+            var p = updateCmd.CreateParameter();
+            p.ParameterName = pName;
+            p.Value = aliases[i];
+            updateCmd.Parameters.Add(p);
+        }
+#pragma warning disable CA2100 // Parameterized IN clause built from integer aliases — no injection risk
+        updateCmd.CommandText = $@"
+            UPDATE data.SecurityMaster
+            SET IsEodhdComplete = 1, UpdatedAt = GETUTCDATE()
+            WHERE SecurityAlias IN ({string.Join(",", paramNames)})";
+#pragma warning restore CA2100
+
+        var rowsAffected = await updateCmd.ExecuteNonQueryAsync();
+
+        Log.Information("Bulk marked {Count} securities as EODHD complete (minPriceCount={MinPriceCount})",
+            rowsAffected, minPriceCount);
+
+        return Results.Ok(new
+        {
+            success = true,
+            message = $"Marked {rowsAffected} securities as EODHD complete",
+            count = rowsAffected,
+            minPriceCount,
+            securities = candidates.Select(c => new { alias = c.Alias, ticker = c.Ticker, priceCount = c.Count })
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Failed to bulk mark securities as EODHD complete");
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("BulkMarkEodhdComplete")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status500InternalServerError);
+
 // POST /api/admin/securities/reset-unavailable - Reset IsEodhdUnavailable flag for all or recently-marked securities
 // Use this to roll back incorrect unavailable markings (e.g., caused by future-date bug)
 app.MapPost("/api/admin/securities/reset-unavailable", async (IServiceProvider serviceProvider, HttpContext httpContext) =>

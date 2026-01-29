@@ -2164,6 +2164,7 @@ Maintains the historical price database with automatic daily updates.
 | `POST /api/admin/securities/calculate-importance` | Calculate importance scores for all active securities |
 | `POST /api/admin/securities/promote-untracked` | Promote untracked securities to tracked (query: `count`, default 500, max 500) |
 | `POST /api/admin/prices/mark-eodhd-complete/{alias}` | Mark security as having all EODHD data loaded (unfillable gaps) |
+| `POST /api/admin/prices/bulk-mark-eodhd-complete` | Bulk mark securities with sufficient price data as EODHD complete (query: `minPriceCount` default 50, `dryRun`) |
 | `POST /api/admin/securities/reset-unavailable` | Reset IsEodhdUnavailable flag (query: `days`, `all`) |
 | `GET /api/admin/dashboard/stats` | Consolidated dashboard stats: universe, prices, tiers, decade/year coverage |
 | `GET /api/admin/dashboard/heatmap` | Bivariate heatmap data: Year x ImportanceScore with tracked/untracked split |

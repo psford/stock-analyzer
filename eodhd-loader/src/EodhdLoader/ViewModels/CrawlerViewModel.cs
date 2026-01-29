@@ -286,7 +286,15 @@ public partial class CrawlerViewModel : ViewModelBase
 
         CurrentPhase = "Crawling";
         CurrentAction = "Starting...";
-        StatusText = "Crawler starting...";
+        StatusText = "Bulk marking complete securities...";
+
+        // Auto-purge: mark securities with sufficient price data as EODHD complete
+        // before fetching gaps, so the gap query doesn't return them
+        var bulkResult = await _apiClient.BulkMarkEodhdCompleteAsync(minPriceCount: 50, dryRun: false);
+        if (bulkResult.Success && bulkResult.Count > 0)
+            AddActivity("✓", "Purge", $"Auto-marked {bulkResult.Count} securities as EODHD complete");
+
+        StatusText = "Fetching gaps...";
 
         // Get initial batch of tracked securities with gaps
         var ok = await RefreshGapsAsync();
@@ -336,6 +344,50 @@ public partial class CrawlerViewModel : ViewModelBase
         ActiveHeatmapScore = -1;
         CurrentAction = "Stopped";
         StatusText = $"Stopped. Processed {SecuritiesProcessedThisSession} securities, loaded {RecordsLoadedThisSession:N0} records.";
+    }
+
+    [RelayCommand]
+    private async Task BulkMarkCompleteAsync()
+    {
+        AddActivity("⏳", "Bulk", "Running bulk mark — checking eligible securities...");
+        StatusText = "Bulk marking EODHD complete...";
+
+        try
+        {
+            // Dry run first to show what would be marked
+            var preview = await _apiClient.BulkMarkEodhdCompleteAsync(minPriceCount: 50, dryRun: true);
+            if (!preview.Success)
+            {
+                AddActivity("✗", "Bulk", $"Preview failed: {preview.Error}");
+                StatusText = $"Bulk mark failed: {preview.Error}";
+                return;
+            }
+
+            if (preview.Count == 0)
+            {
+                AddActivity("✓", "Bulk", "No securities eligible for bulk marking");
+                StatusText = "No securities eligible for bulk marking";
+                return;
+            }
+
+            // Execute the actual bulk mark
+            var result = await _apiClient.BulkMarkEodhdCompleteAsync(minPriceCount: 50, dryRun: false);
+            if (result.Success)
+            {
+                AddActivity("✓", "Bulk", $"Marked {result.Count} securities as EODHD complete");
+                StatusText = $"Bulk marked {result.Count} securities as EODHD complete";
+            }
+            else
+            {
+                AddActivity("✗", "Bulk", $"Bulk mark failed: {result.Error}");
+                StatusText = $"Bulk mark failed: {result.Error}";
+            }
+        }
+        catch (Exception ex)
+        {
+            AddActivity("✗", "Bulk", $"Error: {ex.Message}");
+            StatusText = $"Bulk mark error: {ex.Message}";
+        }
     }
 
     private async Task ProcessNextAsync()

@@ -374,6 +374,34 @@ public class StockAnalyzerApiClient
     }
 
     /// <summary>
+    /// Bulk marks securities as EODHD complete based on existing price count.
+    /// Securities with >= minPriceCount records are assumed fully loaded;
+    /// remaining gaps are unfillable via EODHD. Avoids burning API calls one-by-one.
+    /// </summary>
+    public async Task<BulkMarkResult> BulkMarkEodhdCompleteAsync(int minPriceCount = 50, bool dryRun = false, CancellationToken ct = default)
+    {
+        if (_httpClient == null)
+            return new BulkMarkResult { Success = false, Error = "HttpClient not configured" };
+
+        try
+        {
+            var query = $"?minPriceCount={minPriceCount}";
+            if (dryRun) query += "&dryRun";
+
+            var response = await _httpClient.PostAsync($"/api/admin/prices/bulk-mark-eodhd-complete{query}", null, ct);
+            response.EnsureSuccessStatusCode();
+
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var result = await response.Content.ReadFromJsonAsync<BulkMarkResult>(options, ct);
+            return result ?? new BulkMarkResult { Success = false, Error = "Empty response" };
+        }
+        catch (Exception ex)
+        {
+            return new BulkMarkResult { Success = false, Error = ex.Message };
+        }
+    }
+
+    /// <summary>
     /// Marks a security as having no data available from EODHD.
     /// Called when the crawler detects EODHD returns no data for a ticker.
     /// These securities will be skipped in future gap-filling.
@@ -888,6 +916,27 @@ public class MarkUnavailableResult
 
     [JsonPropertyName("securityAlias")]
     public int SecurityAlias { get; set; }
+}
+
+public class BulkMarkResult
+{
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+
+    [JsonPropertyName("count")]
+    public int Count { get; set; }
+
+    [JsonPropertyName("dryRun")]
+    public bool DryRun { get; set; }
+
+    [JsonPropertyName("minPriceCount")]
+    public int MinPriceCount { get; set; }
 }
 
 // ============================================================================
