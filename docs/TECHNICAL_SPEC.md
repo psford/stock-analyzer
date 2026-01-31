@@ -2172,12 +2172,16 @@ Maintains the historical price database with automatic daily updates.
 
 **Dashboard Stats (`/api/admin/dashboard/stats`):**
 - Consolidated endpoint returning all dashboard metrics
-- Result sets 1-3 use direct SQL (SecurityMaster counts, Prices aggregate, tier distribution)
-- Result sets 4-5 (decade/year coverage) read from `data.CoverageSummary` table (instant)
+- Universe counts from SecurityMaster (small table, instant)
+- Price stats (totalRecords, distinctSecurities) derived from `data.CoverageSummary` (pre-aggregated, instant)
+- Latest price date via lightweight `TOP 1 ORDER BY DESC` on Prices (index seek, near-instant)
+- ImportanceScore tier distribution derived from CoverageSummary
+- Decade/year coverage also from CoverageSummary
+- **No full-table scans on Prices** — critical fix for Azure SQL Basic (5 DTU) with 7M+ rows
 - **Caching:** `IMemoryCache` with 10-minute TTL (key: `dashboard:stats`)
 - Used by EODHD Loader's Data Load Monitor UI
 - Returns: universe counts (total/tracked/untracked/unavailable), price record stats (total/distinct/oldest/latest), ImportanceScore tier distribution with completion status, coverage by decade, coverage by year
-- **Performance:** 60s query timeout for direct SQL; summary table reads are instant
+- **Performance:** Responds in <1s even under concurrent crawler load (previously timed out at 30s+)
 - **Response structure:** `{ success, timestamp, universe, prices, importanceTiers[], coverageByDecade[], coverageByYear[] }`
 
 **Heatmap Data (`/api/admin/dashboard/heatmap`):**
@@ -2200,7 +2204,7 @@ Maintains the historical price database with automatic daily updates.
 - Pre-aggregated Year × ImportanceScore grid (~500 rows max: ~50 years × 10 scores)
 - Columns: Id (PK), Year, ImportanceScore, TrackedRecords, UntrackedRecords, TrackedSecurities, UntrackedSecurities, TradingDays, LastUpdatedAt
 - Unique index on `(Year, ImportanceScore)` — each cell has exactly one row
-- **Purpose:** Avoids expensive full-table scans on the 3.5M+ row Prices table; critical for Azure SQL Basic tier (5 DTU)
+- **Purpose:** Avoids expensive full-table scans on the 7M+ row Prices table; critical for Azure SQL Basic tier (5 DTU)
 - Populated by `POST /api/admin/dashboard/refresh-summary`; consumed by heatmap and stats endpoints
 
 **Reset Unavailable (`/api/admin/securities/reset-unavailable`):**

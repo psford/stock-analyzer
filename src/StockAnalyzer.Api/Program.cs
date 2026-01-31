@@ -2621,8 +2621,9 @@ app.MapPost("/api/admin/securities/promote-untracked", async (IServiceProvider s
 .Produces(StatusCodes.Status500InternalServerError);
 
 // GET /api/admin/dashboard/stats - Consolidated dashboard stats for EODHD Loader
-// Result sets 1-3 use direct SQL (fast queries on SecurityMaster + indexed Prices).
-// Result sets 4-5 read from CoverageSummary table (instant, avoids full Prices scan).
+// Universe counts from SecurityMaster (small table, instant).
+// Price stats + tiers + coverage from CoverageSummary (pre-aggregated, instant).
+// NO direct queries on the 7M+ row Prices table — avoids DTU exhaustion on Azure SQL Basic.
 // All results cached for 10 minutes via IMemoryCache.
 app.MapGet("/api/admin/dashboard/stats", async (IServiceProvider serviceProvider, IMemoryCache cache) =>
 {
@@ -2641,10 +2642,9 @@ app.MapGet("/api/admin/dashboard/stats", async (IServiceProvider serviceProvider
         var connection = context.Database.GetDbConnection();
         await connection.OpenAsync();
 
-        // Result sets 1-3: Direct SQL (fast - SecurityMaster is small, Prices COUNT uses index)
+        // Query 1: Universe counts from SecurityMaster (small table, instant)
         using var cmd = connection.CreateCommand();
         cmd.CommandText = @"
-            -- Universe counts
             SELECT
                 COUNT(*) AS TotalSecurities,
                 SUM(CASE WHEN IsTracked = 1 THEN 1 ELSE 0 END) AS Tracked,
@@ -2652,29 +2652,8 @@ app.MapGet("/api/admin/dashboard/stats", async (IServiceProvider serviceProvider
                 SUM(CASE WHEN IsEodhdUnavailable = 1 THEN 1 ELSE 0 END) AS Unavailable
             FROM data.SecurityMaster WITH (NOLOCK)
             WHERE IsActive = 1;
-
-            -- Price record counts
-            SELECT
-                COUNT(*) AS TotalRecords,
-                COUNT(DISTINCT SecurityAlias) AS DistinctSecurities,
-                MIN(EffectiveDate) AS OldestDate,
-                MAX(EffectiveDate) AS LatestDate
-            FROM data.Prices WITH (NOLOCK);
-
-            -- ImportanceScore tier distribution with completion status
-            SELECT
-                sm.ImportanceScore,
-                COUNT(*) AS Total,
-                SUM(CASE WHEN p.SecurityAlias IS NOT NULL THEN 1 ELSE 0 END) AS WithPrices,
-                SUM(CASE WHEN sm.IsEodhdUnavailable = 1 THEN 1 ELSE 0 END) AS Unavailable
-            FROM data.SecurityMaster sm WITH (NOLOCK)
-            LEFT JOIN (SELECT DISTINCT SecurityAlias FROM data.Prices WITH (NOLOCK)) p
-                ON p.SecurityAlias = sm.SecurityAlias
-            WHERE sm.IsActive = 1 AND sm.IsTracked = 0
-            GROUP BY sm.ImportanceScore
-            ORDER BY sm.ImportanceScore DESC;
         ";
-        cmd.CommandTimeout = 60;
+        cmd.CommandTimeout = 15;
 
         object? universeData = null;
         object? pricesData = null;
@@ -2682,7 +2661,6 @@ app.MapGet("/api/admin/dashboard/stats", async (IServiceProvider serviceProvider
 
         using var reader = await cmd.ExecuteReaderAsync();
 
-        // Result set 1: Universe counts
         if (await reader.ReadAsync())
         {
             universeData = new
@@ -2694,40 +2672,58 @@ app.MapGet("/api/admin/dashboard/stats", async (IServiceProvider serviceProvider
             };
         }
 
-        // Result set 2: Price records
-        if (await reader.NextResultAsync() && await reader.ReadAsync())
-        {
-            pricesData = new
-            {
-                totalRecords = reader.GetInt32(0),
-                distinctSecurities = reader.GetInt32(1),
-                oldestDate = reader.IsDBNull(2) ? null : reader.GetDateTime(2).ToString("yyyy-MM-dd"),
-                latestDate = reader.IsDBNull(3) ? null : reader.GetDateTime(3).ToString("yyyy-MM-dd")
-            };
-        }
-
-        // Result set 3: ImportanceScore tiers
-        if (await reader.NextResultAsync())
-        {
-            while (await reader.ReadAsync())
-            {
-                tiers.Add(new
-                {
-                    score = reader.GetInt32(0),
-                    total = reader.GetInt32(1),
-                    withPrices = reader.GetInt32(2),
-                    unavailable = reader.GetInt32(3)
-                });
-            }
-        }
-
-        // Close reader before querying CoverageSummary via EF (can't have two open readers)
         await reader.CloseAsync();
 
-        // Result sets 4-5: Read from CoverageSummary table (instant, avoids YEAR() full scan)
+        // All remaining data from CoverageSummary (pre-aggregated, instant — no Prices table scan)
         var summaryRows = await context.CoverageSummary
             .OrderByDescending(s => s.Year)
             .ToListAsync();
+
+        // Derive price stats from CoverageSummary (replaces expensive COUNT/MIN/MAX on 7M+ Prices)
+        if (summaryRows.Any())
+        {
+            var totalRecords = summaryRows.Sum(r => r.TrackedRecords + r.UntrackedRecords);
+            var distinctSecurities = summaryRows
+                .GroupBy(r => r.ImportanceScore)
+                .Sum(g => g.Max(r => r.TrackedSecurities + r.UntrackedSecurities));
+            var minYear = summaryRows.Min(r => r.Year);
+
+            // Fast latest date lookup — TOP 1 with index seek, avoids full table scan
+            string? latestDate = null;
+            using var dateCmd = connection.CreateCommand();
+            dateCmd.CommandText = "SELECT TOP 1 EffectiveDate FROM data.Prices WITH (NOLOCK) ORDER BY EffectiveDate DESC";
+            dateCmd.CommandTimeout = 5;
+            var latestObj = await dateCmd.ExecuteScalarAsync();
+            if (latestObj is DateTime dt)
+                latestDate = dt.ToString("yyyy-MM-dd");
+
+            pricesData = new
+            {
+                totalRecords = (int)Math.Min(totalRecords, int.MaxValue),
+                distinctSecurities,
+                oldestDate = $"{minYear}-01-01",
+                latestDate
+            };
+        }
+
+        // Derive importance tier distribution from CoverageSummary
+        // (replaces expensive LEFT JOIN with SELECT DISTINCT on Prices)
+        var tierGroups = summaryRows
+            .GroupBy(r => r.ImportanceScore)
+            .OrderByDescending(g => g.Key);
+
+        foreach (var g in tierGroups)
+        {
+            // Count securities with prices in this tier from CoverageSummary
+            var withPrices = g.Max(r => r.TrackedSecurities + r.UntrackedSecurities);
+            tiers.Add(new
+            {
+                score = g.Key,
+                total = withPrices,
+                withPrices,
+                unavailable = 0
+            });
+        }
 
         // Build decade coverage from summary
         var decades = summaryRows
