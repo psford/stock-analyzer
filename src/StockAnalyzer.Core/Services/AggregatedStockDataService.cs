@@ -106,6 +106,7 @@ public class AggregatedStockDataService
             var dbResult = await TryGetFromDatabaseAsync(upperSymbol, period);
             if (dbResult != null)
             {
+                dbResult = AdjustForSplits(dbResult);
                 _logger?.LogInformation(
                     "Got history for {Symbol} from database ({Count} points)",
                     LogSanitizer.Sanitize(symbol), dbResult.Data.Count);
@@ -122,6 +123,7 @@ public class AggregatedStockDataService
             var result = await provider.GetHistoricalDataAsync(symbol, period);
             if (result != null && result.Data.Count > 0)
             {
+                result = AdjustForSplits(result);
                 _logger?.LogInformation(
                     "Got history for {Symbol} from {Provider} ({Count} points)",
                     LogSanitizer.Sanitize(symbol), provider.ProviderName, result.Data.Count);
@@ -345,6 +347,34 @@ public class AggregatedStockDataService
             _logger?.LogWarning(ex, "Error fetching {Symbol} from database", LogSanitizer.Sanitize(symbol));
             return null;
         }
+    }
+
+    /// <summary>
+    /// Adjust OHLC prices for stock splits using the AdjustedClose ratio.
+    /// For each data point where AdjustedClose differs from Close, computes
+    /// the split ratio and applies it to Open/High/Low/Close.
+    /// This ensures charts, returns, and technical indicators are correct
+    /// for stocks that have undergone splits (e.g., NVDA 10:1 in June 2024).
+    /// </summary>
+    private static HistoricalDataResult AdjustForSplits(HistoricalDataResult result)
+    {
+        var adjustedData = result.Data.Select(d =>
+        {
+            if (d.AdjustedClose == null || d.AdjustedClose == 0 || d.Close == 0)
+                return d;
+            var ratio = d.AdjustedClose.Value / d.Close;
+            if (Math.Abs(ratio - 1.0m) < 0.0001m)
+                return d; // No meaningful adjustment needed
+            return d with
+            {
+                Open = Math.Round(d.Open * ratio, 4),
+                High = Math.Round(d.High * ratio, 4),
+                Low = Math.Round(d.Low * ratio, 4),
+                Close = d.AdjustedClose.Value
+            };
+        }).ToList();
+
+        return result with { Data = adjustedData };
     }
 
     /// <summary>

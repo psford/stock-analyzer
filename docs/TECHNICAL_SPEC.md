@@ -2218,6 +2218,15 @@ Maintains the historical price database with automatic daily updates.
 - **Recent dates:** `SELECT DISTINCT TOP 10 EffectiveDate ORDER BY DESC` (index seek, not GROUP BY)
 - **Auto-purge removed from crawler START** — bulk-mark was causing DTU exhaustion on every crawl session; now manual-only via PURGE button
 
+**Split-Adjusted Price Data:**
+- All OHLC data served by `GetHistoricalDataAsync()` is automatically adjusted for stock splits
+- **Mechanism:** `AdjustedClose` (stored by EODHD) provides the split factor: `ratio = AdjustedClose / Close`
+- The ratio is applied to Open, High, Low, Close before data is cached or returned to any consumer
+- This ensures charts, return calculations, and all technical indicators (SMA, RSI, MACD, Bollinger, Stochastic) are correct for split-affected stocks
+- When `AdjustedClose` is null or matches `Close` (ratio ≈ 1.0), no adjustment is applied
+- **Provider AdjustedClose support:** EODHD (yes), FMP (yes), TwelveData (no), Yahoo Finance (no)
+- **Location:** `AggregatedStockDataService.AdjustForSplits()` — single-point adjustment before caching
+
 **Reset Unavailable (`/api/admin/securities/reset-unavailable`):**
 - Resets `IsEodhdUnavailable = false` for securities incorrectly marked unavailable
 - Default: Reset securities marked in last 7 days (by `UpdatedAt`); `?days=N` to customize
