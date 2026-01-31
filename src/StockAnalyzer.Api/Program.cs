@@ -1279,45 +1279,26 @@ app.MapGet("/api/admin/data/prices/summary", async (IServiceProvider serviceProv
             });
         }
 
+        // All derived from CoverageSummary in C# — zero Prices table queries
         var totalRecords = (int)summaryRows.Sum(r => r.TrackedRecords + r.UntrackedRecords);
 
-        // Distinct securities: count from SecurityMaster (small table) using EXISTS for accuracy
-        var connection = context.Database.GetDbConnection();
-        await connection.OpenAsync();
+        // Distinct securities: max per ImportanceScore across years (same as dashboard/stats)
+        var distinctSecurities = summaryRows
+            .GroupBy(r => r.ImportanceScore)
+            .Sum(g => g.Max(r => r.TrackedSecurities + r.UntrackedSecurities));
 
-        int distinctSecurities;
-        using (var cmd = connection.CreateCommand())
-        {
-            cmd.CommandText = @"
-                SELECT COUNT(*) FROM data.SecurityMaster sm WITH (NOLOCK)
-                WHERE EXISTS (SELECT 1 FROM data.Prices p WHERE p.SecurityAlias = sm.SecurityAlias)";
-            cmd.CommandTimeout = 15;
-            distinctSecurities = (int)(await cmd.ExecuteScalarAsync() ?? 0);
-        }
-
-        // Fast date range: TOP 1 index seeks on IX_Prices_EffectiveDate
-        DateTime? minDate = null, maxDate = null;
-        using (var cmd = connection.CreateCommand())
-        {
-            cmd.CommandText = "SELECT TOP 1 EffectiveDate FROM data.Prices WITH (NOLOCK) ORDER BY EffectiveDate ASC";
-            cmd.CommandTimeout = 5;
-            var obj = await cmd.ExecuteScalarAsync();
-            if (obj != null) minDate = (DateTime)obj;
-        }
-        using (var cmd = connection.CreateCommand())
-        {
-            cmd.CommandText = "SELECT TOP 1 EffectiveDate FROM data.Prices WITH (NOLOCK) ORDER BY EffectiveDate DESC";
-            cmd.CommandTimeout = 5;
-            var obj = await cmd.ExecuteScalarAsync();
-            if (obj != null) maxDate = (DateTime)obj;
-        }
+        // Date range from CoverageSummary year boundaries
+        var minYear = summaryRows.Min(r => r.Year);
+        var maxYear = summaryRows.Max(r => r.Year);
 
         return Results.Ok(new
         {
             success = true,
             hasData = true,
-            startDate = minDate?.ToString("yyyy-MM-dd") ?? "",
-            endDate = maxDate?.ToString("yyyy-MM-dd") ?? "",
+            startDate = $"{minYear}-01-01",
+            endDate = maxYear >= DateTime.UtcNow.Year
+                ? DateTime.UtcNow.ToString("yyyy-MM-dd")
+                : $"{maxYear}-12-31",
             totalRecords,
             distinctSecurities
         });
@@ -1624,44 +1605,26 @@ app.MapGet("/api/admin/data/prices/monitor", async (IServiceProvider serviceProv
             });
         }
 
-        // Total records from CoverageSummary
+        // All core metrics from CoverageSummary in C# — only 1 lightweight SQL query (recentActivity)
         var totalRecords = (int)summaryRows.Sum(r => r.TrackedRecords + r.UntrackedRecords);
 
-        // Distinct dates from CoverageSummary (sum TradingDays per year, each year's days are distinct)
+        // Distinct dates from CoverageSummary (sum TradingDays per year)
         var distinctDates = summaryRows
             .GroupBy(r => r.Year)
             .Sum(g => g.Max(r => r.TradingDays));
 
-        // Distinct securities: SecurityMaster + EXISTS (index seek per security, small table)
-        var connection = context.Database.GetDbConnection();
-        await connection.OpenAsync();
+        // Distinct securities: max per ImportanceScore across years (same as dashboard/stats)
+        var distinctSecurities = summaryRows
+            .GroupBy(r => r.ImportanceScore)
+            .Sum(g => g.Max(r => r.TrackedSecurities + r.UntrackedSecurities));
 
-        int distinctSecurities;
-        using (var cmd = connection.CreateCommand())
-        {
-            cmd.CommandText = @"
-                SELECT COUNT(*) FROM data.SecurityMaster sm WITH (NOLOCK)
-                WHERE EXISTS (SELECT 1 FROM data.Prices p WHERE p.SecurityAlias = sm.SecurityAlias)";
-            cmd.CommandTimeout = 15;
-            distinctSecurities = (int)(await cmd.ExecuteScalarAsync() ?? 0);
-        }
-
-        // Fast date range: TOP 1 index seeks on IX_Prices_EffectiveDate
-        DateTime? minDate = null, maxDate = null;
-        using (var cmd = connection.CreateCommand())
-        {
-            cmd.CommandText = "SELECT TOP 1 EffectiveDate FROM data.Prices WITH (NOLOCK) ORDER BY EffectiveDate ASC";
-            cmd.CommandTimeout = 5;
-            var obj = await cmd.ExecuteScalarAsync();
-            if (obj != null) minDate = (DateTime)obj;
-        }
-        using (var cmd = connection.CreateCommand())
-        {
-            cmd.CommandText = "SELECT TOP 1 EffectiveDate FROM data.Prices WITH (NOLOCK) ORDER BY EffectiveDate DESC";
-            cmd.CommandTimeout = 5;
-            var obj = await cmd.ExecuteScalarAsync();
-            if (obj != null) maxDate = (DateTime)obj;
-        }
+        // Date range from CoverageSummary year boundaries
+        var minYear = summaryRows.Min(r => r.Year);
+        var maxYear = summaryRows.Max(r => r.Year);
+        var startDate = $"{minYear}-01-01";
+        var endDate = maxYear >= DateTime.UtcNow.Year
+            ? DateTime.UtcNow.ToString("yyyy-MM-dd")
+            : $"{maxYear}-12-31";
 
         // Coverage by decade: aggregate CoverageSummary in C# (no SQL needed)
         var coverageByDecade = summaryRows
@@ -1676,8 +1639,10 @@ app.MapGet("/api/admin/data/prices/monitor", async (IServiceProvider serviceProv
             })
             .ToList<object>();
 
-        // Recent activity: 10 most recent dates via index seek (no full-table GROUP BY)
+        // Recent activity: 10 most recent dates via index backward scan (fast, no GROUP BY)
         var recentActivity = new List<object>();
+        var connection = context.Database.GetDbConnection();
+        await connection.OpenAsync();
         using (var cmd = connection.CreateCommand())
         {
             cmd.CommandText = @"
@@ -1697,7 +1662,7 @@ app.MapGet("/api/admin/data/prices/monitor", async (IServiceProvider serviceProv
             }
         }
 
-        var yearsOfData = maxDate!.Value.Year - minDate!.Value.Year + 1;
+        var yearsOfData = maxYear - minYear + 1;
         var avgRecordsPerDay = distinctDates > 0 ? totalRecords / distinctDates : 0;
 
         return Results.Ok(new
@@ -1707,8 +1672,8 @@ app.MapGet("/api/admin/data/prices/monitor", async (IServiceProvider serviceProv
             totalRecords,
             distinctSecurities,
             distinctDates,
-            startDate = minDate!.Value.ToString("yyyy-MM-dd"),
-            endDate = maxDate!.Value.ToString("yyyy-MM-dd"),
+            startDate,
+            endDate,
             yearsOfData,
             avgRecordsPerDay,
             coverageByDecade,
