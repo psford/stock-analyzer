@@ -2164,7 +2164,7 @@ Maintains the historical price database with automatic daily updates.
 | `POST /api/admin/securities/calculate-importance` | Calculate importance scores for all active securities |
 | `POST /api/admin/securities/promote-untracked` | Promote untracked securities to tracked (query: `count`, default 500, max 500) |
 | `POST /api/admin/prices/mark-eodhd-complete/{alias}` | Mark security as having all EODHD data loaded (unfillable gaps) |
-| `POST /api/admin/prices/bulk-mark-eodhd-complete` | Bulk mark securities with sufficient price data as EODHD complete (query: `minPriceCount` default 50, `dryRun`) |
+| `POST /api/admin/prices/bulk-mark-eodhd-complete` | Bulk mark securities with sufficient price data as EODHD complete (query: `minPriceCount` default 50, `dryRun`). Uses CROSS APPLY for per-security indexed counts instead of GROUP BY JOIN. |
 | `POST /api/admin/securities/reset-unavailable` | Reset IsEodhdUnavailable flag (query: `days`, `all`) |
 | `GET /api/admin/dashboard/stats` | Consolidated dashboard stats: universe, prices, tiers, decade/year coverage |
 | `GET /api/admin/dashboard/heatmap` | Bivariate heatmap data: Year x ImportanceScore with tracked/untracked split |
@@ -2206,6 +2206,17 @@ Maintains the historical price database with automatic daily updates.
 - Unique index on `(Year, ImportanceScore)` — each cell has exactly one row
 - **Purpose:** Avoids expensive full-table scans on the 7M+ row Prices table; critical for Azure SQL Basic tier (5 DTU)
 - Populated by `POST /api/admin/dashboard/refresh-summary`; consumed by heatmap and stats endpoints
+- Also consumed by: `/api/admin/data/prices/summary`, `/api/admin/data/prices/monitor`, `GetTotalCountAsync()`, `AnalyzeHolidaysAsync()`
+
+**DTU-Optimized Query Patterns (Azure SQL Basic, 5 DTU):**
+- **No full-table scans on Prices** — the 7M+ row table will exhaust 5 DTU / 60 worker limits
+- **Aggregate counts:** Use `CoverageSummary` pre-aggregated table (SUM of TrackedRecords + UntrackedRecords)
+- **Date range:** Use `TOP 1 ORDER BY EffectiveDate ASC/DESC` (index seek on `IX_Prices_EffectiveDate`)
+- **Distinct securities:** Use `SELECT COUNT(*) FROM SecurityMaster WHERE EXISTS (SELECT 1 FROM Prices WHERE ...)` (index seek per small-table row)
+- **Per-security counts:** Use `CROSS APPLY (SELECT COUNT(*) FROM Prices WHERE SecurityAlias = sm.SecurityAlias)` (index seek via `IX_Prices_SecurityAlias_EffectiveDate`)
+- **Decade/year breakdowns:** Aggregate CoverageSummary in C#, not SQL
+- **Recent dates:** `SELECT DISTINCT TOP 10 EffectiveDate ORDER BY DESC` (index seek, not GROUP BY)
+- **Auto-purge removed from crawler START** — bulk-mark was causing DTU exhaustion on every crawl session; now manual-only via PURGE button
 
 **Reset Unavailable (`/api/admin/securities/reset-unavailable`):**
 - Resets `IsEodhdUnavailable = false` for securities incorrectly marked unavailable

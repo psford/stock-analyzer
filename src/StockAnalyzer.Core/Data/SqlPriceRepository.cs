@@ -248,7 +248,11 @@ public class SqlPriceRepository : IPriceRepository
     /// <inheritdoc />
     public async Task<long> GetTotalCountAsync()
     {
-        return await _context.Prices.LongCountAsync();
+        // Use CoverageSummary pre-aggregated table instead of scanning 7M+ row Prices table
+        var total = await _context.CoverageSummary
+            .AsNoTracking()
+            .SumAsync(s => s.TrackedRecords + s.UntrackedRecords);
+        return total;
     }
 
     /// <inheritdoc />
@@ -280,29 +284,40 @@ public class SqlPriceRepository : IPriceRepository
 
         try
         {
-            // Get date range from database
-            var dateRange = await _context.Prices
+            // Use CoverageSummary for date range instead of full table scan
+            var summaryRows = await _context.CoverageSummary
                 .AsNoTracking()
-                .GroupBy(_ => 1)
-                .Select(g => new
-                {
-                    Min = g.Min(p => p.EffectiveDate),
-                    Max = g.Max(p => p.EffectiveDate)
-                })
-                .FirstOrDefaultAsync();
+                .ToListAsync();
 
-            if (dateRange == null)
+            if (!summaryRows.Any())
             {
                 result.Error = "No price data found in database";
                 return result;
             }
 
-            result.DataStartDate = dateRange.Min;
-            result.DataEndDate = dateRange.Max;
+            var minYear = summaryRows.Min(r => r.Year);
+            var maxYear = summaryRows.Max(r => r.Year);
 
-            // Get all distinct dates with data
+            // Fast date range via TOP 1 index seeks (IX_Prices_EffectiveDate)
+            var minDate = await _context.Prices
+                .AsNoTracking()
+                .OrderBy(p => p.EffectiveDate)
+                .Select(p => p.EffectiveDate)
+                .FirstOrDefaultAsync();
+
+            var maxDate = await _context.Prices
+                .AsNoTracking()
+                .OrderByDescending(p => p.EffectiveDate)
+                .Select(p => p.EffectiveDate)
+                .FirstOrDefaultAsync();
+
+            result.DataStartDate = minDate;
+            result.DataEndDate = maxDate;
+
+            // Get distinct dates using indexed EffectiveDate column with date range guard
             var existingDates = await _context.Prices
                 .AsNoTracking()
+                .Where(p => p.EffectiveDate >= minDate && p.EffectiveDate <= maxDate)
                 .Select(p => p.EffectiveDate)
                 .Distinct()
                 .ToListAsync();
@@ -314,8 +329,8 @@ public class SqlPriceRepository : IPriceRepository
             var nonBusinessDays = await _context.BusinessCalendar
                 .AsNoTracking()
                 .Where(bc => bc.SourceId == 1  // US calendar
-                    && bc.EffectiveDate >= dateRange.Min
-                    && bc.EffectiveDate <= dateRange.Max
+                    && bc.EffectiveDate >= minDate
+                    && bc.EffectiveDate <= maxDate
                     && !bc.IsBusinessDay)  // All non-business days
                 .OrderBy(bc => bc.EffectiveDate)
                 .Select(bc => new { bc.EffectiveDate, bc.IsHoliday })

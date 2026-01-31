@@ -286,14 +286,6 @@ public partial class CrawlerViewModel : ViewModelBase
 
         CurrentPhase = "Crawling";
         CurrentAction = "Starting...";
-        StatusText = "Bulk marking complete securities...";
-
-        // Auto-purge: mark securities with sufficient price data as EODHD complete
-        // before fetching gaps, so the gap query doesn't return them
-        var bulkResult = await _apiClient.BulkMarkEodhdCompleteAsync(minPriceCount: 50, dryRun: false);
-        if (bulkResult.Success && bulkResult.Count > 0)
-            AddActivity("✓", "Purge", $"Auto-marked {bulkResult.Count} securities as EODHD complete");
-
         StatusText = "Fetching gaps...";
 
         // Get initial batch of tracked securities with gaps
