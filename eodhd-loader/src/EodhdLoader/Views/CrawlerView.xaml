@@ -102,13 +102,13 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Total Securities -->
+                <!-- Total Tracked Securities -->
                 <Border Grid.Column="1" Background="#1a1a2e" CornerRadius="8" Padding="12,10" Margin="4,0"
-                        ToolTip="Total securities in the EODHD universe (tracked + untracked + unavailable)">
+                        ToolTip="Active tracked securities (excluding EODHD-unavailable)">
                     <StackPanel HorizontalAlignment="Center">
                         <TextBlock Text="{Binding TotalSecuritiesDisplay}" FontSize="22" FontWeight="Bold"
                                    Foreground="#feca57" HorizontalAlignment="Center" FontFamily="Consolas"/>
-                        <TextBlock Text="SECURITIES" FontSize="9" Foreground="#666"
+                        <TextBlock Text="TRACKED" FontSize="9" Foreground="#666"
                                    HorizontalAlignment="Center" FontWeight="Bold"/>
                         <TextBlock FontSize="9" Foreground="#444" HorizontalAlignment="Center">
                             <Run Text="{Binding UnavailableDisplay, Mode=OneWay}"/><Run Text=" unavailable"/>
@@ -116,15 +116,15 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Tracked -->
+                <!-- Securities With Gaps -->
                 <Border Grid.Column="2" Background="#1a1a2e" CornerRadius="8" Padding="12,10" Margin="4,0"
-                        ToolTip="Securities actively tracked for gap-filling by the crawler">
+                        ToolTip="Tracked securities with incomplete price data — this should decrease as the crawler runs">
                     <StackPanel HorizontalAlignment="Center">
                         <TextBlock Text="{Binding TrackedDisplay}" FontSize="22" FontWeight="Bold"
                                    Foreground="#00ff88" HorizontalAlignment="Center" FontFamily="Consolas"/>
-                        <TextBlock Text="TRACKED" FontSize="9" Foreground="#666"
+                        <TextBlock Text="WITH GAPS" FontSize="9" Foreground="#666"
                                    HorizontalAlignment="Center" FontWeight="Bold"/>
-                        <TextBlock Text="curated universe" FontSize="9" Foreground="#444" HorizontalAlignment="Center"/>
+                        <TextBlock Text="need backfill" FontSize="9" Foreground="#444" HorizontalAlignment="Center"/>
                     </StackPanel>
                 </Border>
 

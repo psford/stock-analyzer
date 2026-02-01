@@ -54,7 +54,7 @@
                 <StackPanel>
                     <TextBlock Text="Missing Prices" FontWeight="SemiBold" Foreground="Orange"/>
                     <TextBlock Text="{Binding Stats.SecuritiesWithoutPrices, StringFormat=N0, FallbackValue=--}" FontSize="28" FontWeight="Bold" Foreground="Orange"/>
-                    <TextBlock Text="need backfill" Foreground="Gray" FontSize="11"/>
+                    <TextBlock Text="no price data" Foreground="Gray" FontSize="11"/>
                 </StackPanel>
             </Border>
 

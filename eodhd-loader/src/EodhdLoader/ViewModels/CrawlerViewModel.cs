@@ -536,13 +536,11 @@ public partial class CrawlerViewModel : ViewModelBase
 
                         if (inserted > 0)
                         {
-                            AddActivity("✓", _currentSecurity.Ticker, $"{inserted:N0} records loaded");
+                            AddActivity("✓", _currentSecurity.Ticker, $"{inserted:N0} records loaded — marking complete");
                             HeatmapCellUpdateCounter++;
-                            // Don't call RefreshHeatmapFromApiAsync() here — the API returns
-                            // 30-minute cached stale data that overwrites local cell updates,
-                            // making the heatmap appear frozen during crawling.
-                            // Local updates happen in Path 1 (date-by-date) via UpdateHeatmapCellLocally().
-                            // A full refresh fires when crawling stops.
+                            // Full-history load (1980-today) fetches everything EODHD has.
+                            // Mark complete immediately so this security drops out of gap queries.
+                            _ = _apiClient.MarkEodhdCompleteAsync(_currentSecurity.SecurityAlias, _cts?.Token ?? default);
                         }
                         else
                         {
