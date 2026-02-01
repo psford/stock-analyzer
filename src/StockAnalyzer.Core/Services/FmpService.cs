@@ -29,6 +29,7 @@ public class FmpService : IStockDataProvider
         _apiKey = apiKey;
         _logger = logger;
         _httpClient = httpClient ?? new HttpClient();
+        _httpClient.Timeout = TimeSpan.FromSeconds(15);
         _rateLimiter = new RateLimitTracker(maxPerMinute: int.MaxValue, maxPerDay: 250);
     }
 

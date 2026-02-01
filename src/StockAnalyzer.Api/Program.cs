@@ -164,6 +164,9 @@ if (!string.IsNullOrEmpty(connectionString))
         return new SqlCachedImageRepository(context, logger, cacheSize);
     });
 
+    // Warm up DB connection pool on startup (avoids cold-start penalty on first request)
+    builder.Services.AddHostedService<DbWarmupService>();
+
     // Security master and price repositories (data schema)
     builder.Services.AddScoped<ISecurityMasterRepository, SqlSecurityMasterRepository>();
     builder.Services.AddScoped<IPriceRepository, SqlPriceRepository>();
@@ -579,6 +582,54 @@ app.MapGet("/api/stock/{ticker}/analysis", async (
     });
 })
 .WithName("GetStockAnalysis")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status404NotFound);
+
+// GET /api/stock/{ticker}/chart-data - Combined history + analysis in one request
+// Eliminates duplicate GetHistoricalDataAsync calls and saves an HTTP round-trip
+app.MapGet("/api/stock/{ticker}/chart-data", async (
+    string ticker,
+    string? period,
+    AggregatedStockDataService stockService,
+    AnalysisService analysisService) =>
+{
+    if (!IsValidTicker(ticker))
+        return InvalidTickerResult();
+
+    var history = await stockService.GetHistoricalDataAsync(ticker, period ?? "1y");
+    if (history == null)
+        return Results.NotFound(new { error = "Data not found", symbol = ticker });
+
+    var movingAverages = analysisService.CalculateMovingAverages(history.Data);
+    var performance = analysisService.CalculatePerformance(history.Data);
+    var rsi = analysisService.CalculateRsi(history.Data);
+    var macd = analysisService.CalculateMacd(history.Data);
+    var bollingerBands = analysisService.CalculateBollingerBands(history.Data);
+    var stochastic = analysisService.CalculateStochastic(history.Data);
+
+    return Results.Ok(new
+    {
+        // History
+        symbol = history.Symbol,
+        period = history.Period,
+        startDate = history.StartDate,
+        endDate = history.EndDate,
+        data = history.Data,
+        minClose = history.MinClose,
+        maxClose = history.MaxClose,
+        averageClose = history.AverageClose,
+        averageVolume = history.AverageVolume,
+        // Analysis
+        performance,
+        movingAverages,
+        rsi,
+        macd,
+        bollingerBands,
+        stochastic
+    });
+})
+.WithName("GetChartData")
 .WithOpenApi()
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status404NotFound);

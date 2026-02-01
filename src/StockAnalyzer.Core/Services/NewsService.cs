@@ -17,6 +17,7 @@ public class NewsService
     {
         _apiKey = apiKey;
         _httpClient = httpClient ?? new HttpClient();
+        _httpClient.Timeout = TimeSpan.FromSeconds(10);
     }
 
     /// <summary>

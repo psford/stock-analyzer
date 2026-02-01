@@ -85,7 +85,7 @@ resource appService 'Microsoft.Web/sites@2023-01-01' = {
       connectionStrings: [
         {
           name: 'DefaultConnection'
-          connectionString: 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabaseName};User ID=${sqlAdminUsername};Password=${sqlAdminPassword};Encrypt=true;TrustServerCertificate=false;Connection Timeout=30;'
+          connectionString: 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabaseName};User ID=${sqlAdminUsername};Password=${sqlAdminPassword};Encrypt=true;TrustServerCertificate=false;Connection Timeout=30;Min Pool Size=2;'
           type: 'SQLAzure'
         }
       ]

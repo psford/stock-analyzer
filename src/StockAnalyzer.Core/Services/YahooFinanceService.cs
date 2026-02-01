@@ -167,6 +167,7 @@ public class YahooFinanceService : IStockDataProvider
         try
         {
             using var httpClient = new HttpClient();
+            httpClient.Timeout = TimeSpan.FromSeconds(10);
             httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0");
 
             var url = $"https://query2.finance.yahoo.com/v1/finance/search?q={Uri.EscapeDataString(query)}&quotesCount=8&newsCount=0";

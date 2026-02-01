@@ -36,6 +36,9 @@ public class AggregatedStockDataService
     // Track tickers that are already queued for background backfill (to avoid duplicate requests)
     private static readonly ConcurrentDictionary<string, DateTime> _pendingBackfills = new();
 
+    // Coalesce concurrent cache misses for the same key (stampede prevention)
+    private static readonly ConcurrentDictionary<string, Task<HistoricalDataResult?>> _inflight = new();
+
     public AggregatedStockDataService(
         IEnumerable<IStockDataProvider> providers,
         IMemoryCache cache,
@@ -86,21 +89,41 @@ public class AggregatedStockDataService
 
     /// <summary>
     /// Get historical OHLCV data.
-    /// Priority: 1) Memory cache, 2) Database (pre-loaded prices), 3) API providers (with background backfill)
+    /// Priority: 1) Memory cache, 2) Coalesced in-flight request, 3) Database, 4) API providers
     /// </summary>
     public async Task<HistoricalDataResult?> GetHistoricalDataAsync(string symbol, string period = "1y")
     {
         var upperSymbol = symbol.ToUpper();
         var cacheKey = $"history:{upperSymbol}:{period}";
 
-        // 1. Check memory cache first
+        // 1. Check memory cache first (fast path)
         if (_cache.TryGetValue(cacheKey, out HistoricalDataResult? cached))
         {
             _logger?.LogDebug("Cache hit for {Symbol} history", LogSanitizer.Sanitize(symbol));
             return cached;
         }
 
-        // 2. Check database for pre-loaded prices
+        // 2. Coalesce concurrent misses — if another request is already fetching this key, share its task
+        var task = _inflight.GetOrAdd(cacheKey, _ => FetchHistoricalDataCoreAsync(upperSymbol, period, cacheKey));
+
+        try
+        {
+            return await task;
+        }
+        finally
+        {
+            // Remove from inflight after completion so future requests re-check cache
+            _inflight.TryRemove(cacheKey, out _);
+        }
+    }
+
+    /// <summary>
+    /// Core fetch logic for historical data (DB → API providers).
+    /// Called via _inflight coalescing so concurrent requests for the same key share one task.
+    /// </summary>
+    private async Task<HistoricalDataResult?> FetchHistoricalDataCoreAsync(string upperSymbol, string period, string cacheKey)
+    {
+        // Check database for pre-loaded prices
         if (_serviceScopeFactory != null)
         {
             var dbResult = await TryGetFromDatabaseAsync(upperSymbol, period);
@@ -109,24 +132,24 @@ public class AggregatedStockDataService
                 dbResult = AdjustForSplits(dbResult);
                 _logger?.LogInformation(
                     "Got history for {Symbol} from database ({Count} points)",
-                    LogSanitizer.Sanitize(symbol), dbResult.Data.Count);
+                    LogSanitizer.Sanitize(upperSymbol), dbResult.Data.Count);
                 _cache.Set(cacheKey, dbResult, HistoryCacheDuration);
                 return dbResult;
             }
         }
 
-        // 3. Fall back to API providers
+        // Fall back to API providers
         foreach (var provider in _providers.Where(p => p.IsAvailable))
         {
-            _logger?.LogDebug("Trying {Provider} for {Symbol} history", provider.ProviderName, LogSanitizer.Sanitize(symbol));
+            _logger?.LogDebug("Trying {Provider} for {Symbol} history", provider.ProviderName, LogSanitizer.Sanitize(upperSymbol));
 
-            var result = await provider.GetHistoricalDataAsync(symbol, period);
+            var result = await provider.GetHistoricalDataAsync(upperSymbol, period);
             if (result != null && result.Data.Count > 0)
             {
                 result = AdjustForSplits(result);
                 _logger?.LogInformation(
                     "Got history for {Symbol} from {Provider} ({Count} points)",
-                    LogSanitizer.Sanitize(symbol), provider.ProviderName, result.Data.Count);
+                    LogSanitizer.Sanitize(upperSymbol), provider.ProviderName, result.Data.Count);
                 _cache.Set(cacheKey, result, HistoryCacheDuration);
 
                 // Queue background backfill to database for future requests
@@ -136,7 +159,7 @@ public class AggregatedStockDataService
             }
         }
 
-        _logger?.LogWarning("All providers failed for {Symbol} history", LogSanitizer.Sanitize(symbol));
+        _logger?.LogWarning("All providers failed for {Symbol} history", LogSanitizer.Sanitize(upperSymbol));
         return null;
     }
 

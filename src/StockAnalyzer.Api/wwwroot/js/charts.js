@@ -3,6 +3,31 @@
  * Handles Plotly.js chart rendering with technical indicators
  */
 const Charts = {
+    // Track which chart elements have been initially rendered (for Plotly.react optimization)
+    _renderedCharts: {},
+
+    /**
+     * Smart plot: uses newPlot for first render, react for subsequent renders.
+     * Plotly.react does a diff-based update (no DOM teardown), much faster for re-renders.
+     */
+    _smartPlot(elementId, traces, layout, config) {
+        const plotFn = this._renderedCharts[elementId] ? Plotly.react : Plotly.newPlot;
+        return plotFn(elementId, traces, layout, config).then(() => {
+            this._renderedCharts[elementId] = true;
+            const chartEl = document.getElementById(elementId);
+            if (chartEl) {
+                Plotly.Plots.resize(chartEl);
+            }
+        });
+    },
+
+    /**
+     * Reset chart state for a new ticker (forces newPlot on next render)
+     */
+    resetChart(elementId) {
+        delete this._renderedCharts[elementId];
+    },
+
     /**
      * Check if dark mode is currently enabled
      */
@@ -207,12 +232,7 @@ const Charts = {
                 modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
             };
 
-            Plotly.newPlot(elementId, traces, layout, config).then(() => {
-                const chartEl = document.getElementById(elementId);
-                if (chartEl) {
-                    Plotly.Plots.resize(chartEl);
-                }
-            });
+            this._smartPlot(elementId, traces, layout, config);
 
             return; // Exit early for comparison mode
         }
@@ -629,12 +649,7 @@ const Charts = {
             modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
         };
 
-        Plotly.newPlot(elementId, traces, layout, config).then(() => {
-            const chartEl = document.getElementById(elementId);
-            if (chartEl) {
-                Plotly.Plots.resize(chartEl);
-            }
-        });
+        this._smartPlot(elementId, traces, layout, config);
     },
 
     /**

@@ -904,18 +904,39 @@ const App = {
         this.currentTicker = ticker;
         this.currentPeriod = document.getElementById('period-select').value;
         this.newsCache = {}; // Clear news cache for new ticker
+        if (typeof Charts !== 'undefined' && Charts.resetChart) {
+            Charts.resetChart('stock-chart');
+        }
         this.showLoading();
 
         try {
-            // PHASE 1: Critical path - only what's needed for chart
-            // These are the minimum requirements to show the chart
-            const [history, analysis] = await Promise.all([
-                API.getHistory(ticker, this.currentPeriod),
-                API.getAnalysis(ticker, this.currentPeriod)
-            ]);
+            // PHASE 1: Critical path - single request for history + analysis
+            const chartData = await API.getChartData(ticker, this.currentPeriod);
 
-            this.historyData = history;
-            this.analysisData = analysis;
+            // Split combined response into history and analysis shapes
+            this.historyData = {
+                symbol: chartData.symbol,
+                period: chartData.period,
+                startDate: chartData.startDate,
+                endDate: chartData.endDate,
+                data: chartData.data,
+                minClose: chartData.minClose,
+                maxClose: chartData.maxClose,
+                averageClose: chartData.averageClose,
+                averageVolume: chartData.averageVolume
+            };
+            this.analysisData = {
+                symbol: chartData.symbol,
+                period: chartData.period,
+                performance: chartData.performance,
+                movingAverages: chartData.movingAverages,
+                rsi: chartData.rsi,
+                macd: chartData.macd,
+                bollingerBands: chartData.bollingerBands,
+                stochastic: chartData.stochastic
+            };
+
+            const analysis = this.analysisData;
 
             // Render chart immediately - this is what the user is waiting for
             this.renderPerformance(analysis.performance);

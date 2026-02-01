@@ -44,6 +44,20 @@ const API = {
     },
 
     /**
+     * Get combined chart data (history + analysis) in a single request.
+     * Eliminates duplicate backend calls and saves an HTTP round-trip.
+     * @param {string} ticker - Stock ticker symbol
+     * @param {string} period - Time period
+     */
+    async getChartData(ticker, period = '1y') {
+        const response = await fetch(`${this.baseUrl}/stock/${ticker}/chart-data?period=${period}`);
+        if (!response.ok) {
+            throw new Error('Failed to fetch chart data');
+        }
+        return response.json();
+    },
+
+    /**
      * Get significant price moves
      * @param {string} ticker - Stock ticker symbol
      * @param {number} threshold - Minimum percentage change to consider significant
