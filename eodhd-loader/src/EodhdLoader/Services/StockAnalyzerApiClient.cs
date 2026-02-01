@@ -555,6 +555,25 @@ public class StockAnalyzerApiClient
         }
     }
 
+    /// <summary>
+    /// Triggers a full CoverageSummary refresh on the server.
+    /// This re-aggregates the Prices table (2-5 min on Azure SQL Basic).
+    /// Call after crawler stops to update dashboard stats and heatmap.
+    /// </summary>
+    public async Task TriggerSummaryRefreshAsync(CancellationToken ct = default)
+    {
+        if (_httpClient == null) return;
+
+        try
+        {
+            await _httpClient.PostAsync("/api/admin/dashboard/refresh-summary", null, ct);
+        }
+        catch
+        {
+            // Non-critical — dashboard stats will just be stale until next manual refresh
+        }
+    }
+
     public async Task<HeatmapDataResult?> GetHeatmapDataAsync(CancellationToken ct = default)
     {
         if (_httpClient == null) return null;
@@ -950,6 +969,9 @@ public class DashboardStatsResult
 
     [JsonPropertyName("timestamp")]
     public string Timestamp { get; set; } = "";
+
+    [JsonPropertyName("summaryLastRefreshed")]
+    public string? SummaryLastRefreshed { get; set; }
 
     [JsonPropertyName("universe")]
     public UniverseStats? Universe { get; set; }

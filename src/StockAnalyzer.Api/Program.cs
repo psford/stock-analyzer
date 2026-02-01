@@ -1049,6 +1049,7 @@ app.MapGet("/api/admin/prices/coverage-dates", async (
 // POST /api/admin/prices/load-tickers - Load historical data for specific tickers
 app.MapPost("/api/admin/prices/load-tickers", async (
     PriceRefreshService? refreshService,
+    IMemoryCache cache,
     HttpRequest request) =>
 {
     if (refreshService == null)
@@ -1071,6 +1072,12 @@ app.MapPost("/api/admin/prices/load-tickers", async (
     {
         var result = await refreshService.LoadHistoricalDataForTickersAsync(
             body.Tickers, startDate, endDate);
+
+        // Invalidate dashboard stats cache so next fetch reflects new records
+        if (result.TotalRecordsInserted > 0)
+        {
+            cache.Remove("dashboard:stats");
+        }
 
         return Results.Ok(new
         {
@@ -2688,6 +2695,11 @@ app.MapGet("/api/admin/dashboard/stats", async (IServiceProvider serviceProvider
             .OrderByDescending(s => s.Year)
             .ToListAsync();
 
+        // CoverageSummary freshness — when was it last refreshed?
+        var summaryLastRefreshed = summaryRows.Any()
+            ? summaryRows.Max(r => r.LastUpdatedAt).ToString("o")
+            : (string?)null;
+
         // Derive price stats from CoverageSummary (replaces expensive COUNT/MIN/MAX on 7M+ Prices)
         if (summaryRows.Any())
         {
@@ -2766,6 +2778,7 @@ app.MapGet("/api/admin/dashboard/stats", async (IServiceProvider serviceProvider
         {
             success = true,
             timestamp = DateTime.UtcNow.ToString("o"),
+            summaryLastRefreshed,
             universe = universeData,
             prices = pricesData,
             importanceTiers = tiers,

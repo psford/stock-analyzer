@@ -103,6 +103,43 @@ public partial class CrawlerViewModel : ViewModelBase
     [ObservableProperty]
     private string _latestDateDisplay = "—";
 
+    // Session timing and delta tracking
+    private DateTime _sessionStartedAt;
+    private int _initialGapsCount;
+    private int _lastSessionTickerCount;
+    private int _lastSessionRecordCount;
+
+    [ObservableProperty]
+    private string _gapsDeltaDisplay = "";
+
+    [ObservableProperty]
+    private bool _isGapsIncreasing;
+
+    [ObservableProperty]
+    private string _tickerRateDisplay = "";
+
+    [ObservableProperty]
+    private string _recordRateDisplay = "";
+
+    [ObservableProperty]
+    private string _sessionTimeDisplay = "";
+
+    [ObservableProperty]
+    private string _tickersDisplay = "—";
+
+    [ObservableProperty]
+    private string _tickersSubtitle = "";
+
+    [ObservableProperty]
+    private string _recordsDisplay = "—";
+
+    [ObservableProperty]
+    private string _recordsSubtitle = "";
+
+    // Freshness indicator for CoverageSummary-based stats
+    [ObservableProperty]
+    private string _summaryFreshnessDisplay = "";
+
     // Heatmap data (bound to CoverageHeatmapControl)
     [ObservableProperty]
     private HeatmapDataResult? _heatmapData;
@@ -218,6 +255,7 @@ public partial class CrawlerViewModel : ViewModelBase
             SecuritiesWithGaps = gaps.Summary.SecuritiesWithGaps;
             TotalMissingDays = gaps.Summary.TotalMissingDays;
             CompletionPercent = gaps.CompletionPercent;
+            if (IsCrawling) UpdateSessionMetrics();
 
             _securityQueue.Clear();
             foreach (var secGap in gaps.Gaps)
@@ -284,6 +322,19 @@ public partial class CrawlerViewModel : ViewModelBase
         ErrorsThisSession = 0;
         _zeroResultAliases.Clear();
 
+        // Session metrics initialization
+        _sessionStartedAt = DateTime.Now;
+        _initialGapsCount = SecuritiesWithGaps;
+        GapsDeltaDisplay = "";
+        IsGapsIncreasing = false;
+        TickerRateDisplay = "";
+        RecordRateDisplay = "";
+        SessionTimeDisplay = "";
+        TickersDisplay = "0";
+        TickersSubtitle = "this session";
+        RecordsDisplay = "0";
+        RecordsSubtitle = "this session";
+
         CurrentPhase = "Crawling";
         CurrentAction = "Starting...";
         StatusText = "Fetching gaps...";
@@ -310,6 +361,13 @@ public partial class CrawlerViewModel : ViewModelBase
                 return;
             }
 
+            // Preserve session metrics for idle display
+            _lastSessionTickerCount = SecuritiesProcessedThisSession;
+            _lastSessionRecordCount = RecordsLoadedThisSession;
+            TickersDisplay = _lastSessionTickerCount > 0 ? _lastSessionTickerCount.ToString("N0") : "—";
+            TickersSubtitle = _lastSessionTickerCount > 0 ? "last session" : "";
+            RecordsDisplay = _lastSessionRecordCount > 0 ? _lastSessionRecordCount.ToString("N0") : "—";
+            RecordsSubtitle = _lastSessionRecordCount > 0 ? "last session" : "";
             CurrentAction = "Complete!";
             CurrentPhase = "Complete";
             StatusText = "All securities processed! No gaps remain.";
@@ -337,10 +395,22 @@ public partial class CrawlerViewModel : ViewModelBase
         CurrentAction = "Stopped";
         StatusText = $"Stopped. Processed {SecuritiesProcessedThisSession} securities, loaded {RecordsLoadedThisSession:N0} records.";
 
+        // Preserve session metrics for idle display
+        _lastSessionTickerCount = SecuritiesProcessedThisSession;
+        _lastSessionRecordCount = RecordsLoadedThisSession;
+        TickersDisplay = _lastSessionTickerCount > 0 ? _lastSessionTickerCount.ToString("N0") : "—";
+        TickersSubtitle = _lastSessionTickerCount > 0 ? "last session" : "";
+        RecordsDisplay = _lastSessionRecordCount > 0 ? _lastSessionRecordCount.ToString("N0") : "—";
+        RecordsSubtitle = _lastSessionRecordCount > 0 ? "last session" : "";
+
         // Full heatmap refresh now that crawling stopped — local updates were used
         // during crawling to avoid stale API cache overwrites
         _recordsSinceHeatmapRefresh = 0;
         _ = RefreshHeatmapFromApiAsync();
+
+        // Trigger CoverageSummary refresh (fire-and-forget, 2-5 min server-side)
+        // This updates the pre-aggregated stats so Price Records and Securities cards are current
+        _ = _apiClient.TriggerSummaryRefreshAsync();
     }
 
     [RelayCommand]
@@ -437,6 +507,13 @@ public partial class CrawlerViewModel : ViewModelBase
 
                     // Nothing left to promote — truly done
                     _crawlTimer.Stop();
+                    // Preserve session metrics for idle display
+                    _lastSessionTickerCount = SecuritiesProcessedThisSession;
+                    _lastSessionRecordCount = RecordsLoadedThisSession;
+                    TickersDisplay = _lastSessionTickerCount > 0 ? _lastSessionTickerCount.ToString("N0") : "—";
+                    TickersSubtitle = _lastSessionTickerCount > 0 ? "last session" : "";
+                    RecordsDisplay = _lastSessionRecordCount > 0 ? _lastSessionRecordCount.ToString("N0") : "—";
+                    RecordsSubtitle = _lastSessionRecordCount > 0 ? "last session" : "";
                     IsCrawling = false;
                     CurrentAction = "Complete!";
                     CurrentPhase = "Complete";
@@ -497,6 +574,13 @@ public partial class CrawlerViewModel : ViewModelBase
 
                     // Nothing left to promote — truly done
                     _crawlTimer.Stop();
+                    // Preserve session metrics for idle display
+                    _lastSessionTickerCount = SecuritiesProcessedThisSession;
+                    _lastSessionRecordCount = RecordsLoadedThisSession;
+                    TickersDisplay = _lastSessionTickerCount > 0 ? _lastSessionTickerCount.ToString("N0") : "—";
+                    TickersSubtitle = _lastSessionTickerCount > 0 ? "last session" : "";
+                    RecordsDisplay = _lastSessionRecordCount > 0 ? _lastSessionRecordCount.ToString("N0") : "—";
+                    RecordsSubtitle = _lastSessionRecordCount > 0 ? "last session" : "";
                     IsCrawling = false;
                     CurrentAction = "Complete!";
                     CurrentPhase = "Complete";
@@ -567,6 +651,7 @@ public partial class CrawlerViewModel : ViewModelBase
                         CompletionPercent = TotalSecurities > 0
                             ? Math.Round((TotalSecurities - SecuritiesWithGaps) * 100.0 / TotalSecurities, 1)
                             : 100;
+                        UpdateSessionMetrics();
                     }
                     else
                     {
@@ -776,12 +861,28 @@ public partial class CrawlerViewModel : ViewModelBase
                 {
                     TotalSecuritiesDisplay = stats.Universe.TotalSecurities.ToString("N0");
                     TrackedDisplay = stats.Universe.Tracked.ToString("N0");
+                    UntrackedDisplay = stats.Universe.Untracked.ToString("N0");
                     UnavailableDisplay = stats.Universe.Unavailable.ToString("N0");
                 }
                 if (stats.Prices != null)
                 {
                     TotalRecordsDisplay = FormatLargeNumber(stats.Prices.TotalRecords);
                     LatestDateDisplay = stats.Prices.LatestDate ?? "—";
+                }
+
+                // Update freshness indicator
+                if (!string.IsNullOrEmpty(stats.SummaryLastRefreshed)
+                    && DateTime.TryParse(stats.SummaryLastRefreshed, out var refreshedAt))
+                {
+                    var age = DateTime.UtcNow - refreshedAt;
+                    if (age.TotalMinutes < 10)
+                        SummaryFreshnessDisplay = "refreshed just now";
+                    else if (age.TotalHours < 1)
+                        SummaryFreshnessDisplay = $"refreshed {(int)age.TotalMinutes}m ago";
+                    else if (age.TotalHours < 24)
+                        SummaryFreshnessDisplay = $"refreshed {(int)age.TotalHours}h ago";
+                    else
+                        SummaryFreshnessDisplay = $"refreshed {(int)age.TotalDays}d ago";
                 }
             }
         }
@@ -828,8 +929,47 @@ public partial class CrawlerViewModel : ViewModelBase
         CompletionPercent = TotalSecurities > 0
             ? Math.Round((TotalSecurities - SecuritiesWithGaps) * 100.0 / TotalSecurities, 1)
             : 100;
+        UpdateSessionMetrics();
         _currentSecurity = null;
         _consecutiveNoDataCount = 0;
+    }
+
+    /// <summary>
+    /// Updates session metrics: gap delta, processing rates, and display strings.
+    /// Called after each ticker is processed or gaps count changes.
+    /// </summary>
+    private void UpdateSessionMetrics()
+    {
+        // Gap delta
+        var delta = _initialGapsCount - SecuritiesWithGaps;
+        IsGapsIncreasing = delta < 0;
+        if (delta > 0) GapsDeltaDisplay = $"▼ {delta} this session";
+        else if (delta < 0) GapsDeltaDisplay = $"▲ {Math.Abs(delta)} this session";
+        else GapsDeltaDisplay = "";
+
+        // Processing rates
+        var elapsed = DateTime.Now - _sessionStartedAt;
+        if (elapsed.TotalMinutes >= 1)
+        {
+            var tickerRate = SecuritiesProcessedThisSession / elapsed.TotalHours;
+            var recordRate = RecordsLoadedThisSession / elapsed.TotalHours;
+            TickerRateDisplay = $"{tickerRate:N0}/hr";
+            RecordRateDisplay = $"{recordRate:N0}/hr";
+        }
+
+        // Session duration
+        if (elapsed.TotalHours >= 1)
+            SessionTimeDisplay = $"{(int)elapsed.TotalHours}h {elapsed.Minutes}m";
+        else if (elapsed.TotalMinutes >= 1)
+            SessionTimeDisplay = $"{(int)elapsed.TotalMinutes}m";
+        else
+            SessionTimeDisplay = "";
+
+        // Update display strings
+        TickersDisplay = SecuritiesProcessedThisSession.ToString("N0");
+        TickersSubtitle = TickerRateDisplay != "" ? TickerRateDisplay : "this session";
+        RecordsDisplay = RecordsLoadedThisSession.ToString("N0");
+        RecordsSubtitle = RecordRateDisplay != "" ? RecordRateDisplay : "this session";
     }
 
     private async Task LoadDashboardStatsAsync()
@@ -860,6 +1000,25 @@ public partial class CrawlerViewModel : ViewModelBase
                     var years = (int)((latest - oldest).Days / 365.25);
                     DataSpanDisplay = $"{years}yr ({oldest.Year}-{latest.Year})";
                 }
+            }
+
+            // CoverageSummary freshness indicator
+            if (!string.IsNullOrEmpty(stats.SummaryLastRefreshed)
+                && DateTime.TryParse(stats.SummaryLastRefreshed, out var refreshedAt))
+            {
+                var age = DateTime.UtcNow - refreshedAt;
+                if (age.TotalMinutes < 10)
+                    SummaryFreshnessDisplay = "refreshed just now";
+                else if (age.TotalHours < 1)
+                    SummaryFreshnessDisplay = $"refreshed {(int)age.TotalMinutes}m ago";
+                else if (age.TotalHours < 24)
+                    SummaryFreshnessDisplay = $"refreshed {(int)age.TotalHours}h ago";
+                else
+                    SummaryFreshnessDisplay = $"refreshed {(int)age.TotalDays}d ago";
+            }
+            else
+            {
+                SummaryFreshnessDisplay = "";
             }
 
             // Load heatmap data (Year x ImportanceScore bivariate coverage)

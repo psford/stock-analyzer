@@ -78,80 +78,186 @@
                 </StackPanel>
             </Grid>
 
-            <!-- Row 1: Metric Cards -->
-            <Grid Grid.Row="1" Margin="0,0,0,12">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
+            <!-- Row 1: 3-Tier Metric Dashboard -->
+            <StackPanel Grid.Row="1" Margin="0,0,0,12">
 
-                <!-- Total Records -->
-                <Border Grid.Column="0" Background="#1a1a2e" CornerRadius="8" Padding="12,10" Margin="0,0,4,0"
-                        ToolTip="Total price records stored in the database">
-                    <StackPanel HorizontalAlignment="Center">
-                        <TextBlock Text="{Binding TotalRecordsDisplay}" FontSize="22" FontWeight="Bold"
-                                   Foreground="#00d4ff" HorizontalAlignment="Center" FontFamily="Consolas"/>
-                        <TextBlock Text="PRICE RECORDS" FontSize="9" Foreground="#666"
-                                   HorizontalAlignment="Center" FontWeight="Bold"/>
-                        <TextBlock FontSize="9" Foreground="#444" HorizontalAlignment="Center">
-                            <Run Text="Latest: "/><Run Text="{Binding LatestDateDisplay, Mode=OneWay}"/>
-                        </TextBlock>
-                    </StackPanel>
+                <!-- Tier 1: Hero Card — Data Coverage (full width, prominent) -->
+                <Border Background="#162447" CornerRadius="8" Padding="16,12"
+                        ToolTip="Overall data coverage — gaps decrease as the crawler fills missing price data">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="DATA COVERAGE" FontSize="10" Foreground="#888" FontWeight="Bold" Margin="0,0,0,6"/>
+
+                            <!-- Progress Bar -->
+                            <ProgressBar Value="{Binding CompletionPercent}" Maximum="100" Height="10" Margin="0,0,16,0">
+                                <ProgressBar.Template>
+                                    <ControlTemplate TargetType="ProgressBar">
+                                        <Grid>
+                                            <Border CornerRadius="5" Background="#0f0f1a"/>
+                                            <Border CornerRadius="5" HorizontalAlignment="Left"
+                                                    Name="PART_Indicator">
+                                                <Border.Background>
+                                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                                        <GradientStop Color="#4CAF50" Offset="0"/>
+                                                        <GradientStop Color="#66BB6A" Offset="1"/>
+                                                    </LinearGradientBrush>
+                                                </Border.Background>
+                                            </Border>
+                                            <Border CornerRadius="5" x:Name="PART_Track"/>
+                                        </Grid>
+                                    </ControlTemplate>
+                                </ProgressBar.Template>
+                            </ProgressBar>
+
+                            <!-- Gap details -->
+                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                <TextBlock Foreground="#ff6b6b" FontSize="11" FontFamily="Consolas" FontWeight="Bold">
+                                    <Run Text="{Binding SecuritiesWithGaps, StringFormat=N0, Mode=OneWay}"/>
+                                </TextBlock>
+                                <TextBlock Text=" gaps remaining  /  " Foreground="#555" FontSize="11"/>
+                                <TextBlock Foreground="#888" FontSize="11">
+                                    <Run Text="{Binding TotalSecurities, StringFormat=N0, Mode=OneWay}"/>
+                                    <Run Text=" tracked"/>
+                                </TextBlock>
+                                <!-- Delta indicator -->
+                                <TextBlock Text="{Binding GapsDeltaDisplay}" FontSize="11" Margin="16,0,0,0">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="#4CAF50"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsGapsIncreasing}" Value="True">
+                                                    <Setter Property="Foreground" Value="#ff6b6b"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- Big percentage display -->
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="16,0,0,0">
+                            <TextBlock Text="{Binding CompletionPercent, StringFormat={}{0:F1}%}"
+                                       FontSize="28" FontWeight="Bold" Foreground="#4CAF50"
+                                       FontFamily="Consolas" HorizontalAlignment="Right"/>
+                            <TextBlock Text="{Binding SessionTimeDisplay}" FontSize="9" Foreground="#555"
+                                       HorizontalAlignment="Right"/>
+                        </StackPanel>
+                    </Grid>
                 </Border>
 
-                <!-- Total Tracked Securities -->
-                <Border Grid.Column="1" Background="#1a1a2e" CornerRadius="8" Padding="12,10" Margin="4,0"
-                        ToolTip="Active tracked securities (excluding EODHD-unavailable)">
-                    <StackPanel HorizontalAlignment="Center">
-                        <TextBlock Text="{Binding TotalSecuritiesDisplay}" FontSize="22" FontWeight="Bold"
-                                   Foreground="#feca57" HorizontalAlignment="Center" FontFamily="Consolas"/>
-                        <TextBlock Text="TRACKED" FontSize="9" Foreground="#666"
-                                   HorizontalAlignment="Center" FontWeight="Bold"/>
-                        <TextBlock FontSize="9" Foreground="#444" HorizontalAlignment="Center">
-                            <Run Text="{Binding UnavailableDisplay, Mode=OneWay}"/><Run Text=" unavailable"/>
-                        </TextBlock>
-                    </StackPanel>
-                </Border>
+                <!-- Tier 2: Reference Cards (context that rarely changes) -->
+                <Grid Margin="0,6,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
 
-                <!-- Securities With Gaps -->
-                <Border Grid.Column="2" Background="#1a1a2e" CornerRadius="8" Padding="12,10" Margin="4,0"
-                        ToolTip="Tracked securities with incomplete price data — this should decrease as the crawler runs">
-                    <StackPanel HorizontalAlignment="Center">
-                        <TextBlock Text="{Binding TrackedDisplay}" FontSize="22" FontWeight="Bold"
-                                   Foreground="#00ff88" HorizontalAlignment="Center" FontFamily="Consolas"/>
-                        <TextBlock Text="WITH GAPS" FontSize="9" Foreground="#666"
-                                   HorizontalAlignment="Center" FontWeight="Bold"/>
-                        <TextBlock Text="need backfill" FontSize="9" Foreground="#444" HorizontalAlignment="Center"/>
-                    </StackPanel>
-                </Border>
+                    <!-- Tracked Universe -->
+                    <Border Grid.Column="0" Background="#1a1a2e" CornerRadius="8" Padding="12,8" Margin="0,0,3,0"
+                            ToolTip="Breakdown of the security universe: tracked (monitored for gaps), untracked, and unavailable">
+                        <StackPanel HorizontalAlignment="Center">
+                            <TextBlock Text="TRACKED UNIVERSE" FontSize="8" Foreground="#555"
+                                       HorizontalAlignment="Center" FontWeight="Bold" Margin="0,0,0,4"/>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                <TextBlock Text="{Binding TrackedDisplay}" FontSize="16" FontWeight="Bold"
+                                           Foreground="#feca57" FontFamily="Consolas"/>
+                                <TextBlock Text=" tracked" FontSize="9" Foreground="#555" VerticalAlignment="Bottom" Margin="4,0,0,2"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,2,0,0">
+                                <TextBlock FontSize="9" Foreground="#444">
+                                    <Run Text="{Binding UntrackedDisplay, Mode=OneWay}"/><Run Text=" untracked"/>
+                                </TextBlock>
+                                <TextBlock Text="  |  " Foreground="#333" FontSize="9"/>
+                                <TextBlock FontSize="9" Foreground="#444">
+                                    <Run Text="{Binding UnavailableDisplay, Mode=OneWay}"/><Run Text=" unavail"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
 
-                <!-- Tickers Processed -->
-                <Border Grid.Column="3" Background="#1a1a2e" CornerRadius="8" Padding="12,10" Margin="4,0"
-                        ToolTip="Individual securities fully processed during this crawler session">
-                    <StackPanel HorizontalAlignment="Center">
-                        <TextBlock Text="{Binding SecuritiesProcessedThisSession, StringFormat=N0}" FontSize="22" FontWeight="Bold"
-                                   Foreground="#00d4ff" HorizontalAlignment="Center" FontFamily="Consolas"/>
-                        <TextBlock Text="TICKERS" FontSize="9" Foreground="#666"
-                                   HorizontalAlignment="Center" FontWeight="Bold"/>
-                        <TextBlock Text="processed this session" FontSize="9" Foreground="#444" HorizontalAlignment="Center"/>
-                    </StackPanel>
-                </Border>
+                    <!-- Price Records -->
+                    <Border Grid.Column="1" Background="#1a1a2e" CornerRadius="8" Padding="12,8" Margin="3,0"
+                            ToolTip="Total price records in the database (from CoverageSummary pre-aggregation)">
+                        <StackPanel HorizontalAlignment="Center">
+                            <TextBlock Text="PRICE RECORDS" FontSize="8" Foreground="#555"
+                                       HorizontalAlignment="Center" FontWeight="Bold" Margin="0,0,0,4"/>
+                            <TextBlock Text="{Binding TotalRecordsDisplay}" FontSize="16" FontWeight="Bold"
+                                       Foreground="#00d4ff" HorizontalAlignment="Center" FontFamily="Consolas"/>
+                            <TextBlock FontSize="9" Foreground="#444" HorizontalAlignment="Center" Margin="0,2,0,0">
+                                <Run Text="Latest: "/><Run Text="{Binding LatestDateDisplay, Mode=OneWay}"/>
+                            </TextBlock>
+                            <TextBlock Text="{Binding SummaryFreshnessDisplay}" FontSize="8" Foreground="#555"
+                                       HorizontalAlignment="Center" FontStyle="Italic" Margin="0,1,0,0"/>
+                        </StackPanel>
+                    </Border>
 
-                <!-- Records Loaded -->
-                <Border Grid.Column="4" Background="#1a1a2e" CornerRadius="8" Padding="12,10" Margin="4,0,0,0"
-                        ToolTip="Price records inserted into the database during this crawler session">
-                    <StackPanel HorizontalAlignment="Center">
-                        <TextBlock Text="{Binding RecordsLoadedThisSession, StringFormat=N0}" FontSize="22" FontWeight="Bold"
-                                   Foreground="#feca57" HorizontalAlignment="Center" FontFamily="Consolas"/>
-                        <TextBlock Text="RECORDS" FontSize="9" Foreground="#666"
-                                   HorizontalAlignment="Center" FontWeight="Bold"/>
-                        <TextBlock Text="loaded this session" FontSize="9" Foreground="#444" HorizontalAlignment="Center"/>
-                    </StackPanel>
-                </Border>
-            </Grid>
+                    <!-- Data Span -->
+                    <Border Grid.Column="2" Background="#1a1a2e" CornerRadius="8" Padding="12,8" Margin="3,0,0,0"
+                            ToolTip="Date range of price data in the database">
+                        <StackPanel HorizontalAlignment="Center">
+                            <TextBlock Text="DATA SPAN" FontSize="8" Foreground="#555"
+                                       HorizontalAlignment="Center" FontWeight="Bold" Margin="0,0,0,4"/>
+                            <TextBlock Text="{Binding DataSpanDisplay}" FontSize="16" FontWeight="Bold"
+                                       Foreground="#00d4ff" HorizontalAlignment="Center" FontFamily="Consolas"/>
+                            <TextBlock Text="{Binding TotalSecuritiesDisplay, StringFormat={}{0} securities}"
+                                       FontSize="9" Foreground="#444" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- Tier 3: Session Cards (active session metrics) -->
+                <Grid Margin="0,6,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Tickers Processed -->
+                    <Border Grid.Column="0" Background="#0f3460" CornerRadius="8" Padding="12,8" Margin="0,0,3,0"
+                            ToolTip="Securities processed during the current (or last) crawler session">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                                <TextBlock Text="TICKERS" FontSize="8" Foreground="#557"
+                                           HorizontalAlignment="Center" FontWeight="Bold" Margin="0,0,0,2"/>
+                                <TextBlock Text="{Binding TickersDisplay}" FontSize="18" FontWeight="Bold"
+                                           Foreground="#00d4ff" HorizontalAlignment="Center" FontFamily="Consolas"/>
+                                <TextBlock Text="{Binding TickersSubtitle}" FontSize="9" Foreground="#446"
+                                           HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Records Loaded -->
+                    <Border Grid.Column="1" Background="#0f3460" CornerRadius="8" Padding="12,8" Margin="3,0,0,0"
+                            ToolTip="Price records inserted during the current (or last) crawler session">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                                <TextBlock Text="RECORDS" FontSize="8" Foreground="#557"
+                                           HorizontalAlignment="Center" FontWeight="Bold" Margin="0,0,0,2"/>
+                                <TextBlock Text="{Binding RecordsDisplay}" FontSize="18" FontWeight="Bold"
+                                           Foreground="#feca57" HorizontalAlignment="Center" FontFamily="Consolas"/>
+                                <TextBlock Text="{Binding RecordsSubtitle}" FontSize="9" Foreground="#446"
+                                           HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </StackPanel>
 
             <!-- Row 2: Coverage Heatmap (Year x ImportanceScore) -->
             <Border Grid.Row="2" Background="#1a1a2e" CornerRadius="8" Padding="12,8" Margin="0,0,0,12">

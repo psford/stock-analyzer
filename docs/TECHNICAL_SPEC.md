@@ -2180,14 +2180,15 @@ Maintains the historical price database with automatic daily updates.
 - Universe counts from SecurityMaster (small table, instant)
 - Price stats (totalRecords, distinctSecurities) derived from `data.CoverageSummary` (pre-aggregated, instant)
 - Latest price date via lightweight `TOP 1 ORDER BY DESC` on Prices (index seek, near-instant)
+- `summaryLastRefreshed`: `MAX(LastUpdatedAt)` from CoverageSummary — enables freshness indicators in client UI
 - ImportanceScore tier distribution derived from CoverageSummary
 - Decade/year coverage also from CoverageSummary
 - **No full-table scans on Prices** — critical fix for Azure SQL Basic (5 DTU) with 7M+ rows
-- **Caching:** `IMemoryCache` with 10-minute TTL (key: `dashboard:stats`)
-- Used by EODHD Loader's Data Load Monitor UI
+- **Caching:** `IMemoryCache` with 10-minute TTL (key: `dashboard:stats`); cache invalidated by `POST /api/admin/prices/load-tickers` on successful insert
+- Used by EODHD Loader's Data Load Monitor UI (3-tier metric card layout)
 - Returns: universe counts (total/tracked/untracked/unavailable), price record stats (total/distinct/oldest/latest), ImportanceScore tier distribution with completion status, coverage by decade, coverage by year
 - **Performance:** Responds in <1s even under concurrent crawler load (previously timed out at 30s+)
-- **Response structure:** `{ success, timestamp, universe, prices, importanceTiers[], coverageByDecade[], coverageByYear[] }`
+- **Response structure:** `{ success, timestamp, summaryLastRefreshed, universe, prices, importanceTiers[], coverageByDecade[], coverageByYear[] }`
 
 **Heatmap Data (`/api/admin/dashboard/heatmap`):**
 - Reads from pre-aggregated `data.CoverageSummary` table (instant response, even on Azure SQL Basic tier)
@@ -2305,10 +2306,19 @@ WPF desktop application (.NET 8, `net8.0-windows10.0.19041`) for managing price 
 | Tab | View | ViewModel | Purpose |
 |-----|------|-----------|---------|
 | Boris | `BorisView` | `BorisViewModel` | Single-ticker price loading |
-| Crawler | `CrawlerView` | `CrawlerViewModel` | Autonomous gap-filling agent (Data Load Monitor) |
+| Crawler | `CrawlerView` | `CrawlerViewModel` | Autonomous gap-filling agent (Data Load Monitor) — 3-tier metric dashboard |
 | Bulk Fill | `BulkFillView` | `BulkFillViewModel` | Batch historical data loading |
 | Index Manager | `IndexManagerView` | `IndexManagerViewModel` | Index composition management |
 | Dashboard | `DashboardView` | `DashboardViewModel` | Coverage stats and charts |
+
+**Crawler — 3-Tier Metric Dashboard:**
+- **Tier 1 (Hero Card):** DATA COVERAGE — full-width progress bar with `CompletionPercent`, gap count (`SecuritiesWithGaps`) with denominator (`TotalSecurities`), session delta indicator (green ▼ when gaps decreasing, red ▲ when increasing)
+- **Tier 2 (Reference Cards):** TRACKED UNIVERSE (tracked/untracked/unavailable from SecurityMaster), PRICE RECORDS (total from CoverageSummary with freshness indicator), DATA SPAN (date range)
+- **Tier 3 (Session Cards):** TICKERS processed (with rate/hr), RECORDS loaded (with rate/hr); show "last session" counts when idle instead of "0"
+- **Key bug fix (v2.35):** Card 3 was bound to `TrackedDisplay` (`Universe.Tracked` = tracked universe size) but labeled "WITH GAPS". Actual gap count (`SecuritiesWithGaps` from gaps endpoint) was only in the status bar. This caused the "Tracked keeps going up" confusion.
+- **Freshness:** API returns `summaryLastRefreshed` timestamp; client shows relative time ("refreshed 2h ago") on Price Records card
+- **Auto-refresh:** Client triggers `POST /api/admin/dashboard/refresh-summary` on crawler stop (fire-and-forget, 2-5 min server-side)
+- **Cache invalidation:** `POST /api/admin/prices/load-tickers` invalidates `dashboard:stats` cache on successful insert, so mid-session stats refresh is possible
 
 **Crawler — Full-Range Loading Strategy:**
 - Each security loads its entire available history in a single EODHD API call (`POST /api/admin/prices/load-tickers` with date range 1980-01-01 to today)
@@ -2734,6 +2744,7 @@ const [stockInfo, history, analysis, significantMoves, news] = await Promise.all
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.35 | 2026-01-31 | **Dashboard Statistics Redesign:** Fixed critical data binding bug — Card 3 ("WITH GAPS") was bound to `TrackedDisplay` (`Universe.Tracked` = tracked universe count) instead of `SecuritiesWithGaps` (actual gap count from gaps endpoint). This caused the "Tracked keeps increasing" confusion. **3-Tier Metric Layout:** Replaced 5 identical cards with: Tier 1 hero card (DATA COVERAGE progress bar + gap count + delta), Tier 2 reference cards (TRACKED UNIVERSE / PRICE RECORDS / DATA SPAN), Tier 3 session cards (TICKERS + RECORDS with rate/hr). **Session metrics:** Track rate/hr, session duration, show "last session" counts when idle instead of "0". **Gap delta indicator:** Shows "▼ N this session" with green/red coloring. **CoverageSummary freshness:** API returns `summaryLastRefreshed` (MAX LastUpdatedAt from CoverageSummary); client shows relative time. `load-tickers` endpoint invalidates `dashboard:stats` cache on insert. Client triggers `refresh-summary` on crawler stop. |
 | 2.34 | 2026-01-31 | **GetDistinctDatesAsync SQL Fix:** Replaced recursive CTE with `CROSS APPLY TOP 1` (which SQL Server prohibits in recursive CTE members along with aggregates) with while-loop using `MIN()` index seeks on `IX_Prices_EffectiveDate`. Same ~500 seek performance, fully compatible with SQL Server/SQL Express. Fixed Unicode encoding (em-dash/arrow) in test_dtu_endpoints.py for Windows cp1252 console. All 8/8 DTU endpoint tests pass on localhost. |
 | 2.33 | 2026-01-31 | **Program.cs + PriceRefreshService DTU Fixes:** 10 issues fixed: (1) **Data export** — removed separate COUNT scan, uses `pageSize+1` with CoverageSummary approximate total. (2) **refresh-summary** — `SemaphoreSlim(1,1)` guard, returns 409 Conflict if busy. (3) **BackfillTickersParallelAsync** — default concurrency 10→3, max 50→10. (4) **calculate-importance** — `SemaphoreSlim(1,1)` guard, processes in 1000-row pages with `ChangeTracker.Clear()`. (5) **bulk-load** — `SemaphoreSlim(1,1)` guard, returns 409 if busy. (6) **auto-track** — `SemaphoreSlim(3,3)` guard, skips if at capacity. (7) **seed-tracked** — added `WITH (NOLOCK)` on read-only joins. (8) **CoverageSummary** — added `AsNoTracking()` to stats and heatmap reads. (9) **populate-us-calendar** — batched into 2000-row chunks with per-batch SaveChanges. (10) **PriceRefreshService callers** — replaced `GetAllActiveAsync()` (55K full entities) with `GetActiveTickerAliasMapAsync()` (2-column projection). |
 | 2.32 | 2026-01-31 | **Repository N+1 & Search Fixes:** (1) **SecurityMasterRepository.UpsertManyAsync** — batch-fetch existing per 500 chunk via `WHERE TickerSymbol IN (...)` + `ToDictionary` (55K individual queries → 110 batch queries). (2) **SymbolRepository.UpsertManyAsync** — same batch-fetch pattern (30K → 60 queries). (3) **SecurityMasterRepository.SearchAsync** — added `.Take(limit * 5)` before `ToListAsync()` to prevent unbounded 55K+ entity fetch. (4) **SymbolRepository.SearchFromDatabaseAsync** — same `.Take(limit * 5)` bound. (5) **New `GetActiveTickerAliasMapAsync()`** — projected query returning `Dictionary<string, int>` (ticker→alias) using only 2 columns instead of materializing full entities. |
