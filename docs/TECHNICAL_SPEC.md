@@ -1,7 +1,7 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.27
-**Last Updated:** 2026-01-27
+**Version:** 2.28
+**Last Updated:** 2026-02-01
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
 
@@ -2178,7 +2178,8 @@ Maintains the historical price database with automatic daily updates.
 **Dashboard Stats (`/api/admin/dashboard/stats`):**
 - Consolidated endpoint returning all dashboard metrics
 - Universe counts from SecurityMaster (small table, instant)
-- Price stats (totalRecords, distinctSecurities) derived from `data.CoverageSummary` (pre-aggregated, instant)
+- **totalRecords**: Real-time row count from `sys.dm_db_partition_stats` (SQL Server metadata, zero DTU, always current — replaces stale CoverageSummary sum)
+- distinctSecurities derived from `data.CoverageSummary` (pre-aggregated, instant)
 - Latest price date via lightweight `TOP 1 ORDER BY DESC` on Prices (index seek, near-instant)
 - `summaryLastRefreshed`: `MAX(LastUpdatedAt)` from CoverageSummary — enables freshness indicators in client UI
 - ImportanceScore tier distribution derived from CoverageSummary
@@ -2216,7 +2217,8 @@ Maintains the historical price database with automatic daily updates.
 
 **DTU-Optimized Query Patterns (Azure SQL Basic, 5 DTU):**
 - **No full-table scans on Prices** — the 7M+ row table will exhaust 5 DTU / 60 worker limits
-- **Aggregate counts:** Use `CoverageSummary` pre-aggregated table (SUM of TrackedRecords + UntrackedRecords)
+- **Total record count:** Use `sys.dm_db_partition_stats` for real-time row count (zero DTU, instant, always current). Never use CoverageSummary for the headline totalRecords number — CoverageSummary goes stale between refreshes.
+- **Aggregate breakdowns:** Use `CoverageSummary` pre-aggregated table for year/score breakdowns (SUM of TrackedRecords + UntrackedRecords)
 - **Date range:** Use `TOP 1 ORDER BY EffectiveDate ASC/DESC` (index seek on `IX_Prices_EffectiveDate`)
 - **Distinct securities:** Use `SELECT COUNT(*) FROM SecurityMaster WHERE EXISTS (SELECT 1 FROM Prices WHERE ...)` (index seek per small-table row)
 - **Per-security counts:** Use `CROSS APPLY (SELECT COUNT(*) FROM Prices WHERE SecurityAlias = sm.SecurityAlias)` (index seek via `IX_Prices_SecurityAlias_EffectiveDate`)

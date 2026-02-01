@@ -2700,10 +2700,27 @@ app.MapGet("/api/admin/dashboard/stats", async (IServiceProvider serviceProvider
             ? summaryRows.Max(r => r.LastUpdatedAt).ToString("o")
             : (string?)null;
 
-        // Derive price stats from CoverageSummary (replaces expensive COUNT/MIN/MAX on 7M+ Prices)
+        // Real-time total record count from SQL Server metadata (instant, zero DTU)
+        // sys.dm_db_partition_stats maintains row counts without scanning the table
+        long totalRecordsLive = 0;
+        using (var countCmd = connection.CreateCommand())
+        {
+            countCmd.CommandText = @"
+                SELECT SUM(p.row_count)
+                FROM sys.dm_db_partition_stats p
+                INNER JOIN sys.tables t ON p.object_id = t.object_id
+                INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+                WHERE s.name = 'data' AND t.name = 'Prices' AND p.index_id IN (0, 1)";
+            countCmd.CommandTimeout = 5;
+            var countObj = await countCmd.ExecuteScalarAsync();
+            if (countObj is long l) totalRecordsLive = l;
+            else if (countObj is decimal dec) totalRecordsLive = (long)dec;
+            else if (countObj != null && countObj != DBNull.Value) totalRecordsLive = Convert.ToInt64(countObj);
+        }
+
+        // Use CoverageSummary for breakdown stats, but real-time count for the headline number
         if (summaryRows.Any())
         {
-            var totalRecords = summaryRows.Sum(r => r.TrackedRecords + r.UntrackedRecords);
             var distinctSecurities = summaryRows
                 .GroupBy(r => r.ImportanceScore)
                 .Sum(g => g.Max(r => r.TrackedSecurities + r.UntrackedSecurities));
@@ -2720,9 +2737,28 @@ app.MapGet("/api/admin/dashboard/stats", async (IServiceProvider serviceProvider
 
             pricesData = new
             {
-                totalRecords = (int)Math.Min(totalRecords, int.MaxValue),
+                totalRecords = (int)Math.Min(totalRecordsLive, int.MaxValue),
                 distinctSecurities,
                 oldestDate = $"{minYear}-01-01",
+                latestDate
+            };
+        }
+        else
+        {
+            // No CoverageSummary data at all — still show the real-time count
+            string? latestDate = null;
+            using var dateCmd = connection.CreateCommand();
+            dateCmd.CommandText = "SELECT TOP 1 EffectiveDate FROM data.Prices WITH (NOLOCK) ORDER BY EffectiveDate DESC";
+            dateCmd.CommandTimeout = 5;
+            var latestObj = await dateCmd.ExecuteScalarAsync();
+            if (latestObj is DateTime dt)
+                latestDate = dt.ToString("yyyy-MM-dd");
+
+            pricesData = new
+            {
+                totalRecords = (int)Math.Min(totalRecordsLive, int.MaxValue),
+                distinctSecurities = 0,
+                oldestDate = (string?)null,
                 latestDate
             };
         }
