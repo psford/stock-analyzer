@@ -1178,8 +1178,9 @@ const App = {
             // PHASE 2: Load secondary data in background (non-blocking)
             // Start all these requests but don't wait for them
             const stockInfoPromise = API.getStockInfo(ticker);
+            // Always use chart data's actual date range (not UI state) to ensure moves match the chart
             const significantMovesPromise = API.getSignificantMoves(
-                ticker, this.currentThreshold, this.currentPeriod, this.customDateFrom, this.customDateTo);
+                ticker, this.currentThreshold, null, chartData.startDate, chartData.endDate);
             const newsPromise = API.getAggregatedNews(ticker, 30, 10);
 
             // Handle stock info when ready
@@ -1427,15 +1428,16 @@ const App = {
      * Refresh significant moves with new threshold
      */
     async refreshSignificantMoves() {
-        if (!this.currentTicker) return;
+        if (!this.currentTicker || !this.historyData) return;
 
         try {
+            // Use chart data's actual date range (not UI state) to ensure moves match the chart
             this.significantMovesData = await API.getSignificantMoves(
                 this.currentTicker,
                 this.currentThreshold,
-                this.currentPeriod,
-                this.customDateFrom,
-                this.customDateTo
+                null,
+                this.historyData.startDate,
+                this.historyData.endDate
             );
             this.renderChart();
             this.attachChartHoverListeners();

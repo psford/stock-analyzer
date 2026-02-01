@@ -216,7 +216,7 @@ Environment variables: `TWELVEDATA_API_KEY`, `FMP_API_KEY`
 | `/api/stock/{ticker}` | GET | Stock information | `ticker`: Stock symbol |
 | `/api/stock/{ticker}/history` | GET | Historical OHLCV data | `ticker`, `period` (optional, default: 1y; values: 1d/5d/mtd/1mo/3mo/6mo/ytd/1y/2y/5y/10y/15y/20y/30y/max), `from`/`to` (optional, ISO dates for custom range) |
 | `/api/stock/{ticker}/news` | GET | Company news with sentiment + relevance scoring | `ticker`, `days` (optional, default: 30), `limit` (optional, default: 30) |
-| `/api/stock/{ticker}/significant` | GET | Significant price moves (no news) | `ticker`, `threshold` (optional, default: 3.0), `period` (optional) |
+| `/api/stock/{ticker}/significant` | GET | Significant price moves (no news) | `ticker`, `threshold` (optional, default: 3.0), `period` (optional), `from`/`to` (optional, ISO dates - takes precedence over period) |
 | `/api/stock/{ticker}/news/move` | GET | News for specific move with metadata | `ticker`, `date`, `change`, `limit` (optional, default: 5) |
 | `/api/stock/{ticker}/analysis` | GET | Performance metrics + MAs | `ticker`, `period` (optional) |
 | `/api/stock/{ticker}/chart-data` | GET | Combined history + analysis (single request) | `ticker`, `period` (optional, default: 1y; same values as /history), `from`/`to` (optional, ISO dates) |
@@ -1135,7 +1135,7 @@ const API = {
     getStockInfo(ticker) { ... },
     getHistory(ticker, period) { ... },
     getAnalysis(ticker, period) { ... },
-    getSignificantMoves(ticker, threshold) { ... },
+    getSignificantMoves(ticker, threshold, period, from, to) { ... },
     getNews(ticker, days) { ... },
     search(query) { ... }
 };
@@ -2738,15 +2738,18 @@ SRI hashes verify that CDN-loaded scripts haven't been tampered with.
 
 ### 13.3 Parallel Requests
 
-Frontend fetches all data in parallel for better performance:
+Frontend uses a two-phase loading strategy for fast perceived performance:
 ```javascript
-const [stockInfo, history, analysis, significantMoves, news] = await Promise.all([
-    API.getStockInfo(ticker),
-    API.getHistory(ticker, period),
-    API.getAnalysis(ticker, period),
-    API.getSignificantMoves(ticker, 3),
-    API.getNews(ticker, 30)
-]);
+// PHASE 1: Critical path - single combined request for chart + analysis
+const chartData = await API.getChartData(ticker, period, from, to);
+
+// PHASE 2: Secondary data loaded in background (non-blocking)
+// Significant moves always uses chart data's actual date range (not UI state)
+// to guarantee markers align with the displayed chart
+const significantMovesPromise = API.getSignificantMoves(
+    ticker, threshold, null, chartData.startDate, chartData.endDate);
+const stockInfoPromise = API.getStockInfo(ticker);
+const newsPromise = API.getAggregatedNews(ticker, 30, 10);
 ```
 
 ---
@@ -2755,6 +2758,7 @@ const [stockInfo, history, analysis, significantMoves, news] = await Promise.all
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.39 | 2026-02-01 | **Significant Moves Date Range Structural Fix:** Decoupled significant moves fetching from UI state. Both `analyzeStock()` and `refreshSignificantMoves()` now derive date range from `chartData.startDate`/`chartData.endDate` (the actual dates returned by the chart-data endpoint) instead of `this.currentPeriod`/`this.customDateFrom`/`this.customDateTo` (UI input state). This eliminates the class of bugs where significant move markers extend past the visible chart because the UI state disagrees with the actual data range. The `period` parameter is passed as `null` and `from`/`to` are always populated from chart response. Added `historyData` null guard to `refreshSignificantMoves()`. |
 | 2.38 | 2026-02-01 | **Custom Date Ranges + Real-Time Crawler Stats:** (1) **Extended period options** — added 1D, 5D, MTD, 15Y, 20Y, 30Y, and Since Inception (max/all) to `GetDateRangeForPeriod`. (2) **Custom from/to date support** — `/chart-data` and `/history` endpoints now accept optional `from` and `to` query parameters for arbitrary date ranges. New `GetHistoricalDataAsync(symbol, from, to)` overload in AggregatedStockDataService with separate cache key pattern `history:{SYMBOL}:{from}:{to}`. API provider fallback synthesizes an appropriate period and filters results to requested range. (3) **Frontend date range UI** — period `<select>` expanded with all new options plus "Custom Range..." which reveals start/end date inputs with Apply button. (4) **Combined portfolio period buttons** — added YTD, 5Y, and All buttons. (5) **EODHD Loader real-time stats** — Price Records card now updates live during crawling (base count + session inserts, zero API overhead). Tracked/Untracked/Unavailable cards update locally when promoting or marking securities unavailable. |
 | 2.37 | 2026-02-01 | **News Service Quality Overhaul:** 5 fixes to improve news relevance and completeness: (1) **Tightened relevance scoring** — HeadlineRelevanceService `CalculateTickerScore` demoted `RelatedSymbols`-only matches from 1.0 to 0.3 (Finnhub tags loosely related articles). Headline mentions now score 1.0, summary mentions 0.7. This filters out ~60% noise articles. (2) **Enriched `/news` endpoint** — now applies SentimentAnalyzer + HeadlineRelevanceService to all articles, looks up company profile for name-based relevance, filters to top 30 by relevance (was 249 raw). Added `limit` query parameter. (3) **Extended `/news/move` date window** — `GetNewsForDateAsync` now looks date-2 to date+3 (was date+1), capturing explanatory articles written after significant moves. (4) **Fixed market news fallback for historical dates** — old dates (>3 days) now return best-available company news instead of attempting market news lookup (which always fetched current news, useless for old dates). (5) **Added `/news/move` response metadata** — new `MoveNewsResult` model with `source` ("company"/"market"), `directionMatch` (bool). Cache type updated from `List<NewsItem>` to `MoveNewsResult`. |
 | 2.36 | 2026-02-01 | **Chart Loading Performance Optimization:** 6 optimizations to reduce chart load time on 5 DTU Azure SQL: (1) **Combined `/api/stock/{ticker}/chart-data` endpoint** — returns history + analysis in a single request, eliminating duplicate `GetHistoricalDataAsync` calls and saving an HTTP round-trip. Frontend `analyzeStock()` switched from `Promise.all([getHistory, getAnalysis])` to single `getChartData()` call. Old endpoints preserved for backward compat (comparison mode, watchlist). (2) **Cache coalescing (stampede prevention)** — added `ConcurrentDictionary<string, Task<HistoricalDataResult?>> _inflight` to `AggregatedStockDataService`. Concurrent cache misses for the same key share one in-flight task via `GetOrAdd()`, preventing duplicate DB queries under load. (3) **HttpClient timeouts** — set explicit timeouts on all external API services (TwelveData/FMP: 15s, NewsService: 10s, Yahoo: 10s) replacing the default 100s timeout. Worst-case external cascade reduced from 300s to 45s. (4) **`Plotly.react` for re-renders** — added `_smartPlot()` helper to charts.js: uses `Plotly.newPlot` for first render, `Plotly.react` (diff-based incremental update) for subsequent renders. Eliminates full DOM teardown on indicator toggles and significant move marker additions. (5) **Eliminated chart double-render** — with `Plotly.react`, the second `renderChart()` call when significant moves arrive (app.js Phase 2) now does an incremental update instead of a full rebuild. (6) **DB connection pool warmup** — new `DbWarmupService` (IHostedService) runs `SELECT 1` on startup, plus `Min Pool Size=2` in connection strings (local + Bicep). Eliminates cold-start TCP+TLS+auth penalty on first user request. |
