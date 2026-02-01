@@ -339,9 +339,7 @@ public class CoverageReport
             $"  Active Securities: {ActiveSecurities:N0}",
             $"  Latest Price Date: {LatestPriceDate ?? "N/A"}",
             "",
-            $"Date Coverage (since 1980):",
-            $"  Days with Data: {DatesWithData:N0} / {ExpectedTradingDays:N0} ({OverallCoveragePercent:F1}%)",
-            $"  Missing Days: {TotalMissingDays:N0}",
+            $"Missing Days (no data for any security): {TotalMissingDays:N0}",
             ""
         };
 
@@ -410,10 +408,18 @@ public class CoverageReport
 
         if (EstimatedIdealRecords > 0)
         {
-            lines.Add($"Record Density:");
-            lines.Add($"  Actual: {TotalPriceRecords:N0}");
-            lines.Add($"  Ideal (dates × securities): {EstimatedIdealRecords:N0}");
-            lines.Add($"  Density: {RecordCoveragePercent:F1}%");
+            var avgRecordsPerSecurity = ActiveSecurities > 0
+                ? (double)TotalPriceRecords / ActiveSecurities
+                : 0;
+            lines.Add($"Record Completeness (records ÷ dates × securities):");
+            lines.Add($"  Actual Records: {TotalPriceRecords:N0}");
+            lines.Add($"  Theoretical Max ({DatesWithData:N0} dates × {ActiveSecurities:N0} securities): {EstimatedIdealRecords:N0}");
+            lines.Add($"  Completeness: {RecordCoveragePercent:F1}%");
+            lines.Add($"  Avg Records per Security: {avgRecordsPerSecurity:N0}");
+            lines.Add("");
+            lines.Add($"  Note: Low completeness is normal — most securities don't have data");
+            lines.Add($"  spanning back to 1980. A security listed in 2020 contributes 0 records");
+            lines.Add($"  for 1980-2019, lowering the overall ratio.");
         }
 
         return string.Join(Environment.NewLine, lines);

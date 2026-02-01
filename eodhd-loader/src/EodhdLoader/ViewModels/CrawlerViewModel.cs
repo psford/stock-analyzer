@@ -336,6 +336,11 @@ public partial class CrawlerViewModel : ViewModelBase
         ActiveHeatmapScore = -1;
         CurrentAction = "Stopped";
         StatusText = $"Stopped. Processed {SecuritiesProcessedThisSession} securities, loaded {RecordsLoadedThisSession:N0} records.";
+
+        // Full heatmap refresh now that crawling stopped — local updates were used
+        // during crawling to avoid stale API cache overwrites
+        _recordsSinceHeatmapRefresh = 0;
+        _ = RefreshHeatmapFromApiAsync();
     }
 
     [RelayCommand]
@@ -437,6 +442,8 @@ public partial class CrawlerViewModel : ViewModelBase
                     CurrentPhase = "Complete";
                     StatusText = $"All securities processed! {SecuritiesProcessedThisSession} securities, {RecordsLoadedThisSession:N0} records.";
                     AddActivity("✓", "Complete", "All tracked and untracked securities processed");
+                    _recordsSinceHeatmapRefresh = 0;
+                    _ = RefreshHeatmapFromApiAsync();
                     return;
                 }
             }
@@ -495,6 +502,8 @@ public partial class CrawlerViewModel : ViewModelBase
                     CurrentPhase = "Complete";
                     StatusText = $"All securities processed! {SecuritiesProcessedThisSession} securities, {RecordsLoadedThisSession:N0} records.";
                     AddActivity("✓", "Complete", "All tracked and untracked securities processed");
+                    _recordsSinceHeatmapRefresh = 0;
+                    _ = RefreshHeatmapFromApiAsync();
                     return;
                 }
 
@@ -529,7 +538,11 @@ public partial class CrawlerViewModel : ViewModelBase
                         {
                             AddActivity("✓", _currentSecurity.Ticker, $"{inserted:N0} records loaded");
                             HeatmapCellUpdateCounter++;
-                            _ = RefreshHeatmapFromApiAsync();
+                            // Don't call RefreshHeatmapFromApiAsync() here — the API returns
+                            // 30-minute cached stale data that overwrites local cell updates,
+                            // making the heatmap appear frozen during crawling.
+                            // Local updates happen in Path 1 (date-by-date) via UpdateHeatmapCellLocally().
+                            // A full refresh fires when crawling stops.
                         }
                         else
                         {
@@ -699,14 +712,41 @@ public partial class CrawlerViewModel : ViewModelBase
             else
                 cell.UntrackedRecords += recordsInserted;
         }
-        // If cell doesn't exist, the periodic full refresh will pick it up
-
-        // Periodic full refresh from API to catch new cells and re-normalize
-        _recordsSinceHeatmapRefresh += (int)recordsInserted;
-        if (_recordsSinceHeatmapRefresh >= HeatmapFullRefreshInterval)
+        else
         {
-            _recordsSinceHeatmapRefresh = 0;
-            _ = RefreshHeatmapFromApiAsync();
+            // Create new cell so newly-covered year/score combos appear immediately
+            var newCell = new HeatmapCell
+            {
+                Year = year,
+                Score = score,
+                TrackedRecords = isTracked ? recordsInserted : 0,
+                UntrackedRecords = isTracked ? 0 : recordsInserted,
+                TrackedSecurities = isTracked ? 1 : 0,
+                UntrackedSecurities = isTracked ? 0 : 1
+            };
+            data.Cells.Add(newCell);
+
+            // Update metadata bounds so the control renders the new cell
+            if (data.Metadata != null)
+            {
+                if (year < data.Metadata.MinYear || data.Metadata.MinYear == 0)
+                    data.Metadata.MinYear = year;
+                if (year > data.Metadata.MaxYear)
+                    data.Metadata.MaxYear = year;
+                data.Metadata.TotalCells = data.Cells.Count;
+            }
+        }
+
+        // During active crawling, skip API refreshes — they return 30-minute cached
+        // stale data that overwrites our local updates. A full refresh fires on crawl stop.
+        if (!IsCrawling)
+        {
+            _recordsSinceHeatmapRefresh += (int)recordsInserted;
+            if (_recordsSinceHeatmapRefresh >= HeatmapFullRefreshInterval)
+            {
+                _recordsSinceHeatmapRefresh = 0;
+                _ = RefreshHeatmapFromApiAsync();
+            }
         }
     }
 
