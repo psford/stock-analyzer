@@ -146,16 +146,24 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
         var created = 0;
         var updated = 0;
 
-        // Process in batches of 500 for efficiency
+        // Process in batches of 500, batch-fetch existing to avoid N+1
         foreach (var batch in securityList.Chunk(500))
         {
+            var normalizedTickers = batch
+                .Select(dto => dto.TickerSymbol.Trim().ToUpperInvariant())
+                .Distinct()
+                .ToList();
+
+            // Single query per batch instead of one per dto
+            var existingEntities = await _context.SecurityMaster
+                .Where(s => normalizedTickers.Contains(s.TickerSymbol))
+                .ToDictionaryAsync(s => s.TickerSymbol);
+
             foreach (var dto in batch)
             {
                 var normalizedTicker = dto.TickerSymbol.Trim().ToUpperInvariant();
-                var existing = await _context.SecurityMaster
-                    .FirstOrDefaultAsync(s => s.TickerSymbol == normalizedTicker);
 
-                if (existing != null)
+                if (existingEntities.TryGetValue(normalizedTicker, out var existing))
                 {
                     // Update existing
                     existing.IssueName = dto.IssueName.Trim();
@@ -203,6 +211,20 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
     }
 
     /// <inheritdoc />
+    public async Task<Dictionary<string, int>> GetActiveTickerAliasMapAsync()
+    {
+        // Projected query: only fetches TickerSymbol + SecurityAlias (2 columns)
+        // instead of all 12+ columns from GetAllActiveAsync()
+        var pairs = await _context.SecurityMaster
+            .AsNoTracking()
+            .Where(s => s.IsActive)
+            .Select(s => new { s.TickerSymbol, s.SecurityAlias })
+            .ToListAsync();
+
+        return pairs.ToDictionary(p => p.TickerSymbol, p => p.SecurityAlias);
+    }
+
+    /// <inheritdoc />
     public async Task<int> GetActiveCountAsync()
     {
         return await _context.SecurityMaster.CountAsync(s => s.IsActive);
@@ -228,6 +250,7 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
             .Where(s =>
                 s.TickerSymbol.StartsWith(normalizedQuery) ||
                 s.IssueName.ToUpper().Contains(normalizedQuery))
+            .Take(limit * 5) // Bound server-side to prevent unbounded fetch of 55K+ entities
             .ToListAsync();
 
         // Rank: exact match > prefix match > contains match

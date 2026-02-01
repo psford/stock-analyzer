@@ -57,7 +57,9 @@ public class SqlSymbolRepository : ISymbolRepository
             s.Symbol.StartsWith(normalizedQuery) ||
             s.Description.ToUpper().Contains(normalizedQuery));
 
-        var candidates = await filtered.ToListAsync();
+        var candidates = await filtered
+            .Take(limit * 5) // Bound server-side to prevent unbounded fetch
+            .ToListAsync();
 
         var ranked = candidates
             .Select(s => new
@@ -133,16 +135,24 @@ public class SqlSymbolRepository : ISymbolRepository
         var now = DateTime.UtcNow;
         var count = 0;
 
-        // Process in batches of 500 for efficiency
+        // Process in batches of 500, batch-fetch existing to avoid N+1
         foreach (var batch in symbolList.Chunk(500))
         {
+            var normalizedSymbols = batch
+                .Select(dto => dto.Symbol.ToUpperInvariant())
+                .Distinct()
+                .ToList();
+
+            // Single query per batch instead of one per dto
+            var existingEntities = await _context.Symbols
+                .Where(s => normalizedSymbols.Contains(s.Symbol))
+                .ToDictionaryAsync(s => s.Symbol);
+
             foreach (var dto in batch)
             {
                 var normalizedSymbol = dto.Symbol.ToUpperInvariant();
-                var existing = await _context.Symbols
-                    .FirstOrDefaultAsync(s => s.Symbol == normalizedSymbol);
 
-                if (existing != null)
+                if (existingEntities.TryGetValue(normalizedSymbol, out var existing))
                 {
                     // Update existing
                     existing.DisplaySymbol = dto.DisplaySymbol;

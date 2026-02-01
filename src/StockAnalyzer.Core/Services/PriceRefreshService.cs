@@ -121,16 +121,16 @@ public class PriceRefreshService : BackgroundService
             return;
         }
 
-        // Get the most recent date we have prices for
-        var activeSecurities = await securityRepo.GetAllActiveAsync();
-        if (activeSecurities.Count == 0)
+        // Get the most recent date we have prices for (projected query, 2 columns only)
+        var tickerAliasMap = await securityRepo.GetActiveTickerAliasMapAsync();
+        if (tickerAliasMap.Count == 0)
         {
             _logger.LogInformation("No active securities in SecurityMaster. Run security sync first.");
             return;
         }
 
         // Sample a few securities to find the max date
-        var sampleAliases = activeSecurities.Take(10).Select(s => s.SecurityAlias);
+        var sampleAliases = tickerAliasMap.Values.Take(10);
         var latestPrices = await priceRepo.GetLatestPricesAsync(sampleAliases);
 
         if (latestPrices.Count == 0)
@@ -191,18 +191,13 @@ public class PriceRefreshService : BackgroundService
 
         var result = new RefreshDateResult { Date = date };
 
-        // Get all active securities
-        var securities = await securityRepo.GetAllActiveAsync();
-        if (securities.Count == 0)
+        // Get ticker→alias map (projected query, 2 columns only — not 55K full entities)
+        var tickerToAlias = await securityRepo.GetActiveTickerAliasMapAsync();
+        if (tickerToAlias.Count == 0)
         {
             _logger.LogWarning("No active securities to refresh");
             return result;
         }
-
-        // Build a ticker-to-alias lookup
-        var tickerToAlias = securities.ToDictionary(
-            s => s.TickerSymbol.ToUpperInvariant(),
-            s => s.SecurityAlias);
 
         // Fetch bulk data from EODHD
         var bulkData = await eodhd.GetBulkEodDataAsync(date, "US", ct);
@@ -442,10 +437,13 @@ public class PriceRefreshService : BackgroundService
         IEnumerable<string> tickers,
         DateTime startDate,
         DateTime endDate,
-        int maxConcurrency = 10,
+        int maxConcurrency = 3,
         IProgress<TickerBackfillProgress>? progress = null,
         CancellationToken ct = default)
     {
+        // Clamp concurrency to protect Azure SQL Basic (5 DTU / 60 workers)
+        maxConcurrency = Math.Clamp(maxConcurrency, 1, 10);
+
         var tickerList = tickers.ToList();
         var result = new TickerLoadResult { TotalTickers = tickerList.Count };
 

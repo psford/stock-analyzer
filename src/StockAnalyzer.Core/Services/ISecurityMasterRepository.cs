@@ -29,6 +29,14 @@ public interface ISecurityMasterRepository
     Task<List<SecurityMasterEntity>> GetAllActiveAsync();
 
     /// <summary>
+    /// Get a mapping of ticker symbols to security aliases for all active securities.
+    /// Projected query that only fetches TickerSymbol and SecurityAlias columns
+    /// instead of materializing all 55K+ full entities.
+    /// </summary>
+    /// <returns>Dictionary mapping ticker symbol to security alias.</returns>
+    Task<Dictionary<string, int>> GetActiveTickerAliasMapAsync();
+
+    /// <summary>
     /// Check if a ticker symbol exists in the security master.
     /// </summary>
     /// <param name="ticker">The ticker symbol to check.</param>

@@ -336,6 +336,15 @@ app.UseStaticFiles(new StaticFileOptions
 
 // API Endpoints
 
+// Concurrency guards for heavy endpoints (Azure SQL Basic: 5 DTU / 60 workers)
+// These are app-lifetime objects — disposal is handled by process exit.
+#pragma warning disable CA2000
+var refreshSummarySemaphore = new SemaphoreSlim(1, 1);
+var bulkLoadSemaphore = new SemaphoreSlim(1, 1);
+var calculateImportanceSemaphore = new SemaphoreSlim(1, 1);
+var autoTrackSemaphore = new SemaphoreSlim(3, 3);
+#pragma warning restore CA2000
+
 // Ticker validation helper - allows 1-10 alphanumeric chars plus dots, dashes, carets (e.g., BRK.B, BRK-B, ^GSPC)
 static bool IsValidTicker(string? ticker) =>
     !string.IsNullOrWhiteSpace(ticker) &&
@@ -356,9 +365,10 @@ app.MapGet("/api/stock/{ticker}", async (string ticker, AggregatedStockDataServi
         return Results.NotFound(new { error = "Stock not found", symbol = ticker });
 
     // Auto-track: mark this security as tracked (user interest signal)
-    // Fire-and-forget — don't block the response
+    // Fire-and-forget with concurrency guard — skip if at capacity (best-effort)
     _ = Task.Run(async () =>
     {
+        if (!autoTrackSemaphore.Wait(0)) return; // Skip if at capacity
         try
         {
             using var scope = serviceProvider.CreateScope();
@@ -394,6 +404,10 @@ app.MapGet("/api/stock/{ticker}", async (string ticker, AggregatedStockDataServi
         catch (Exception ex)
         {
             Log.Warning(ex, "Failed to auto-track {Ticker} from web UI", ticker);
+        }
+        finally
+        {
+            autoTrackSemaphore.Release();
         }
     });
 
@@ -751,12 +765,12 @@ app.MapGet("/api/admin/prices/status", async (IServiceProvider serviceProvider) 
     var totalPrices = await priceRepo.GetTotalCountAsync();
     var activeSecurities = await securityRepo.GetActiveCountAsync();
 
-    // Get latest date from a sample of securities
+    // Get latest date from a sample of securities (projected query, 2 columns only)
     DateTime? latestDate = null;
     if (totalPrices > 0)
     {
-        var securities = await securityRepo.GetAllActiveAsync();
-        var sampleAliases = securities.Take(5).Select(s => s.SecurityAlias);
+        var tickerAliasMap = await securityRepo.GetActiveTickerAliasMapAsync();
+        var sampleAliases = tickerAliasMap.Values.Take(5);
         var latestPrices = await priceRepo.GetLatestPricesAsync(sampleAliases);
         if (latestPrices.Count > 0)
         {
@@ -958,6 +972,10 @@ app.MapPost("/api/admin/prices/bulk-load", async (
     if (startDate > endDate)
         return Results.BadRequest(new { error = "StartDate must be before EndDate" });
 
+    // Concurrency guard — only one bulk-load at a time
+    if (!bulkLoadSemaphore.Wait(0))
+        return Results.Conflict(new { error = "A bulk load is already in progress. Try again later." });
+
     try
     {
         // Run bulk load in background - this can take a long time
@@ -973,6 +991,10 @@ app.MapPost("/api/admin/prices/bulk-load", async (
             {
                 Log.Error(ex, "Bulk load failed");
             }
+            finally
+            {
+                bulkLoadSemaphore.Release();
+            }
         });
 
         return Results.Accepted(value: new
@@ -983,6 +1005,7 @@ app.MapPost("/api/admin/prices/bulk-load", async (
     }
     catch (Exception ex)
     {
+        bulkLoadSemaphore.Release();
         Log.Error(ex, "Failed to start bulk load");
         return Results.Problem(ex.Message);
     }
@@ -1200,22 +1223,14 @@ app.MapGet("/api/admin/data/prices", async (
         Log.Information("Exporting prices: {Start:yyyy-MM-dd} to {End:yyyy-MM-dd}, page {Page}, pageSize {PageSize}",
             start, end, page, pageSize);
 
-        // Get total count for pagination info
-        var totalCount = await context.Prices
-            .AsNoTracking()
-            .Where(p => p.EffectiveDate >= start.Date && p.EffectiveDate <= end.Date)
-            .CountAsync();
-
-        var totalPages = (int)Math.Ceiling((double)totalCount / pageSize);
-
-        // Get paginated prices
+        // Fetch pageSize + 1 to detect hasMore without a separate COUNT scan
         var prices = await context.Prices
             .AsNoTracking()
             .Where(p => p.EffectiveDate >= start.Date && p.EffectiveDate <= end.Date)
             .OrderBy(p => p.EffectiveDate)
             .ThenBy(p => p.SecurityAlias)
             .Skip(skip)
-            .Take(pageSize)
+            .Take(pageSize + 1)
             .Select(p => new
             {
                 securityAlias = p.SecurityAlias,
@@ -1229,6 +1244,15 @@ app.MapGet("/api/admin/data/prices", async (
             })
             .ToListAsync();
 
+        var hasMore = prices.Count > pageSize;
+        if (hasMore)
+            prices = prices.Take(pageSize).ToList();
+
+        // Use CoverageSummary for approximate total (avoids expensive COUNT on Prices)
+        var approxTotal = await context.CoverageSummary
+            .AsNoTracking()
+            .SumAsync(s => s.TrackedRecords + s.UntrackedRecords);
+
         return Results.Ok(new
         {
             success = true,
@@ -1236,10 +1260,9 @@ app.MapGet("/api/admin/data/prices", async (
             endDate = end.ToString("yyyy-MM-dd"),
             page,
             pageSize,
-            totalPages,
-            totalCount,
+            approximateTotal = approxTotal,
             count = prices.Count,
-            hasMore = page < totalPages,
+            hasMore,
             prices
         });
     }
@@ -1339,8 +1362,8 @@ app.MapPost("/api/admin/data/seed-tracked-securities", async (IServiceProvider s
             cmd.CommandText = @"
                 INSERT INTO data.TrackedSecurities (SecurityAlias, Source, Priority, Notes, AddedBy)
                 SELECT DISTINCT p.SecurityAlias, 'Legacy', 1, 'Auto-added from existing price data', 'migration'
-                FROM data.Prices p
-                INNER JOIN data.SecurityMaster sm ON sm.SecurityAlias = p.SecurityAlias
+                FROM data.Prices p WITH (NOLOCK)
+                INNER JOIN data.SecurityMaster sm WITH (NOLOCK) ON sm.SecurityAlias = p.SecurityAlias
                 WHERE NOT EXISTS (SELECT 1 FROM data.TrackedSecurities ts WHERE ts.SecurityAlias = p.SecurityAlias);
 
                 SELECT @@ROWCOUNT";
@@ -1354,8 +1377,8 @@ app.MapPost("/api/admin/data/seed-tracked-securities", async (IServiceProvider s
             cmd.CommandText = @"
                 UPDATE sm
                 SET IsTracked = 1
-                FROM data.SecurityMaster sm
-                WHERE EXISTS (SELECT 1 FROM data.TrackedSecurities ts WHERE ts.SecurityAlias = sm.SecurityAlias)
+                FROM data.SecurityMaster sm WITH (ROWLOCK)
+                WHERE EXISTS (SELECT 1 FROM data.TrackedSecurities ts WITH (NOLOCK) WHERE ts.SecurityAlias = sm.SecurityAlias)
                   AND sm.IsTracked = 0;
 
                 SELECT @@ROWCOUNT";
@@ -2415,55 +2438,62 @@ app.MapPost("/api/admin/securities/calculate-importance", async (IServiceProvide
         return Math.Clamp(score, 1, 10);
     }
 
+    // Concurrency guard — only one calculation at a time
+    if (!await calculateImportanceSemaphore.WaitAsync(0))
+        return Results.Conflict(new { error = "Importance score calculation already in progress." });
+
     try
     {
         Log.Information("Starting importance score calculation for all active securities");
 
-        // Get all active securities (tracked + untracked) so heatmap has proper score distribution
-        var untrackedSecurities = await context.SecurityMaster
-            .Where(s => s.IsActive)
-            .ToListAsync();
-
-        if (!untrackedSecurities.Any())
-        {
-            return Results.Ok(new
-            {
-                success = true,
-                message = "No active securities found",
-                updated = 0,
-                distribution = new Dictionary<int, int>()
-            });
-        }
-
         var scoreDistribution = new Dictionary<int, int>();
         var updated = 0;
+        var totalProcessed = 0;
 
-        foreach (var security in untrackedSecurities)
+        // Process in pages of 1000 to avoid loading all 55K+ entities at once
+        var pageSize = 1000;
+        var skip = 0;
+
+        while (true)
         {
-            var score = CalculateImportanceScore(security);
+            var batch = await context.SecurityMaster
+                .Where(s => s.IsActive)
+                .OrderBy(s => s.SecurityAlias)
+                .Skip(skip)
+                .Take(pageSize)
+                .ToListAsync();
 
-            if (security.ImportanceScore != score)
+            if (batch.Count == 0) break;
+
+            foreach (var security in batch)
             {
-                security.ImportanceScore = score;
-                security.UpdatedAt = DateTime.UtcNow;
-                updated++;
+                var score = CalculateImportanceScore(security);
+
+                if (security.ImportanceScore != score)
+                {
+                    security.ImportanceScore = score;
+                    security.UpdatedAt = DateTime.UtcNow;
+                    updated++;
+                }
+
+                if (!scoreDistribution.ContainsKey(score))
+                    scoreDistribution[score] = 0;
+                scoreDistribution[score]++;
             }
 
-            // Track distribution
-            if (!scoreDistribution.ContainsKey(score))
-                scoreDistribution[score] = 0;
-            scoreDistribution[score]++;
+            await context.SaveChangesAsync();
+            context.ChangeTracker.Clear();
+            totalProcessed += batch.Count;
+            skip += pageSize;
         }
-
-        await context.SaveChangesAsync();
 
         Log.Information("Updated importance scores for {Count} securities", updated);
 
         return Results.Ok(new
         {
             success = true,
-            message = $"Calculated importance scores for {untrackedSecurities.Count} active securities",
-            totalProcessed = untrackedSecurities.Count,
+            message = $"Calculated importance scores for {totalProcessed} active securities",
+            totalProcessed,
             updated,
             distribution = scoreDistribution.OrderByDescending(x => x.Key).ToDictionary(x => x.Key, x => x.Value)
         });
@@ -2472,6 +2502,10 @@ app.MapPost("/api/admin/securities/calculate-importance", async (IServiceProvide
     {
         Log.Error(ex, "Failed to calculate importance scores");
         return Results.Problem(ex.Message);
+    }
+    finally
+    {
+        calculateImportanceSemaphore.Release();
     }
 })
 .WithName("CalculateImportanceScores")
@@ -2650,6 +2684,7 @@ app.MapGet("/api/admin/dashboard/stats", async (IServiceProvider serviceProvider
 
         // All remaining data from CoverageSummary (pre-aggregated, instant — no Prices table scan)
         var summaryRows = await context.CoverageSummary
+            .AsNoTracking()
             .OrderByDescending(s => s.Year)
             .ToListAsync();
 
@@ -2768,6 +2803,7 @@ app.MapGet("/api/admin/dashboard/heatmap", async (IServiceProvider serviceProvid
     try
     {
         var summaryRows = await context.CoverageSummary
+            .AsNoTracking()
             .OrderBy(s => s.Year).ThenBy(s => s.ImportanceScore)
             .ToListAsync();
 
@@ -2825,11 +2861,18 @@ app.MapGet("/api/admin/dashboard/heatmap", async (IServiceProvider serviceProvid
 // Call after deployments and after crawl sessions to keep heatmap data current.
 app.MapPost("/api/admin/dashboard/refresh-summary", async (IServiceProvider serviceProvider, IMemoryCache cache) =>
 {
+    // Concurrency guard — only one refresh at a time (this is the most expensive query)
+    if (!await refreshSummarySemaphore.WaitAsync(0))
+        return Results.Conflict(new { error = "Summary refresh already in progress. Try again later." });
+
     using var scope = serviceProvider.CreateScope();
     var context = scope.ServiceProvider.GetService<StockAnalyzerDbContext>();
 
     if (context == null)
+    {
+        refreshSummarySemaphore.Release();
         return Results.BadRequest(new { error = "Database context not configured" });
+    }
 
     try
     {
@@ -2897,6 +2940,10 @@ app.MapPost("/api/admin/dashboard/refresh-summary", async (IServiceProvider serv
     {
         Log.Error(ex, "Failed to refresh coverage summary");
         return Results.Problem(ex.Message);
+    }
+    finally
+    {
+        refreshSummarySemaphore.Release();
     }
 })
 .WithName("RefreshDashboardSummary")
@@ -3065,9 +3112,13 @@ app.MapPost("/api/admin/calendar/populate-us", async (
             }
         }
 
-        // Batch insert
-        dbContext.BusinessCalendar.AddRange(entries);
-        await dbContext.SaveChangesAsync();
+        // Batch insert in chunks of 2000 to avoid excessive memory/DTU usage
+        foreach (var chunk in entries.Chunk(2000))
+        {
+            dbContext.BusinessCalendar.AddRange(chunk);
+            await dbContext.SaveChangesAsync();
+            dbContext.ChangeTracker.Clear();
+        }
 
         var businessDays = entries.Count(e => e.IsBusinessDay);
         var holidays = entries.Count(e => e.IsHoliday);

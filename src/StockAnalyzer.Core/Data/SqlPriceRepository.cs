@@ -1,4 +1,7 @@
+using System.Data;
+using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using StockAnalyzer.Core.Data.Entities;
 using StockAnalyzer.Core.Services;
@@ -112,38 +115,30 @@ public class SqlPriceRepository : IPriceRepository
         var now = DateTime.UtcNow;
         var count = 0;
 
-        // Get all existing (SecurityAlias, EffectiveDate) pairs to filter out duplicates
-        var securityAliases = priceList.Select(p => p.SecurityAlias).Distinct().ToList();
-        var dates = priceList.Select(p => p.EffectiveDate.Date).Distinct().ToList();
-
-        var existingKeys = await _context.Prices
-            .AsNoTracking()
-            .Where(p => securityAliases.Contains(p.SecurityAlias) && dates.Contains(p.EffectiveDate))
-            .Select(p => new { p.SecurityAlias, p.EffectiveDate })
-            .ToListAsync();
-
-        var existingSet = existingKeys
-            .Select(k => (k.SecurityAlias, k.EffectiveDate))
-            .ToHashSet();
-
-        // Filter to only new prices
-        var newPrices = priceList
-            .Where(p => !existingSet.Contains((p.SecurityAlias, p.EffectiveDate.Date)))
-            .ToList();
-
-        if (newPrices.Count == 0)
+        // Process in batches of 1000, dedup per-batch to keep IN clauses small
+        foreach (var batch in priceList.Chunk(1000))
         {
-            _logger.LogInformation("Bulk insert: All {Total} prices already exist, nothing to insert", priceList.Count);
-            return 0;
-        }
+            var batchAliases = batch.Select(p => p.SecurityAlias).Distinct().ToList();
+            var batchDates = batch.Select(p => p.EffectiveDate.Date).Distinct().ToList();
 
-        _logger.LogInformation("Bulk insert: {New} new prices out of {Total} total (skipping {Existing} existing)",
-            newPrices.Count, priceList.Count, priceList.Count - newPrices.Count);
+            var existingKeys = await _context.Prices
+                .AsNoTracking()
+                .Where(p => batchAliases.Contains(p.SecurityAlias) && batchDates.Contains(p.EffectiveDate))
+                .Select(p => new { p.SecurityAlias, p.EffectiveDate })
+                .ToListAsync();
 
-        // Process in batches of 1000 for efficiency with large datasets
-        foreach (var batch in newPrices.Chunk(1000))
-        {
-            var entities = batch.Select(dto => new PriceEntity
+            var existingSet = existingKeys
+                .Select(k => (k.SecurityAlias, k.EffectiveDate))
+                .ToHashSet();
+
+            var newPrices = batch
+                .Where(p => !existingSet.Contains((p.SecurityAlias, p.EffectiveDate.Date)))
+                .ToList();
+
+            if (newPrices.Count == 0)
+                continue;
+
+            var entities = newPrices.Select(dto => new PriceEntity
             {
                 SecurityAlias = dto.SecurityAlias,
                 EffectiveDate = dto.EffectiveDate.Date,
@@ -159,16 +154,16 @@ public class SqlPriceRepository : IPriceRepository
 
             _context.Prices.AddRange(entities);
             await _context.SaveChangesAsync();
-            count += batch.Length;
+            count += newPrices.Count;
 
-            // Log progress for large inserts
             if (count % 10000 == 0)
             {
                 _logger.LogInformation("Bulk insert progress: {Count} prices inserted", count);
             }
         }
 
-        _logger.LogInformation("Bulk insert complete: {Count} prices inserted", count);
+        _logger.LogInformation("Bulk insert complete: {Count} new prices inserted out of {Total} total",
+            count, priceList.Count);
         return count;
     }
 
@@ -231,18 +226,22 @@ public class SqlPriceRepository : IPriceRepository
     /// <inheritdoc />
     public async Task<(DateTime? Earliest, DateTime? Latest)> GetDateRangeAsync(int securityAlias)
     {
-        var dates = await _context.Prices
+        // Two TOP 1 index seeks instead of GroupBy anti-pattern that prevents index optimization
+        var earliest = await _context.Prices
             .AsNoTracking()
             .Where(p => p.SecurityAlias == securityAlias)
-            .GroupBy(_ => 1)
-            .Select(g => new
-            {
-                Earliest = g.Min(p => (DateTime?)p.EffectiveDate),
-                Latest = g.Max(p => (DateTime?)p.EffectiveDate)
-            })
+            .OrderBy(p => p.EffectiveDate)
+            .Select(p => (DateTime?)p.EffectiveDate)
             .FirstOrDefaultAsync();
 
-        return (dates?.Earliest, dates?.Latest);
+        var latest = await _context.Prices
+            .AsNoTracking()
+            .Where(p => p.SecurityAlias == securityAlias)
+            .OrderByDescending(p => p.EffectiveDate)
+            .Select(p => (DateTime?)p.EffectiveDate)
+            .FirstOrDefaultAsync();
+
+        return (earliest, latest);
     }
 
     /// <inheritdoc />
@@ -258,7 +257,9 @@ public class SqlPriceRepository : IPriceRepository
     /// <inheritdoc />
     public async Task<int> GetCountForSecurityAsync(int securityAlias)
     {
-        return await _context.Prices.CountAsync(p => p.SecurityAlias == securityAlias);
+        return await _context.Prices
+            .AsNoTracking()
+            .CountAsync(p => p.SecurityAlias == securityAlias);
     }
 
     /// <inheritdoc />
@@ -335,40 +336,37 @@ public class SqlPriceRepository : IPriceRepository
             result.DataStartDate = minDate;
             result.DataEndDate = maxDate;
 
-            // Get distinct dates using indexed EffectiveDate column with date range guard
-            var existingDates = await _context.Prices
-                .AsNoTracking()
-                .Where(p => p.EffectiveDate >= minDate && p.EffectiveDate <= maxDate)
-                .Select(p => p.EffectiveDate)
-                .Distinct()
-                .ToListAsync();
-
+            // Get distinct dates using efficient recursive CTE skip-scan (~500 seeks)
+            var existingDates = await GetDistinctDatesAsync(minDate, maxDate);
             var existingDateSet = existingDates.ToHashSet();
             result.TotalDatesWithData = existingDateSet.Count;
 
-            // Query ALL non-business days (weekends + holidays) from BusinessCalendar
-            var nonBusinessDays = await _context.BusinessCalendar
+            // Load ALL calendar entries in range (single query, ~4K rows)
+            var calendarEntries = await _context.BusinessCalendar
                 .AsNoTracking()
-                .Where(bc => bc.SourceId == 1  // US calendar
+                .Where(bc => bc.SourceId == 1
                     && bc.EffectiveDate >= minDate
-                    && bc.EffectiveDate <= maxDate
-                    && !bc.IsBusinessDay)  // All non-business days
+                    && bc.EffectiveDate <= maxDate)
                 .OrderBy(bc => bc.EffectiveDate)
-                .Select(bc => new { bc.EffectiveDate, bc.IsHoliday })
+                .Select(bc => new { bc.EffectiveDate, bc.IsBusinessDay, bc.IsHoliday })
                 .ToListAsync();
+
+            // Build sorted list of business days for binary search
+            var sortedBDs = calendarEntries
+                .Where(c => c.IsBusinessDay)
+                .Select(c => c.EffectiveDate)
+                .ToList(); // Already sorted by OrderBy above
+
+            var nonBusinessDays = calendarEntries.Where(c => !c.IsBusinessDay).ToList();
 
             foreach (var nonBD in nonBusinessDays)
             {
-                // Find prior business day from calendar table
-                var priorBusinessDay = await _context.BusinessCalendar
-                    .AsNoTracking()
-                    .Where(bc => bc.SourceId == 1
-                        && bc.EffectiveDate < nonBD.EffectiveDate
-                        && bc.IsBusinessDay)
-                    .OrderByDescending(bc => bc.EffectiveDate)
-                    .Select(bc => bc.EffectiveDate)
-                    .FirstOrDefaultAsync();
+                // Binary search for prior business day (O(log n) instead of DB query)
+                var idx = sortedBDs.BinarySearch(nonBD.EffectiveDate);
+                if (idx < 0) idx = ~idx; // Index of first BD > nonBD.EffectiveDate
+                idx--; // Step back to last BD < nonBD.EffectiveDate
 
+                var priorBusinessDay = idx >= 0 ? sortedBDs[idx] : default;
                 var hasPriorData = priorBusinessDay != default && existingDateSet.Contains(priorBusinessDay);
                 var hasExistingData = existingDateSet.Contains(nonBD.EffectiveDate);
 
@@ -409,185 +407,189 @@ public class SqlPriceRepository : IPriceRepository
 
         try
         {
-            // Get all business days that have price data (using calendar table)
-            var businessDaysWithPriceData = await _context.Prices
+            // 1. Get date range via TOP 1 index seeks
+            var minDate = await _context.Prices
                 .AsNoTracking()
+                .OrderBy(p => p.EffectiveDate)
                 .Select(p => p.EffectiveDate)
-                .Distinct()
-                .Join(
-                    _context.BusinessCalendar.AsNoTracking().Where(bc => bc.SourceId == 1 && bc.IsBusinessDay),
-                    priceDate => priceDate,
-                    bc => bc.EffectiveDate,
-                    (priceDate, bc) => priceDate)
-                .OrderBy(d => d)
-                .ToListAsync();
+                .FirstOrDefaultAsync();
 
-            if (businessDaysWithPriceData.Count == 0)
+            var maxDate = await _context.Prices
+                .AsNoTracking()
+                .OrderByDescending(p => p.EffectiveDate)
+                .Select(p => p.EffectiveDate)
+                .FirstOrDefaultAsync();
+
+            if (minDate == default)
             {
-                result.Error = "No price data found for business days";
+                result.Error = "No price data found in database";
                 return result;
             }
 
-            var minDate = businessDaysWithPriceData.Min();
-            var maxDate = businessDaysWithPriceData.Max();
+            // 2. Get existing price dates via efficient recursive CTE (~500 seeks)
+            var existingDates = await GetDistinctDatesAsync(minDate, maxDate);
+            var existingDateSet = existingDates.ToHashSet();
 
-            // Get all non-business days that need forward-filling (don't have price data yet)
-            // We need to count these upfront to track remaining
-            var allNonBusinessDays = await _context.BusinessCalendar
+            // 3. Get all calendar entries in range (single query, ~4K rows)
+            var calendarEntries = await _context.BusinessCalendar
                 .AsNoTracking()
                 .Where(bc => bc.SourceId == 1
                     && bc.EffectiveDate >= minDate
-                    && bc.EffectiveDate <= maxDate
-                    && !bc.IsBusinessDay)
-                .Select(bc => bc.EffectiveDate)
+                    && bc.EffectiveDate <= maxDate)
+                .OrderBy(bc => bc.EffectiveDate)
+                .Select(bc => new { bc.EffectiveDate, bc.IsBusinessDay, bc.IsHoliday })
                 .ToListAsync();
 
-            // Check which non-business days already have price data
-            var datesWithPrices = await _context.Prices
-                .AsNoTracking()
-                .Where(p => allNonBusinessDays.Contains(p.EffectiveDate))
-                .Select(p => p.EffectiveDate)
-                .Distinct()
-                .ToListAsync();
-
-            var nonBusinessDaysNeedingFill = allNonBusinessDays
-                .Except(datesWithPrices)
-                .OrderBy(d => d)
+            var sortedBDs = calendarEntries
+                .Where(c => c.IsBusinessDay)
+                .Select(c => c.EffectiveDate)
                 .ToList();
 
-            var totalNonBusinessDaysToProcess = nonBusinessDaysNeedingFill.Count;
+            // 4. Build fill targets: non-BDs needing data, mapped to prior BD with data
+            var fillTargets = new List<(DateTime NonBDDate, DateTime PriorBDDate, bool IsHoliday)>();
 
-            _logger.LogInformation("Forward-filling non-business days from {Start:yyyy-MM-dd} to {End:yyyy-MM-dd}. " +
-                "Total needing fill: {Total}, limit: {Limit}",
-                minDate, maxDate, totalNonBusinessDaysToProcess, limit?.ToString() ?? "unlimited");
+            foreach (var entry in calendarEntries.Where(c => !c.IsBusinessDay))
+            {
+                if (existingDateSet.Contains(entry.EffectiveDate))
+                    continue; // Already has price data
 
+                // Binary search for prior business day
+                var idx = sortedBDs.BinarySearch(entry.EffectiveDate);
+                if (idx < 0) idx = ~idx;
+                idx--;
+
+                if (idx >= 0 && existingDateSet.Contains(sortedBDs[idx]))
+                    fillTargets.Add((entry.EffectiveDate, sortedBDs[idx], entry.IsHoliday));
+            }
+
+            var totalNeedingFill = fillTargets.Count;
+            if (limit.HasValue)
+                fillTargets = fillTargets.Take(limit.Value).ToList();
+
+            _logger.LogInformation(
+                "Forward-fill: {Count} non-BD dates to process (of {Total} needing fill), limit: {Limit}",
+                fillTargets.Count, totalNeedingFill, limit?.ToString() ?? "unlimited");
+
+            if (fillTargets.Count == 0)
+            {
+                result.Success = true;
+                result.HolidaysProcessed = 0;
+                result.TotalRecordsInserted = 0;
+                result.RemainingDays = 0;
+                result.Message = "No non-business days need forward-filling";
+                return result;
+            }
+
+            // 5. Process in batches of 50 using raw SQL MERGE
             int totalInserted = 0;
             int totalUpdated = 0;
             int daysProcessed = 0;
 
-            // If limit is specified, only process that many days
-            var daysToProcess = limit.HasValue
-                ? nonBusinessDaysNeedingFill.Take(limit.Value).ToHashSet()
-                : nonBusinessDaysNeedingFill.ToHashSet();
+            var connection = _context.Database.GetDbConnection();
+            var connectionWasOpen = connection.State == ConnectionState.Open;
+            if (!connectionWasOpen)
+                await connection.OpenAsync();
 
-            // Process each business day with data
-            for (int i = 0; i < businessDaysWithPriceData.Count; i++)
+            try
             {
-                // Check if we've hit the limit
-                if (limit.HasValue && daysProcessed >= limit.Value)
-                    break;
-
-                var businessDay = businessDaysWithPriceData[i];
-
-                // Find the next business day (to know where non-business days end)
-                var nextBusinessDay = (i + 1 < businessDaysWithPriceData.Count)
-                    ? businessDaysWithPriceData[i + 1]
-                    : maxDate.AddDays(1); // For the last business day, just process up to maxDate
-
-                // Get non-business days between this business day and the next that need filling
-                var nonBusinessDaysForThisBD = await _context.BusinessCalendar
-                    .AsNoTracking()
-                    .Where(bc => bc.SourceId == 1
-                        && bc.EffectiveDate > businessDay
-                        && bc.EffectiveDate < nextBusinessDay
-                        && !bc.IsBusinessDay
-                        && daysToProcess.Contains(bc.EffectiveDate))
-                    .OrderBy(bc => bc.EffectiveDate)
-                    .Select(bc => new { bc.EffectiveDate, bc.IsHoliday })
-                    .ToListAsync();
-
-                if (nonBusinessDaysForThisBD.Count == 0)
-                    continue;
-
-                // Get prices from the business day to copy forward
-                var businessDayPrices = await _context.Prices
-                    .AsNoTracking()
-                    .Where(p => p.EffectiveDate == businessDay)
-                    .ToListAsync();
-
-                if (businessDayPrices.Count == 0)
+                foreach (var batch in fillTargets.Chunk(50))
                 {
-                    _logger.LogWarning("No prices found for business day {Date:yyyy-MM-dd}", businessDay);
-                    continue;
-                }
+                    var batchLookup = batch.ToDictionary(b => b.NonBDDate);
 
-                // Process each non-business day after this business day
-                foreach (var nonBD in nonBusinessDaysForThisBD)
-                {
-                    // Check limit again (in case we hit it mid-batch)
-                    if (limit.HasValue && daysProcessed >= limit.Value)
-                        break;
+                    // Build VALUES clause with date literals (from our calendar table, safe)
+                    var valuesClause = string.Join(", ",
+                        batch.Select(t =>
+                            $"('{t.NonBDDate:yyyy-MM-dd}', '{t.PriorBDDate:yyyy-MM-dd}')"));
 
-                    // Get existing records for the non-business day (for UPSERT)
-                    var existingPrices = await _context.Prices
-                        .Where(p => p.EffectiveDate == nonBD.EffectiveDate)
-                        .ToDictionaryAsync(p => p.SecurityAlias);
+                    var sql = @"
+                        CREATE TABLE #FillMapping (NonBDDate DATE NOT NULL, PriorBDDate DATE NOT NULL);
+                        INSERT INTO #FillMapping (NonBDDate, PriorBDDate) VALUES " + valuesClause + @";
 
-                    int dayInserted = 0;
-                    int dayUpdated = 0;
+                        DECLARE @results TABLE (ActionType NVARCHAR(10), EffDate DATE);
 
-                    foreach (var prior in businessDayPrices)
+                        MERGE data.Prices AS target
+                        USING (
+                            SELECT fm.NonBDDate, p.SecurityAlias, p.[Close], p.AdjustedClose
+                            FROM #FillMapping fm
+                            INNER JOIN data.Prices p WITH (NOLOCK) ON p.EffectiveDate = fm.PriorBDDate
+                        ) AS source
+                        ON target.SecurityAlias = source.SecurityAlias
+                            AND target.EffectiveDate = source.NonBDDate
+                        WHEN MATCHED THEN
+                            UPDATE SET [Open] = source.[Close], High = source.[Close],
+                                       Low = source.[Close], [Close] = source.[Close],
+                                       Volume = 0, AdjustedClose = source.AdjustedClose
+                        WHEN NOT MATCHED THEN
+                            INSERT (SecurityAlias, EffectiveDate, [Open], High, Low, [Close],
+                                    Volume, AdjustedClose, CreatedAt)
+                            VALUES (source.SecurityAlias, source.NonBDDate, source.[Close],
+                                    source.[Close], source.[Close], source.[Close],
+                                    0, source.AdjustedClose, GETUTCDATE())
+                        OUTPUT $action, inserted.EffectiveDate INTO @results;
+
+                        SELECT EffDate,
+                            SUM(CASE WHEN ActionType = 'INSERT' THEN 1 ELSE 0 END) AS InsertCount,
+                            SUM(CASE WHEN ActionType = 'UPDATE' THEN 1 ELSE 0 END) AS UpdateCount
+                        FROM @results GROUP BY EffDate ORDER BY EffDate;
+
+                        DROP TABLE #FillMapping;";
+
+                    using var command = connection.CreateCommand();
+#pragma warning disable CA2100 // Date literals are from BusinessCalendar table, not user input
+                    command.CommandText = sql;
+#pragma warning restore CA2100
+                    command.CommandTimeout = 120;
+
+                    if (_context.Database.CurrentTransaction != null)
+                        command.Transaction = _context.Database.CurrentTransaction.GetDbTransaction();
+
+                    using var reader = await command.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
                     {
-                        if (existingPrices.TryGetValue(prior.SecurityAlias, out var existing))
-                        {
-                            // UPDATE: Overwrite with stale data from prior BD
-                            existing.Open = prior.Close;
-                            existing.High = prior.Close;
-                            existing.Low = prior.Close;
-                            existing.Close = prior.Close;
-                            existing.Volume = 0; // Mark as stale/non-business day
-                            existing.AdjustedClose = prior.AdjustedClose;
-                            dayUpdated++;
-                        }
-                        else
-                        {
-                            // INSERT: Create new stale record
-                            _context.Prices.Add(new PriceEntity
-                            {
-                                SecurityAlias = prior.SecurityAlias,
-                                EffectiveDate = nonBD.EffectiveDate,
-                                Open = prior.Close,
-                                High = prior.Close,
-                                Low = prior.Close,
-                                Close = prior.Close,
-                                Volume = 0, // Mark as stale/non-business day
-                                AdjustedClose = prior.AdjustedClose,
-                                CreatedAt = DateTime.UtcNow
-                            });
-                            dayInserted++;
-                        }
+                        var effDate = reader.GetDateTime(0);
+                        var insertCount = reader.GetInt32(1);
+                        var updateCount = reader.GetInt32(2);
+
+                        totalInserted += insertCount;
+                        totalUpdated += updateCount;
+                        daysProcessed++;
+
+                        var isHoliday = batchLookup.TryGetValue(effDate, out var target) && target.IsHoliday;
+                        var dayType = isHoliday ? "Holiday" : "Weekend";
+                        result.HolidaysFilled.Add(
+                            ($"{dayType} {effDate:yyyy-MM-dd}", effDate, insertCount + updateCount));
                     }
 
-                    await _context.SaveChangesAsync();
-
-                    totalInserted += dayInserted;
-                    totalUpdated += dayUpdated;
-                    daysProcessed++;
-
-                    var dayType = nonBD.IsHoliday ? "Holiday" : "Weekend";
-                    result.HolidaysFilled.Add(($"{dayType} {nonBD.EffectiveDate:yyyy-MM-dd}", nonBD.EffectiveDate, dayInserted + dayUpdated));
-
-                    if (daysProcessed % 50 == 0)
+                    if (daysProcessed % 100 == 0)
                     {
-                        _logger.LogInformation("Progress: {Days}/{Total} non-business days processed, {Inserted:N0} inserted, {Updated:N0} updated",
-                            daysProcessed, limit ?? totalNonBusinessDaysToProcess, totalInserted, totalUpdated);
+                        _logger.LogInformation(
+                            "Progress: {Days}/{Total} non-BD dates, {Inserted:N0} inserted, {Updated:N0} updated",
+                            daysProcessed, fillTargets.Count, totalInserted, totalUpdated);
                     }
                 }
+            }
+            finally
+            {
+                if (!connectionWasOpen)
+                    await connection.CloseAsync();
             }
 
             result.Success = true;
             result.HolidaysProcessed = daysProcessed;
             result.TotalRecordsInserted = totalInserted;
-            result.RemainingDays = totalNonBusinessDaysToProcess - daysProcessed;
-            result.Message = $"Forward-filled {daysProcessed} non-business days: {totalInserted:N0} inserted, {totalUpdated:N0} updated. Remaining: {result.RemainingDays}";
+            result.RemainingDays = totalNeedingFill - daysProcessed;
+            result.Message = $"Forward-filled {daysProcessed} non-business days: " +
+                $"{totalInserted:N0} inserted, {totalUpdated:N0} updated. " +
+                $"Remaining: {result.RemainingDays}";
 
-            _logger.LogInformation("Non-business day forward-fill batch complete: {Days} days, {Inserted:N0} inserted, {Updated:N0} updated, {Remaining} remaining",
+            _logger.LogInformation(
+                "Forward-fill complete: {Days} days, {Inserted:N0} inserted, {Updated:N0} updated, {Remaining} remaining",
                 daysProcessed, totalInserted, totalUpdated, result.RemainingDays);
         }
         catch (Exception ex)
         {
             result.Error = ex.Message;
-            _logger.LogError(ex, "Non-business day forward-fill failed");
+            _logger.LogError(ex, "Forward-fill failed");
         }
 
         return result;
