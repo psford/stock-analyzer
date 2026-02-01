@@ -464,18 +464,50 @@ app.MapGet("/api/stock/{ticker}/history", async (
 .Produces<StockAnalyzer.Core.Models.HistoricalDataResult>(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status404NotFound);
 
-// GET /api/stock/{ticker}/news - Get company news
+// GET /api/stock/{ticker}/news - Get company news with sentiment and relevance scoring
 app.MapGet("/api/stock/{ticker}/news", async (
     string ticker,
     int? days,
-    NewsService newsService) =>
+    int? limit,
+    NewsService newsService,
+    HeadlineRelevanceService relevanceService) =>
 {
     if (!IsValidTicker(ticker))
         return InvalidTickerResult();
 
     var fromDate = DateTime.Now.AddDays(-(days ?? 30));
     var result = await newsService.GetCompanyNewsAsync(ticker, fromDate);
-    return Results.Ok(result);
+
+    // Look up company name for better relevance scoring
+    var profile = await newsService.GetCompanyProfileAsync(ticker);
+    var companyName = profile?.Name;
+
+    // Enrich articles with sentiment and relevance scores
+    var enriched = result.Articles
+        .Select(article =>
+        {
+            var (sentiment, sentimentScore) = SentimentAnalyzer.Analyze(article.Headline);
+            var relevance = relevanceService.ScoreRelevance(article, ticker, companyName);
+            return article with
+            {
+                Sentiment = sentiment.ToString().ToLower(),
+                SentimentScore = sentimentScore,
+                RelevanceScore = relevance,
+                SourceApi = "finnhub"
+            };
+        })
+        .OrderByDescending(a => a.RelevanceScore)
+        .ThenByDescending(a => a.PublishedAt)
+        .Take(limit ?? 30)
+        .ToList();
+
+    return Results.Ok(new NewsResult
+    {
+        Symbol = result.Symbol,
+        FromDate = result.FromDate,
+        ToDate = result.ToDate,
+        Articles = enriched
+    });
 })
 .WithName("GetStockNews")
 .WithOpenApi()
@@ -527,21 +559,31 @@ app.MapGet("/api/stock/{ticker}/news/move", async (
 
     // Cache key includes ticker, date, and price direction
     var cacheKey = $"movenews:{ticker.ToUpper()}:{date:yyyy-MM-dd}:{(change >= 0 ? "up" : "down")}";
-    if (cache.TryGetValue(cacheKey, out List<NewsItem>? cachedNews) && cachedNews != null)
+    if (cache.TryGetValue(cacheKey, out MoveNewsResult? cachedResult) && cachedResult != null)
     {
-        return Results.Ok(new { articles = cachedNews });
+        return Results.Ok(new
+        {
+            articles = cachedResult.Articles,
+            source = cachedResult.Source,
+            directionMatch = cachedResult.DirectionMatch
+        });
     }
 
-    var news = await newsService.GetNewsForDateWithSentimentAsync(
+    var result = await newsService.GetNewsForDateWithSentimentAsync(
         ticker,
         date,
         change,
         maxArticles: limit ?? 5);
 
     // Cache for 30 minutes (news doesn't change for historical dates)
-    cache.Set(cacheKey, news, TimeSpan.FromMinutes(30));
+    cache.Set(cacheKey, result, TimeSpan.FromMinutes(30));
 
-    return Results.Ok(new { articles = news });
+    return Results.Ok(new
+    {
+        articles = result.Articles,
+        source = result.Source,
+        directionMatch = result.DirectionMatch
+    });
 })
 .WithName("GetMoveNews")
 .WithOpenApi()

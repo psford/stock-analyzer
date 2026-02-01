@@ -77,12 +77,12 @@ public class AnalysisService
                 await semaphore.WaitAsync();
                 try
                 {
-                    var news = await _newsService.GetNewsForDateWithSentimentAsync(
+                    var result = await _newsService.GetNewsForDateWithSentimentAsync(
                         symbol,
                         move.Date,
                         move.PercentChange,
                         maxArticles: 5);
-                    return (Index: index, News: news);
+                    return (Index: index, News: result.Articles);
                 }
                 catch
                 {

@@ -215,9 +215,9 @@ Environment variables: `TWELVEDATA_API_KEY`, `FMP_API_KEY`
 |----------|--------|-------------|------------|
 | `/api/stock/{ticker}` | GET | Stock information | `ticker`: Stock symbol |
 | `/api/stock/{ticker}/history` | GET | Historical OHLCV data | `ticker`, `period` (optional, default: 1y) |
-| `/api/stock/{ticker}/news` | GET | Company news | `ticker`, `days` (optional, default: 30) |
+| `/api/stock/{ticker}/news` | GET | Company news with sentiment + relevance scoring | `ticker`, `days` (optional, default: 30), `limit` (optional, default: 30) |
 | `/api/stock/{ticker}/significant` | GET | Significant price moves (no news) | `ticker`, `threshold` (optional, default: 3.0), `period` (optional) |
-| `/api/stock/{ticker}/news/move` | GET | News for specific move (lazy-loaded) | `ticker`, `date`, `change`, `limit` (optional, default: 5) |
+| `/api/stock/{ticker}/news/move` | GET | News for specific move with metadata | `ticker`, `date`, `change`, `limit` (optional, default: 5) |
 | `/api/stock/{ticker}/analysis` | GET | Performance metrics + MAs | `ticker`, `period` (optional) |
 | `/api/stock/{ticker}/chart-data` | GET | Combined history + analysis (single request) | `ticker`, `period` (optional, default: 1y) |
 | `/api/search` | GET | Ticker search | `q`: Search query (min 2 chars) |
@@ -701,13 +701,14 @@ Background service that pre-computes and caches FinBERT sentiment analysis resul
 **Usage in NewsService:**
 
 ```csharp
-public async Task<List<NewsItem>> GetNewsForDateWithSentimentAsync(
+public async Task<MoveNewsResult> GetNewsForDateWithSentimentAsync(
     string symbol, DateTime date, decimal priceChangePercent, int maxArticles = 5)
 {
-    // 1. Fetch company news
+    // 1. Fetch company news (date-2 to date+3)
     // 2. Score each headline with SentimentAnalyzer
     // 3. Filter to articles with matchScore > 25
-    // 4. Fallback: no match → general market news
+    // 4. Fallback: recent dates → market news; old dates → best company news
+    // Returns MoveNewsResult with articles, source type, and directionMatch flag
 }
 ```
 
@@ -715,8 +716,9 @@ public async Task<List<NewsItem>> GetNewsForDateWithSentimentAsync(
 
 | Priority | Condition | Source |
 |----------|-----------|--------|
-| 1 | Sentiment-matched company news exists | Company news (filtered) |
-| 2 | No sentiment match | General market news (e.g., "S&P 500 rallies") |
+| 1 | Sentiment-matched company news exists | Company news (filtered, `source: "company"`) |
+| 2 | No match, date ≤3 days old | General market news (`source: "market"`) |
+| 3 | No match, date >3 days old | Best company news by match score (`source: "company"`) |
 
 **Note:** We skip directly to market news when no sentiment-matched company news exists. Showing mismatched or unrelated company news is worse than showing general market context that explains broader conditions.
 
@@ -759,11 +761,13 @@ Scores news headlines for relevance to a given stock symbol using multiple facto
 **Scoring Weights:**
 | Factor | Weight | Description |
 |--------|--------|-------------|
-| Ticker Mention | 35% | Ticker symbol appears in headline/summary |
+| Ticker Mention | 35% | Ticker in headline: 1.0, summary: 0.7, RelatedSymbols only: 0.3 |
 | Company Name | 25% | Company name appears in text |
 | Recency | 20% | Exponential decay (24hr half-life) |
 | Sentiment Data | 10% | Having sentiment indicates better coverage |
 | Source Quality | 10% | Premium sources (Reuters, Bloomberg, CNBC, etc.) |
+
+**Note:** RelatedSymbols-only score was reduced from 1.0 to 0.3 in v2.37 because Finnhub tags articles broadly (e.g., general market articles tagged with specific tickers). This prevents ~60% of noise articles from outranking genuinely relevant headlines.
 
 **Deduplication:**
 Uses Jaccard similarity (>70% threshold) on normalized headlines to remove duplicate stories across sources.
@@ -2751,6 +2755,7 @@ const [stockInfo, history, analysis, significantMoves, news] = await Promise.all
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.37 | 2026-02-01 | **News Service Quality Overhaul:** 5 fixes to improve news relevance and completeness: (1) **Tightened relevance scoring** — HeadlineRelevanceService `CalculateTickerScore` demoted `RelatedSymbols`-only matches from 1.0 to 0.3 (Finnhub tags loosely related articles). Headline mentions now score 1.0, summary mentions 0.7. This filters out ~60% noise articles. (2) **Enriched `/news` endpoint** — now applies SentimentAnalyzer + HeadlineRelevanceService to all articles, looks up company profile for name-based relevance, filters to top 30 by relevance (was 249 raw). Added `limit` query parameter. (3) **Extended `/news/move` date window** — `GetNewsForDateAsync` now looks date-2 to date+3 (was date+1), capturing explanatory articles written after significant moves. (4) **Fixed market news fallback for historical dates** — old dates (>3 days) now return best-available company news instead of attempting market news lookup (which always fetched current news, useless for old dates). (5) **Added `/news/move` response metadata** — new `MoveNewsResult` model with `source` ("company"/"market"), `directionMatch` (bool). Cache type updated from `List<NewsItem>` to `MoveNewsResult`. |
 | 2.36 | 2026-02-01 | **Chart Loading Performance Optimization:** 6 optimizations to reduce chart load time on 5 DTU Azure SQL: (1) **Combined `/api/stock/{ticker}/chart-data` endpoint** — returns history + analysis in a single request, eliminating duplicate `GetHistoricalDataAsync` calls and saving an HTTP round-trip. Frontend `analyzeStock()` switched from `Promise.all([getHistory, getAnalysis])` to single `getChartData()` call. Old endpoints preserved for backward compat (comparison mode, watchlist). (2) **Cache coalescing (stampede prevention)** — added `ConcurrentDictionary<string, Task<HistoricalDataResult?>> _inflight` to `AggregatedStockDataService`. Concurrent cache misses for the same key share one in-flight task via `GetOrAdd()`, preventing duplicate DB queries under load. (3) **HttpClient timeouts** — set explicit timeouts on all external API services (TwelveData/FMP: 15s, NewsService: 10s, Yahoo: 10s) replacing the default 100s timeout. Worst-case external cascade reduced from 300s to 45s. (4) **`Plotly.react` for re-renders** — added `_smartPlot()` helper to charts.js: uses `Plotly.newPlot` for first render, `Plotly.react` (diff-based incremental update) for subsequent renders. Eliminates full DOM teardown on indicator toggles and significant move marker additions. (5) **Eliminated chart double-render** — with `Plotly.react`, the second `renderChart()` call when significant moves arrive (app.js Phase 2) now does an incremental update instead of a full rebuild. (6) **DB connection pool warmup** — new `DbWarmupService` (IHostedService) runs `SELECT 1` on startup, plus `Min Pool Size=2` in connection strings (local + Bicep). Eliminates cold-start TCP+TLS+auth penalty on first user request. |
 | 2.35 | 2026-01-31 | **Dashboard Statistics Redesign:** Fixed critical data binding bug — Card 3 ("WITH GAPS") was bound to `TrackedDisplay` (`Universe.Tracked` = tracked universe count) instead of `SecuritiesWithGaps` (actual gap count from gaps endpoint). This caused the "Tracked keeps increasing" confusion. **3-Tier Metric Layout:** Replaced 5 identical cards with: Tier 1 hero card (DATA COVERAGE progress bar + gap count + delta), Tier 2 reference cards (TRACKED UNIVERSE / PRICE RECORDS / DATA SPAN), Tier 3 session cards (TICKERS + RECORDS with rate/hr). **Session metrics:** Track rate/hr, session duration, show "last session" counts when idle instead of "0". **Gap delta indicator:** Shows "▼ N this session" with green/red coloring. **CoverageSummary freshness:** API returns `summaryLastRefreshed` (MAX LastUpdatedAt from CoverageSummary); client shows relative time. `load-tickers` endpoint invalidates `dashboard:stats` cache on insert. Client triggers `refresh-summary` on crawler stop. |
 | 2.34 | 2026-01-31 | **GetDistinctDatesAsync SQL Fix:** Replaced recursive CTE with `CROSS APPLY TOP 1` (which SQL Server prohibits in recursive CTE members along with aggregates) with while-loop using `MIN()` index seeks on `IX_Prices_EffectiveDate`. Same ~500 seek performance, fully compatible with SQL Server/SQL Express. Fixed Unicode encoding (em-dash/arrow) in test_dtu_endpoints.py for Windows cp1252 console. All 8/8 DTU endpoint tests pass on localhost. |

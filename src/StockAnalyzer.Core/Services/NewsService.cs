@@ -76,24 +76,21 @@ public class NewsService
 
     /// <summary>
     /// Get news for a specific date (for correlating with significant moves).
+    /// Looks 2 days before and 3 days after to capture both precipitating
+    /// events and explanatory articles written after the move.
     /// </summary>
     public async Task<List<NewsItem>> GetNewsForDateAsync(string symbol, DateTime date)
     {
-        // Get news from 2 days before to 1 day after to capture related stories
-        var result = await GetCompanyNewsAsync(symbol, date.AddDays(-2), date.AddDays(1));
+        var result = await GetCompanyNewsAsync(symbol, date.AddDays(-2), date.AddDays(3));
         return result.Articles;
     }
 
     /// <summary>
     /// Get news for a specific date, filtered and ranked by sentiment match to price movement.
-    /// Falls back to market news if no sentiment-appropriate company news is found.
+    /// Returns a result with articles enriched with matchScore and source metadata.
+    /// Falls back to market news (recent dates) or best-available company news (older dates).
     /// </summary>
-    /// <param name="symbol">Stock symbol</param>
-    /// <param name="date">Date of the price move</param>
-    /// <param name="priceChangePercent">The price change percentage (positive = up, negative = down)</param>
-    /// <param name="maxArticles">Maximum number of articles to return</param>
-    /// <returns>List of news items ranked by sentiment match</returns>
-    public async Task<List<NewsItem>> GetNewsForDateWithSentimentAsync(
+    public async Task<MoveNewsResult> GetNewsForDateWithSentimentAsync(
         string symbol,
         DateTime date,
         decimal priceChangePercent,
@@ -109,7 +106,6 @@ public class NewsService
                 var (sentiment, sentimentScore) = SentimentAnalyzer.Analyze(article.Headline);
                 var matchScore = SentimentAnalyzer.CalculateMatchScore(article.Headline, priceChangePercent);
 
-                // Enrich article with sentiment data
                 var enrichedArticle = article with
                 {
                     Sentiment = sentiment.ToString().ToLower(),
@@ -122,24 +118,52 @@ public class NewsService
             .ThenByDescending(x => x.Article.PublishedAt)
             .ToList();
 
-        // Filter to only include sentiment-appropriate articles (score > 25 means not a strong mismatch)
+        // Filter to sentiment-appropriate articles (score > 25 = not a strong mismatch)
         var filteredNews = scoredNews
             .Where(x => x.MatchScore > 25)
-            .Select(x => x.Article)
-            .Take(maxArticles)
             .ToList();
 
-        // If we found sentiment-matched company news, return it
         if (filteredNews.Count > 0)
         {
-            return filteredNews;
+            return new MoveNewsResult
+            {
+                Articles = filteredNews.Take(maxArticles).Select(x => x.Article).ToList(),
+                Source = "company",
+                DirectionMatch = filteredNews.Any(x => x.MatchScore >= 60)
+            };
         }
 
-        // No sentiment-matched company news - fall back to general market news
-        // This explains the move via broader market conditions (e.g., "S&P 500 rallies")
-        // rather than showing mismatched or unrelated company news
-        var marketNews = await GetMarketNewsForDateAsync(date, priceChangePercent, maxArticles);
-        return marketNews;
+        // No sentiment-matched company news found
+        var daysAgo = (DateTime.Now - date).TotalDays;
+
+        if (daysAgo <= 3)
+        {
+            // Recent date: try market news fallback (current market news may be relevant)
+            var marketNews = await GetMarketNewsForDateAsync(date, priceChangePercent, maxArticles);
+            if (marketNews.Count > 0)
+            {
+                return new MoveNewsResult
+                {
+                    Articles = marketNews,
+                    Source = "market",
+                    DirectionMatch = false
+                };
+            }
+        }
+
+        // Old date or no market news: return best company news regardless of sentiment
+        // (some context is better than none — user can judge relevance themselves)
+        var bestAvailable = scoredNews
+            .Take(maxArticles)
+            .Select(x => x.Article)
+            .ToList();
+
+        return new MoveNewsResult
+        {
+            Articles = bestAvailable,
+            Source = "company",
+            DirectionMatch = false
+        };
     }
 
     /// <summary>

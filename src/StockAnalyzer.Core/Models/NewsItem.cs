@@ -34,3 +34,15 @@ public record NewsResult
     public required List<NewsItem> Articles { get; init; }
     public int TotalCount => Articles.Count;
 }
+
+/// <summary>
+/// Result from a significant move news lookup, including source metadata.
+/// </summary>
+public record MoveNewsResult
+{
+    public required List<NewsItem> Articles { get; init; }
+    /// <summary>"company" or "market" — which pool the articles came from.</summary>
+    public required string Source { get; init; }
+    /// <summary>Whether any article's sentiment matches the price move direction.</summary>
+    public required bool DirectionMatch { get; init; }
+}

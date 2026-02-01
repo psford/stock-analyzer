@@ -120,6 +120,8 @@ public class HeadlineRelevanceService
 
     /// <summary>
     /// Calculate ticker mention score.
+    /// Prioritizes headline/summary mentions over RelatedSymbols tags,
+    /// which Finnhub sets broadly (resulting in noise articles scoring high).
     /// </summary>
     private decimal CalculateTickerScore(NewsItem article, string symbol)
     {
@@ -127,22 +129,22 @@ public class HeadlineRelevanceService
         var headline = article.Headline?.ToUpper() ?? "";
         var summary = article.Summary?.ToUpper() ?? "";
 
-        // Check related symbols first
-        if (article.RelatedSymbols?.Any(s => s.Equals(upperSymbol, StringComparison.OrdinalIgnoreCase)) == true)
+        // Exact ticker in headline (highest signal — article is clearly about this stock)
+        if (ContainsTickerWithBoundary(headline, upperSymbol))
         {
             return 1.0m;
         }
 
-        // Exact ticker in headline (with word boundaries)
-        if (ContainsTickerWithBoundary(headline, upperSymbol))
-        {
-            return 0.95m;
-        }
-
-        // Ticker in summary
+        // Ticker in summary (good signal — article discusses this stock)
         if (ContainsTickerWithBoundary(summary, upperSymbol))
         {
             return 0.7m;
+        }
+
+        // RelatedSymbols tag only (weak signal — Finnhub tags loosely related articles)
+        if (article.RelatedSymbols?.Any(s => s.Equals(upperSymbol, StringComparison.OrdinalIgnoreCase)) == true)
+        {
+            return 0.3m;
         }
 
         return 0.1m;
