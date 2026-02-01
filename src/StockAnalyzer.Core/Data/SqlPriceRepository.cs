@@ -264,12 +264,33 @@ public class SqlPriceRepository : IPriceRepository
     /// <inheritdoc />
     public async Task<List<DateTime>> GetDistinctDatesAsync(DateTime startDate, DateTime endDate)
     {
-        return await _context.Prices
-            .AsNoTracking()
-            .Where(p => p.EffectiveDate >= startDate.Date && p.EffectiveDate <= endDate.Date)
-            .Select(p => p.EffectiveDate)
-            .Distinct()
-            .OrderBy(d => d)
+        // Recursive CTE with index seeks: ~500 seeks for 2 years of trading days
+        // instead of scanning 5M+ rows via SELECT DISTINCT.
+        // Each recursion uses IX_Prices_EffectiveDate to jump to the next unique date.
+        var sql = @"
+            ;WITH DistinctDates AS (
+                SELECT TOP 1 EffectiveDate
+                FROM data.Prices WITH (NOLOCK)
+                WHERE EffectiveDate >= @p0 AND EffectiveDate <= @p1
+                ORDER BY EffectiveDate
+
+                UNION ALL
+
+                SELECT sub.EffectiveDate
+                FROM DistinctDates dd
+                CROSS APPLY (
+                    SELECT TOP 1 p.EffectiveDate
+                    FROM data.Prices p WITH (NOLOCK)
+                    WHERE p.EffectiveDate > dd.EffectiveDate AND p.EffectiveDate <= @p1
+                    ORDER BY p.EffectiveDate
+                ) sub
+            )
+            SELECT EffectiveDate FROM DistinctDates
+            ORDER BY EffectiveDate
+            OPTION (MAXRECURSION 10000)";
+
+        return await _context.Database
+            .SqlQueryRaw<DateTime>(sql, startDate.Date, endDate.Date)
             .ToListAsync();
     }
 
