@@ -265,30 +265,21 @@ public class SqlPriceRepository : IPriceRepository
     /// <inheritdoc />
     public async Task<List<DateTime>> GetDistinctDatesAsync(DateTime startDate, DateTime endDate)
     {
-        // Recursive CTE with index seeks: ~500 seeks for 2 years of trading days
+        // While-loop skip-scan: ~500 MIN() index seeks for 2 years of trading days
         // instead of scanning 5M+ rows via SELECT DISTINCT.
-        // Each recursion uses IX_Prices_EffectiveDate to jump to the next unique date.
+        // Each iteration uses IX_Prices_EffectiveDate to jump to the next unique date.
+        // (Recursive CTEs don't allow TOP, CROSS APPLY, or aggregates in the recursive member.)
         var sql = @"
-            ;WITH DistinctDates AS (
-                SELECT TOP 1 EffectiveDate
-                FROM data.Prices WITH (NOLOCK)
-                WHERE EffectiveDate >= @p0 AND EffectiveDate <= @p1
-                ORDER BY EffectiveDate
-
-                UNION ALL
-
-                SELECT sub.EffectiveDate
-                FROM DistinctDates dd
-                CROSS APPLY (
-                    SELECT TOP 1 p.EffectiveDate
-                    FROM data.Prices p WITH (NOLOCK)
-                    WHERE p.EffectiveDate > dd.EffectiveDate AND p.EffectiveDate <= @p1
-                    ORDER BY p.EffectiveDate
-                ) sub
-            )
-            SELECT EffectiveDate FROM DistinctDates
-            ORDER BY EffectiveDate
-            OPTION (MAXRECURSION 10000)";
+            DECLARE @dates TABLE (EffectiveDate DATE);
+            DECLARE @dt DATE = (SELECT MIN(EffectiveDate) FROM data.Prices WITH (NOLOCK)
+                                WHERE EffectiveDate >= @p0 AND EffectiveDate <= @p1);
+            WHILE @dt IS NOT NULL
+            BEGIN
+                INSERT INTO @dates VALUES (@dt);
+                SET @dt = (SELECT MIN(EffectiveDate) FROM data.Prices WITH (NOLOCK)
+                           WHERE EffectiveDate > @dt AND EffectiveDate <= @p1);
+            END;
+            SELECT EffectiveDate FROM @dates ORDER BY EffectiveDate;";
 
         return await _context.Database
             .SqlQueryRaw<DateTime>(sql, startDate.Date, endDate.Date)
