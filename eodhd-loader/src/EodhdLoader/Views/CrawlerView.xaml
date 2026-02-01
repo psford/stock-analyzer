@@ -184,7 +184,7 @@
 
                     <!-- Price Records -->
                     <Border Grid.Column="1" Background="#1a1a2e" CornerRadius="8" Padding="12,8" Margin="3,0"
-                            ToolTip="Total price records in the database (from CoverageSummary pre-aggregation)">
+                            ToolTip="Total price records in the database (updates live during crawling)">
                         <StackPanel HorizontalAlignment="Center">
                             <TextBlock Text="PRICE RECORDS" FontSize="8" Foreground="#555"
                                        HorizontalAlignment="Center" FontWeight="Bold" Margin="0,0,0,4"/>

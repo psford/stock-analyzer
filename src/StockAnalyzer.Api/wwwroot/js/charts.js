@@ -29,6 +29,18 @@ const Charts = {
     },
 
     /**
+     * Format the period label for chart titles.
+     * Shows actual date range for custom periods instead of "CUSTOM".
+     */
+    formatPeriodLabel(historyData) {
+        if (historyData.period === 'custom' && historyData.startDate && historyData.endDate) {
+            const fmt = (d) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            return `${fmt(historyData.startDate)} - ${fmt(historyData.endDate)}`;
+        }
+        return historyData.period.toUpperCase();
+    },
+
+    /**
      * Check if dark mode is currently enabled
      */
     isDarkMode() {
@@ -193,7 +205,7 @@ const Charts = {
             // Build comparison layout
             const layout = {
                 title: {
-                    text: `${historyData.symbol} vs ${comparisonTicker} - ${historyData.period.toUpperCase()}`,
+                    text: `${historyData.symbol} vs ${comparisonTicker} - ${this.formatPeriodLabel(historyData)}`,
                     font: { size: 18, color: themeColors.text }
                 },
                 xaxis: {
@@ -570,7 +582,7 @@ const Charts = {
         // Build layout
         const layout = {
             title: {
-                text: `${historyData.symbol} - ${historyData.period.toUpperCase()}`,
+                text: `${historyData.symbol} - ${this.formatPeriodLabel(historyData)}`,
                 font: { size: 18, color: themeColors.text }
             },
             xaxis: {

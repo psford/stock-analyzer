@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
@@ -327,6 +328,34 @@ app.Use(async (context, next) =>
     await next();
 });
 
+// Automatic JS cache-busting: compute content hash at startup,
+// serve index.html with ?v={hash} instead of manual version strings.
+// Hash changes whenever any JS file is modified → browsers fetch new versions.
+var jsVersionHash = ComputeJsContentHash(app.Environment.WebRootPath);
+Log.Information("JS content hash for cache-busting: {Hash}", jsVersionHash);
+
+// Cache the versioned HTML at startup (recomputed on each app restart).
+// Replaces any ?v=... on local JS/CSS refs with the content hash.
+var indexHtmlPath = Path.Combine(app.Environment.WebRootPath, "index.html");
+var versionedIndexHtml = System.Text.RegularExpressions.Regex.Replace(
+    File.ReadAllText(indexHtmlPath),
+    @"\?v=[^""']+",
+    $"?v={jsVersionHash}");
+
+app.Use(async (context, next) =>
+{
+    var reqPath = context.Request.Path.Value;
+    if (reqPath == "/" || string.Equals(reqPath, "/index.html", StringComparison.OrdinalIgnoreCase))
+    {
+        context.Response.ContentType = "text/html; charset=utf-8";
+        await context.Response.WriteAsync(versionedIndexHtml);
+        return;
+    }
+    await next();
+});
+
+// UseDefaultFiles no longer needed for index.html (handled above),
+// but keep it for any other default documents.
 app.UseDefaultFiles();
 
 // Configure static files with custom MIME types for .mmd (Mermaid) files
@@ -449,12 +478,23 @@ app.MapGet("/api/stock/{ticker}", async (string ticker, AggregatedStockDataServi
 app.MapGet("/api/stock/{ticker}/history", async (
     string ticker,
     string? period,
+    string? from,
+    string? to,
     AggregatedStockDataService stockService) =>
 {
     if (!IsValidTicker(ticker))
         return InvalidTickerResult();
 
-    var data = await stockService.GetHistoricalDataAsync(ticker, period ?? "1y");
+    HistoricalDataResult? data;
+    if (!string.IsNullOrEmpty(from) && DateTime.TryParse(from, out var fromDate)
+        && !string.IsNullOrEmpty(to) && DateTime.TryParse(to, out var toDate))
+    {
+        data = await stockService.GetHistoricalDataAsync(ticker, fromDate, toDate);
+    }
+    else
+    {
+        data = await stockService.GetHistoricalDataAsync(ticker, period ?? "1y");
+    }
     return data != null
         ? Results.Ok(data)
         : Results.NotFound(new { error = "Historical data not found", symbol = ticker });
@@ -518,16 +558,27 @@ app.MapGet("/api/stock/{ticker}/significant", async (
     string ticker,
     decimal? threshold,
     string? period,
+    string? from,
+    string? to,
     AggregatedStockDataService stockService,
     AnalysisService analysisService) =>
 {
     if (!IsValidTicker(ticker))
         return InvalidTickerResult();
 
-    var historyPeriod = period ?? "1y";
     var thresholdValue = threshold ?? 3.0m;
 
-    var history = await stockService.GetHistoricalDataAsync(ticker, historyPeriod);
+    // Custom date range takes precedence over period
+    HistoricalDataResult? history;
+    if (!string.IsNullOrEmpty(from) && DateTime.TryParse(from, out var fromDate)
+        && !string.IsNullOrEmpty(to) && DateTime.TryParse(to, out var toDate))
+    {
+        history = await stockService.GetHistoricalDataAsync(ticker, fromDate, toDate);
+    }
+    else
+    {
+        history = await stockService.GetHistoricalDataAsync(ticker, period ?? "1y");
+    }
     if (history == null)
         return Results.NotFound(new { error = "Historical data not found", symbol = ticker });
 
@@ -633,13 +684,25 @@ app.MapGet("/api/stock/{ticker}/analysis", async (
 app.MapGet("/api/stock/{ticker}/chart-data", async (
     string ticker,
     string? period,
+    string? from,
+    string? to,
     AggregatedStockDataService stockService,
     AnalysisService analysisService) =>
 {
     if (!IsValidTicker(ticker))
         return InvalidTickerResult();
 
-    var history = await stockService.GetHistoricalDataAsync(ticker, period ?? "1y");
+    // Custom date range takes precedence over period
+    HistoricalDataResult? history;
+    if (!string.IsNullOrEmpty(from) && DateTime.TryParse(from, out var fromDate)
+        && !string.IsNullOrEmpty(to) && DateTime.TryParse(to, out var toDate))
+    {
+        history = await stockService.GetHistoricalDataAsync(ticker, fromDate, toDate);
+    }
+    else
+    {
+        history = await stockService.GetHistoricalDataAsync(ticker, period ?? "1y");
+    }
     if (history == null)
         return Results.NotFound(new { error = "Data not found", symbol = ticker });
 
@@ -3623,6 +3686,24 @@ catch (Exception ex)
 finally
 {
     Log.CloseAndFlush();
+}
+
+// Compute a short SHA256 hash of all JS files in wwwroot/js/ for cache-busting.
+// Changes to any JS file produce a different hash → browsers fetch the new version.
+static string ComputeJsContentHash(string webRootPath)
+{
+    var jsDir = Path.Combine(webRootPath, "js");
+    if (!Directory.Exists(jsDir))
+        return "000000";
+
+    using var sha = SHA256.Create();
+    foreach (var file in Directory.GetFiles(jsDir, "*.js").Order())
+    {
+        var bytes = File.ReadAllBytes(file);
+        sha.TransformBlock(bytes, 0, bytes.Length, null, 0);
+    }
+    sha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+    return Convert.ToHexString(sha.Hash!)[..8].ToLowerInvariant();
 }
 
 // Request models for admin endpoints

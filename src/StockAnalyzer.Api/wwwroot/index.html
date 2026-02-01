@@ -102,14 +102,22 @@
                         </label>
                         <select id="period-select"
                             class="block w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-primary mt-auto">
-                            <option value="ytd">YTD</option>
+                            <option value="1d">1 Day</option>
+                            <option value="5d">5 Days</option>
+                            <option value="mtd">MTD</option>
                             <option value="1mo">1 Month</option>
                             <option value="3mo">3 Months</option>
                             <option value="6mo">6 Months</option>
+                            <option value="ytd">YTD</option>
                             <option value="1y" selected>1 Year</option>
                             <option value="2y">2 Years</option>
                             <option value="5y">5 Years</option>
                             <option value="10y">10 Years</option>
+                            <option value="15y">15 Years</option>
+                            <option value="20y">20 Years</option>
+                            <option value="30y">30 Years</option>
+                            <option value="max">Since Inception</option>
+                            <option value="custom">Custom Range...</option>
                         </select>
                     </div>
                     <div class="flex-1 min-w-0 flex flex-col">
@@ -123,11 +131,35 @@
                         </select>
                     </div>
                     <div class="flex flex-col">
-                        <button id="search-btn"
-                            class="w-full sm:w-auto px-6 py-2 bg-primary text-white font-medium rounded-lg hover:bg-blue-600 focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors mt-auto">
-                            Analyze
-                        </button>
+                        <div class="flex gap-2 mt-auto">
+                            <button id="search-btn"
+                                class="w-full sm:w-auto px-6 py-2 bg-primary text-white font-medium rounded-lg hover:bg-blue-600 focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors">
+                                Analyze
+                            </button>
+                            <button id="clear-btn"
+                                class="w-full sm:w-auto px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 font-medium rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 transition-colors">
+                                Clear
+                            </button>
+                        </div>
                     </div>
+                </div>
+
+                <!-- Custom Date Range (shown when "Custom Range..." is selected) -->
+                <div id="custom-date-range" class="hidden mt-3 flex flex-wrap items-end gap-3">
+                    <div class="flex-1 min-w-[140px]">
+                        <label for="date-from" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">From</label>
+                        <input type="date" id="date-from"
+                            class="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm">
+                    </div>
+                    <div class="flex-1 min-w-[140px]">
+                        <label for="date-to" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">To</label>
+                        <input type="date" id="date-to"
+                            class="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm">
+                    </div>
+                    <button id="apply-date-range"
+                        class="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-blue-600 focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors">
+                        Apply
+                    </button>
                 </div>
 
                 <!-- Moving Averages Toggle -->
@@ -533,12 +565,15 @@
                     <!-- Period Selection -->
                     <div class="flex items-center gap-2">
                         <span class="text-sm text-gray-600 dark:text-gray-400">Period:</span>
-                        <div class="flex gap-1" id="combined-period-buttons">
+                        <div class="flex flex-wrap gap-1" id="combined-period-buttons">
                             <button data-period="1mo" class="px-3 py-1 text-sm rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">1M</button>
                             <button data-period="3mo" class="px-3 py-1 text-sm rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">3M</button>
                             <button data-period="6mo" class="px-3 py-1 text-sm rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">6M</button>
+                            <button data-period="ytd" class="px-3 py-1 text-sm rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">YTD</button>
                             <button data-period="1y" class="px-3 py-1 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-primary text-white">1Y</button>
                             <button data-period="2y" class="px-3 py-1 text-sm rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">2Y</button>
+                            <button data-period="5y" class="px-3 py-1 text-sm rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">5Y</button>
+                            <button data-period="max" class="px-3 py-1 text-sm rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">All</button>
                         </div>
                     </div>
 

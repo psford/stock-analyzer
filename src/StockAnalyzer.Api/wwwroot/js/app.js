@@ -5,6 +5,8 @@
 const App = {
     currentTicker: null,
     currentPeriod: '1y',
+    customDateFrom: null,
+    customDateTo: null,
     currentThreshold: 5,
     currentAnimal: 'cats',
     historyData: null,
@@ -18,6 +20,10 @@ const App = {
 
     // Cache for pre-fetched news (keyed by "TICKER:YYYY-MM-DD:up/down")
     newsCache: {},
+
+    // Keyboard navigation state for search dropdowns
+    searchSelectedIndex: -1,
+    compareSelectedIndex: -1,
 
     // Comparison feature state
     comparisonTicker: null,
@@ -53,6 +59,26 @@ const App = {
         this.fetchAppVersion();
         // Start idle-time image cache building (doesn't block anything)
         this.scheduleIdleImageLoad();
+        // If browser restored "custom" in the period select, show the date inputs
+        this.initPeriodSelect();
+    },
+
+    /**
+     * Handle browser-restored period select value on page load.
+     * Browsers preserve form values across refreshes but don't fire change events.
+     */
+    initPeriodSelect() {
+        const periodSelect = document.getElementById('period-select');
+        if (periodSelect && periodSelect.value === 'custom') {
+            const customRow = document.getElementById('custom-date-range');
+            customRow.classList.remove('hidden');
+            const today = new Date().toISOString().split('T')[0];
+            const yearAgo = new Date(Date.now() - 365 * 86400000).toISOString().split('T')[0];
+            const fromInput = document.getElementById('date-from');
+            const toInput = document.getElementById('date-to');
+            if (!fromInput.value) fromInput.value = yearAgo;
+            if (!toInput.value) toInput.value = today;
+        }
     },
 
     /**
@@ -338,6 +364,9 @@ const App = {
         // Search button
         document.getElementById('search-btn').addEventListener('click', () => this.analyzeStock());
 
+        // Clear button
+        document.getElementById('clear-btn').addEventListener('click', () => this.clearAll());
+
         // Autocomplete on input
         tickerInput.addEventListener('input', (e) => {
             const query = e.target.value.trim();
@@ -352,11 +381,42 @@ const App = {
             this.searchTimeout = setTimeout(() => this.performSearch(query), 300);
         });
 
-        // Enter key in ticker input
-        tickerInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
+        // Keyboard navigation in ticker input (arrows, Enter, Escape)
+        tickerInput.addEventListener('keydown', (e) => {
+            const items = searchResults.querySelectorAll('.search-result');
+            const isOpen = !searchResults.classList.contains('hidden') && items.length > 0;
+
+            if (e.key === 'ArrowDown') {
+                if (!isOpen) return;
+                e.preventDefault();
+                this.searchSelectedIndex = Math.min(this.searchSelectedIndex + 1, items.length - 1);
+                this.highlightDropdownItem(items, this.searchSelectedIndex);
+            } else if (e.key === 'ArrowUp') {
+                if (!isOpen) return;
+                e.preventDefault();
+                this.searchSelectedIndex = Math.max(this.searchSelectedIndex - 1, -1);
+                this.highlightDropdownItem(items, this.searchSelectedIndex);
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (isOpen && this.searchSelectedIndex >= 0) {
+                    // Select highlighted item, stay on field
+                    const symbol = items[this.searchSelectedIndex].dataset.symbol;
+                    tickerInput.value = symbol;
+                    this.hideSearchResults();
+                } else {
+                    // No dropdown selection — trigger analysis
+                    this.hideSearchResults();
+                    this.analyzeStock();
+                }
+            } else if (e.key === 'Tab') {
+                if (isOpen && this.searchSelectedIndex >= 0) {
+                    // Select highlighted item, let Tab advance focus naturally
+                    const symbol = items[this.searchSelectedIndex].dataset.symbol;
+                    tickerInput.value = symbol;
+                    this.hideSearchResults();
+                }
+            } else if (e.key === 'Escape') {
                 this.hideSearchResults();
-                this.analyzeStock();
             }
         });
 
@@ -374,16 +434,60 @@ const App = {
 
         // Period change
         document.getElementById('period-select').addEventListener('change', async (e) => {
-            this.currentPeriod = e.target.value;
+            const value = e.target.value;
+            const customRow = document.getElementById('custom-date-range');
+
+            if (value === 'custom') {
+                // Show custom date inputs, don't trigger analysis yet
+                customRow.classList.remove('hidden');
+                // Default "to" to today, "from" to 1 year ago
+                const today = new Date().toISOString().split('T')[0];
+                const yearAgo = new Date(Date.now() - 365 * 86400000).toISOString().split('T')[0];
+                const fromInput = document.getElementById('date-from');
+                const toInput = document.getElementById('date-to');
+                if (!fromInput.value) fromInput.value = yearAgo;
+                if (!toInput.value) toInput.value = today;
+                return;
+            }
+
+            // Standard period selected — hide custom inputs, clear custom dates
+            customRow.classList.add('hidden');
+            this.currentPeriod = value;
+            this.customDateFrom = null;
+            this.customDateTo = null;
+
             if (this.currentTicker) {
-                // If comparing, re-fetch comparison data with new period
                 if (this.comparisonTicker) {
                     const comparisonTicker = this.comparisonTicker;
-                    // Clear comparison temporarily (analyzeStock will fetch primary data)
                     this.comparisonTicker = null;
                     this.comparisonHistoryData = null;
                     await this.analyzeStock();
-                    // Re-fetch comparison with new period
+                    await this.setComparison(comparisonTicker);
+                } else {
+                    await this.analyzeStock();
+                }
+            }
+        });
+
+        // Apply custom date range
+        document.getElementById('apply-date-range').addEventListener('click', async () => {
+            const from = document.getElementById('date-from').value;
+            const to = document.getElementById('date-to').value;
+            if (!from || !to) return;
+            if (from > to) {
+                this.showError('Start date must be before end date');
+                return;
+            }
+            this.customDateFrom = from;
+            this.customDateTo = to;
+            this.currentPeriod = 'custom';
+
+            if (this.currentTicker) {
+                if (this.comparisonTicker) {
+                    const comparisonTicker = this.comparisonTicker;
+                    this.comparisonTicker = null;
+                    this.comparisonHistoryData = null;
+                    await this.analyzeStock();
                     await this.setComparison(comparisonTicker);
                 } else {
                     await this.analyzeStock();
@@ -444,13 +548,45 @@ const App = {
             this.compareSearchTimeout = setTimeout(() => this.performCompareSearch(query), 300);
         });
 
-        compareInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                this.hideCompareResults();
-                const ticker = compareInput.value.trim().toUpperCase();
-                if (ticker && this.currentTicker) {
-                    this.setComparison(ticker);
+        // Keyboard navigation in comparison input (arrows, Enter, Escape)
+        compareInput.addEventListener('keydown', (e) => {
+            const items = compareResults.querySelectorAll('.compare-result');
+            const isOpen = !compareResults.classList.contains('hidden') && items.length > 0;
+
+            if (e.key === 'ArrowDown') {
+                if (!isOpen) return;
+                e.preventDefault();
+                this.compareSelectedIndex = Math.min(this.compareSelectedIndex + 1, items.length - 1);
+                this.highlightDropdownItem(items, this.compareSelectedIndex);
+            } else if (e.key === 'ArrowUp') {
+                if (!isOpen) return;
+                e.preventDefault();
+                this.compareSelectedIndex = Math.max(this.compareSelectedIndex - 1, -1);
+                this.highlightDropdownItem(items, this.compareSelectedIndex);
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (isOpen && this.compareSelectedIndex >= 0) {
+                    // Select highlighted item, stay on field
+                    const symbol = items[this.compareSelectedIndex].dataset.symbol;
+                    compareInput.value = symbol;
+                    this.hideCompareResults();
+                } else {
+                    // No dropdown selection — trigger comparison
+                    this.hideCompareResults();
+                    const ticker = compareInput.value.trim().toUpperCase();
+                    if (ticker && this.currentTicker) {
+                        this.setComparison(ticker);
+                    }
                 }
+            } else if (e.key === 'Tab') {
+                if (isOpen && this.compareSelectedIndex >= 0) {
+                    // Select highlighted item, let Tab advance focus naturally
+                    const symbol = items[this.compareSelectedIndex].dataset.symbol;
+                    compareInput.value = symbol;
+                    this.hideCompareResults();
+                }
+            } else if (e.key === 'Escape') {
+                this.hideCompareResults();
             }
         });
 
@@ -686,6 +822,7 @@ const App = {
      */
     showSearchResults(results, query = '') {
         const container = document.getElementById('search-results');
+        this.searchSelectedIndex = -1;
 
         if (!results || results.length === 0) {
             // Show message with server fallback hint if client-side returned empty
@@ -721,10 +858,26 @@ const App = {
     },
 
     /**
+     * Highlight a dropdown item by index (keyboard navigation).
+     * Removes highlight from all siblings, adds to the target, and scrolls into view.
+     */
+    highlightDropdownItem(items, index) {
+        items.forEach((item, i) => {
+            if (i === index) {
+                item.classList.add('bg-gray-100', 'dark:bg-gray-700');
+                item.scrollIntoView({ block: 'nearest' });
+            } else {
+                item.classList.remove('bg-gray-100', 'dark:bg-gray-700');
+            }
+        });
+    },
+
+    /**
      * Hide search results dropdown
      */
     hideSearchResults() {
         document.getElementById('search-results').classList.add('hidden');
+        this.searchSelectedIndex = -1;
     },
 
     /**
@@ -750,6 +903,7 @@ const App = {
      */
     showCompareResults(results) {
         const container = document.getElementById('compare-results');
+        this.compareSelectedIndex = -1;
 
         if (!results || results.length === 0) {
             container.innerHTML = '<div class="px-4 py-3 text-gray-500 dark:text-gray-400 text-sm">No results found</div>';
@@ -786,6 +940,7 @@ const App = {
      */
     hideCompareResults() {
         document.getElementById('compare-results').classList.add('hidden');
+        this.compareSelectedIndex = -1;
     },
 
     /**
@@ -804,7 +959,8 @@ const App = {
             document.getElementById('compare-input').value = ticker;
 
             // Fetch comparison history data
-            this.comparisonHistoryData = await API.getHistory(ticker, this.currentPeriod);
+            this.comparisonHistoryData = await API.getHistory(
+                ticker, this.currentPeriod, this.customDateFrom, this.customDateTo);
             this.comparisonTicker = ticker;
 
             // Disable technical indicators (they don't make sense for comparison)
@@ -840,6 +996,64 @@ const App = {
             this.renderChart();
             this.attachChartHoverListeners();
         }
+    },
+
+    /**
+     * Reset the page to its initial state
+     */
+    clearAll() {
+        // Clear data state
+        this.currentTicker = null;
+        this.currentPeriod = '1y';
+        this.customDateFrom = null;
+        this.customDateTo = null;
+        this.historyData = null;
+        this.analysisData = null;
+        this.significantMovesData = null;
+        this.newsCache = {};
+
+        // Clear comparison
+        this.comparisonTicker = null;
+        this.comparisonHistoryData = null;
+        document.getElementById('compare-input').value = '';
+        document.getElementById('clear-compare').classList.add('hidden');
+
+        // Reset form inputs
+        document.getElementById('ticker-input').value = '';
+        document.getElementById('ticker-input').focus();
+        document.getElementById('period-select').value = '1y';
+        document.getElementById('custom-date-range').classList.add('hidden');
+        document.getElementById('date-from').value = '';
+        document.getElementById('date-to').value = '';
+        document.getElementById('chart-type').value = 'line';
+        document.getElementById('threshold-slider').value = 5;
+        document.getElementById('threshold-value').textContent = '5%';
+        this.currentThreshold = 5;
+
+        // Reset checkboxes to defaults
+        document.getElementById('ma-20').checked = true;
+        document.getElementById('ma-50').checked = true;
+        document.getElementById('ma-200').checked = false;
+        document.getElementById('show-rsi').checked = false;
+        document.getElementById('show-macd').checked = false;
+        document.getElementById('show-bollinger').checked = false;
+        document.getElementById('show-stochastic').checked = false;
+        document.getElementById('show-markers').checked = true;
+
+        // Re-enable indicators (in case they were disabled by comparison mode)
+        this.disableIndicators(false);
+
+        // Hide results, show nothing
+        document.getElementById('results-section').classList.add('hidden');
+        document.getElementById('error-section').classList.add('hidden');
+        document.getElementById('loading-section').classList.add('hidden');
+
+        // Clear chart
+        const chartEl = document.getElementById('stock-chart');
+        if (chartEl && chartEl.data) {
+            Plotly.purge(chartEl);
+        }
+        Charts.resetChart('stock-chart');
     },
 
     /**
@@ -902,7 +1116,24 @@ const App = {
         }
 
         this.currentTicker = ticker;
-        this.currentPeriod = document.getElementById('period-select').value;
+        const periodSelect = document.getElementById('period-select').value;
+        if (periodSelect !== 'custom') {
+            this.currentPeriod = periodSelect;
+            this.customDateFrom = null;
+            this.customDateTo = null;
+        } else {
+            // Custom period — read dates from inputs if not already set
+            // (handles Search/Enter without clicking Apply)
+            this.currentPeriod = 'custom';
+            if (!this.customDateFrom || !this.customDateTo) {
+                const fromVal = document.getElementById('date-from').value;
+                const toVal = document.getElementById('date-to').value;
+                if (fromVal && toVal) {
+                    this.customDateFrom = fromVal;
+                    this.customDateTo = toVal;
+                }
+            }
+        }
         this.newsCache = {}; // Clear news cache for new ticker
         if (typeof Charts !== 'undefined' && Charts.resetChart) {
             Charts.resetChart('stock-chart');
@@ -911,7 +1142,8 @@ const App = {
 
         try {
             // PHASE 1: Critical path - single request for history + analysis
-            const chartData = await API.getChartData(ticker, this.currentPeriod);
+            const chartData = await API.getChartData(
+                ticker, this.currentPeriod, this.customDateFrom, this.customDateTo);
 
             // Split combined response into history and analysis shapes
             this.historyData = {
@@ -946,7 +1178,8 @@ const App = {
             // PHASE 2: Load secondary data in background (non-blocking)
             // Start all these requests but don't wait for them
             const stockInfoPromise = API.getStockInfo(ticker);
-            const significantMovesPromise = API.getSignificantMoves(ticker, this.currentThreshold, this.currentPeriod);
+            const significantMovesPromise = API.getSignificantMoves(
+                ticker, this.currentThreshold, this.currentPeriod, this.customDateFrom, this.customDateTo);
             const newsPromise = API.getAggregatedNews(ticker, 30, 10);
 
             // Handle stock info when ready
@@ -1200,7 +1433,9 @@ const App = {
             this.significantMovesData = await API.getSignificantMoves(
                 this.currentTicker,
                 this.currentThreshold,
-                this.currentPeriod
+                this.currentPeriod,
+                this.customDateFrom,
+                this.customDateTo
             );
             this.renderChart();
             this.attachChartHoverListeners();

@@ -22,8 +22,14 @@ const API = {
      * @param {string} ticker - Stock ticker symbol
      * @param {string} period - Time period (1mo, 3mo, 6mo, 1y, 2y, 5y)
      */
-    async getHistory(ticker, period = '1y') {
-        const response = await fetch(`${this.baseUrl}/stock/${ticker}/history?period=${period}`);
+    async getHistory(ticker, period = '1y', from = null, to = null) {
+        let url = `${this.baseUrl}/stock/${ticker}/history`;
+        if (from && to) {
+            url += `?from=${from}&to=${to}`;
+        } else {
+            url += `?period=${period}`;
+        }
+        const response = await fetch(url);
         if (!response.ok) {
             throw new Error('Failed to fetch historical data');
         }
@@ -49,8 +55,14 @@ const API = {
      * @param {string} ticker - Stock ticker symbol
      * @param {string} period - Time period
      */
-    async getChartData(ticker, period = '1y') {
-        const response = await fetch(`${this.baseUrl}/stock/${ticker}/chart-data?period=${period}`);
+    async getChartData(ticker, period = '1y', from = null, to = null) {
+        let url = `${this.baseUrl}/stock/${ticker}/chart-data`;
+        if (from && to) {
+            url += `?from=${from}&to=${to}`;
+        } else {
+            url += `?period=${period}`;
+        }
+        const response = await fetch(url);
         if (!response.ok) {
             throw new Error('Failed to fetch chart data');
         }
@@ -63,8 +75,14 @@ const API = {
      * @param {number} threshold - Minimum percentage change to consider significant
      * @param {string} period - Time period (1mo, 3mo, 6mo, ytd, 1y, 2y, 5y)
      */
-    async getSignificantMoves(ticker, threshold = 3, period = '1y') {
-        const response = await fetch(`${this.baseUrl}/stock/${ticker}/significant?threshold=${threshold}&period=${period}`);
+    async getSignificantMoves(ticker, threshold = 3, period = '1y', from = null, to = null) {
+        let url = `${this.baseUrl}/stock/${ticker}/significant?threshold=${threshold}`;
+        if (from && to) {
+            url += `&from=${from}&to=${to}`;
+        } else {
+            url += `&period=${period}`;
+        }
+        const response = await fetch(url);
         if (!response.ok) {
             throw new Error('Failed to fetch significant moves');
         }

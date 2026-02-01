@@ -118,15 +118,45 @@ public class AggregatedStockDataService
     }
 
     /// <summary>
+    /// Get historical OHLCV data for a custom date range.
+    /// Used when explicit from/to dates are provided instead of a period string.
+    /// </summary>
+    public async Task<HistoricalDataResult?> GetHistoricalDataAsync(string symbol, DateTime from, DateTime to)
+    {
+        var upperSymbol = symbol.ToUpper();
+        var cacheKey = $"history:{upperSymbol}:{from:yyyyMMdd}:{to:yyyyMMdd}";
+
+        if (_cache.TryGetValue(cacheKey, out HistoricalDataResult? cached))
+            return cached;
+
+        var task = _inflight.GetOrAdd(cacheKey, _ => FetchHistoricalDataCoreAsync(upperSymbol, from, to, cacheKey));
+
+        try
+        {
+            return await task;
+        }
+        finally
+        {
+            _inflight.TryRemove(cacheKey, out _);
+        }
+    }
+
+    /// <summary>
     /// Core fetch logic for historical data (DB → API providers).
     /// Called via _inflight coalescing so concurrent requests for the same key share one task.
     /// </summary>
     private async Task<HistoricalDataResult?> FetchHistoricalDataCoreAsync(string upperSymbol, string period, string cacheKey)
     {
+        var (startDate, endDate) = GetDateRangeForPeriod(period);
+        return await FetchHistoricalDataCoreAsync(upperSymbol, startDate, endDate, cacheKey);
+    }
+
+    private async Task<HistoricalDataResult?> FetchHistoricalDataCoreAsync(string upperSymbol, DateTime startDate, DateTime endDate, string cacheKey)
+    {
         // Check database for pre-loaded prices
         if (_serviceScopeFactory != null)
         {
-            var dbResult = await TryGetFromDatabaseAsync(upperSymbol, period);
+            var dbResult = await TryGetFromDatabaseAsync(upperSymbol, startDate, endDate);
             if (dbResult != null)
             {
                 dbResult = AdjustForSplits(dbResult);
@@ -138,14 +168,31 @@ public class AggregatedStockDataService
             }
         }
 
-        // Fall back to API providers
+        // Fall back to API providers — synthesize a period that covers the requested range
+        var years = (int)Math.Ceiling((endDate - startDate).TotalDays / 365.25);
+        var fallbackPeriod = years switch
+        {
+            <= 0 => "1mo",
+            1 => "1y",
+            <= 2 => "2y",
+            <= 5 => "5y",
+            _ => "10y"
+        };
+
         foreach (var provider in _providers.Where(p => p.IsAvailable))
         {
             _logger?.LogDebug("Trying {Provider} for {Symbol} history", provider.ProviderName, LogSanitizer.Sanitize(upperSymbol));
 
-            var result = await provider.GetHistoricalDataAsync(upperSymbol, period);
+            var result = await provider.GetHistoricalDataAsync(upperSymbol, fallbackPeriod);
             if (result != null && result.Data.Count > 0)
             {
+                // Filter to requested date range (provider may return broader data)
+                var filteredData = result.Data
+                    .Where(d => d.Date >= startDate && d.Date <= endDate)
+                    .ToList();
+                if (filteredData.Count > 0)
+                    result = result with { Data = filteredData };
+
                 result = AdjustForSplits(result);
                 _logger?.LogInformation(
                     "Got history for {Symbol} from {Provider} ({Count} points)",
@@ -300,7 +347,7 @@ public class AggregatedStockDataService
         _cache.Remove($"quote:{upperSymbol}");
 
         // Remove all period variants for history
-        foreach (var period in new[] { "1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd" })
+        foreach (var period in new[] { "1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "15y", "20y", "30y", "max", "all", "ytd", "mtd" })
         {
             _cache.Remove($"history:{upperSymbol}:{period}");
         }
@@ -313,6 +360,12 @@ public class AggregatedStockDataService
     /// </summary>
     private async Task<HistoricalDataResult?> TryGetFromDatabaseAsync(string symbol, string period)
     {
+        var (startDate, endDate) = GetDateRangeForPeriod(period);
+        return await TryGetFromDatabaseAsync(symbol, startDate, endDate, period);
+    }
+
+    private async Task<HistoricalDataResult?> TryGetFromDatabaseAsync(string symbol, DateTime startDate, DateTime endDate, string? period = null)
+    {
         if (_serviceScopeFactory == null) return null;
 
         try
@@ -323,7 +376,6 @@ public class AggregatedStockDataService
 
             if (securityRepo == null || priceRepo == null) return null;
 
-            // Look up the security by ticker
             var security = await securityRepo.GetByTickerAsync(symbol);
             if (security == null)
             {
@@ -331,20 +383,15 @@ public class AggregatedStockDataService
                 return null;
             }
 
-            // Get the date range for the requested period
-            var (startDate, endDate) = GetDateRangeForPeriod(period);
-
-            // Fetch prices from database
             var prices = await priceRepo.GetPricesAsync(security.SecurityAlias, startDate, endDate);
 
             if (prices.Count == 0)
             {
-                _logger?.LogDebug("No prices in database for {Symbol} in period {Period}",
-                    LogSanitizer.Sanitize(symbol), LogSanitizer.Sanitize(period));
+                _logger?.LogDebug("No prices in database for {Symbol} ({Start} to {End})",
+                    LogSanitizer.Sanitize(symbol), startDate.ToString("yyyy-MM-dd"), endDate.ToString("yyyy-MM-dd"));
                 return null;
             }
 
-            // Convert to HistoricalDataResult
             var ohlcvData = prices.Select(p => new OhlcvData
             {
                 Date = p.EffectiveDate,
@@ -359,7 +406,7 @@ public class AggregatedStockDataService
             return new HistoricalDataResult
             {
                 Symbol = symbol,
-                Period = period,
+                Period = period ?? "custom",
                 StartDate = ohlcvData.First().Date,
                 EndDate = ohlcvData.Last().Date,
                 Data = ohlcvData
@@ -409,6 +456,7 @@ public class AggregatedStockDataService
         var startDate = period.ToLower() switch
         {
             "ytd" => new DateTime(endDate.Year, 1, 1),
+            "mtd" => new DateTime(endDate.Year, endDate.Month, 1),
             "1d" => endDate.AddDays(-1),
             "5d" => endDate.AddDays(-5),
             "1mo" => endDate.AddMonths(-1),
@@ -418,6 +466,10 @@ public class AggregatedStockDataService
             "2y" => endDate.AddYears(-2),
             "5y" => endDate.AddYears(-5),
             "10y" => endDate.AddYears(-10),
+            "15y" => endDate.AddYears(-15),
+            "20y" => endDate.AddYears(-20),
+            "30y" => endDate.AddYears(-30),
+            "max" or "all" => new DateTime(1900, 1, 1),
             _ => endDate.AddYears(-1)
         };
 

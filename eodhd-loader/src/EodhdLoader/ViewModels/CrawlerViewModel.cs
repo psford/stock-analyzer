@@ -109,6 +109,13 @@ public partial class CrawlerViewModel : ViewModelBase
     private int _lastSessionTickerCount;
     private int _lastSessionRecordCount;
 
+    // Base total records from connect — used to compute live TotalRecordsDisplay
+    private double _initialTotalRecords;
+    // Base universe counts from connect — updated locally during crawling
+    private int _trackedCount;
+    private int _untrackedCount;
+    private int _unavailableCount;
+
     [ObservableProperty]
     private string _gapsDeltaDisplay = "";
 
@@ -306,6 +313,13 @@ public partial class CrawlerViewModel : ViewModelBase
         }
 
         AddActivity("↑", "Promoted", $"{result.Promoted} securities promoted to tracked");
+
+        // Update universe cards locally (promoted: untracked → tracked)
+        _trackedCount += result.Promoted;
+        _untrackedCount = Math.Max(0, _untrackedCount - result.Promoted);
+        TrackedDisplay = _trackedCount.ToString("N0");
+        UntrackedDisplay = _untrackedCount.ToString("N0");
+
         CurrentPhase = "Crawling";
         return await RefreshGapsAsync();
     }
@@ -710,6 +724,10 @@ public partial class CrawlerViewModel : ViewModelBase
                     RecordsLoadedThisSession += result.Data.RecordsInserted;
                     _recordsForCurrentSecurity += result.Data.RecordsInserted;
 
+                    // Live-update Price Records card
+                    if (_initialTotalRecords > 0)
+                        TotalRecordsDisplay = FormatLargeNumber(_initialTotalRecords + RecordsLoadedThisSession);
+
                     if (result.Data.RecordsInserted > 0)
                     {
                         AddActivity("✓", $"{security.Ticker} {dateStr}", $"{result.Data.RecordsInserted} records");
@@ -909,6 +927,16 @@ public partial class CrawlerViewModel : ViewModelBase
             if (result.Success)
             {
                 AddActivity("🚫", security.Ticker, "Marked as EODHD unavailable - will be skipped");
+
+                // Update universe cards locally (tracked/untracked → unavailable)
+                _unavailableCount++;
+                if (security.IsTracked)
+                    _trackedCount = Math.Max(0, _trackedCount - 1);
+                else
+                    _untrackedCount = Math.Max(0, _untrackedCount - 1);
+                TrackedDisplay = _trackedCount.ToString("N0");
+                UntrackedDisplay = _untrackedCount.ToString("N0");
+                UnavailableDisplay = _unavailableCount.ToString("N0");
             }
             else
             {
@@ -970,6 +998,12 @@ public partial class CrawlerViewModel : ViewModelBase
         TickersSubtitle = TickerRateDisplay != "" ? TickerRateDisplay : "this session";
         RecordsDisplay = RecordsLoadedThisSession.ToString("N0");
         RecordsSubtitle = RecordRateDisplay != "" ? RecordRateDisplay : "this session";
+
+        // Live-update the Price Records card (base count + session inserts)
+        if (_initialTotalRecords > 0)
+        {
+            TotalRecordsDisplay = FormatLargeNumber(_initialTotalRecords + RecordsLoadedThisSession);
+        }
     }
 
     private async Task LoadDashboardStatsAsync()
@@ -982,14 +1016,18 @@ public partial class CrawlerViewModel : ViewModelBase
             // Populate metric cards
             if (stats.Universe != null)
             {
+                _trackedCount = stats.Universe.Tracked;
+                _untrackedCount = stats.Universe.Untracked;
+                _unavailableCount = stats.Universe.Unavailable;
                 TotalSecuritiesDisplay = stats.Universe.TotalSecurities.ToString("N0");
-                TrackedDisplay = stats.Universe.Tracked.ToString("N0");
-                UntrackedDisplay = stats.Universe.Untracked.ToString("N0");
-                UnavailableDisplay = stats.Universe.Unavailable.ToString("N0");
+                TrackedDisplay = _trackedCount.ToString("N0");
+                UntrackedDisplay = _untrackedCount.ToString("N0");
+                UnavailableDisplay = _unavailableCount.ToString("N0");
             }
 
             if (stats.Prices != null)
             {
+                _initialTotalRecords = stats.Prices.TotalRecords;
                 TotalRecordsDisplay = FormatLargeNumber(stats.Prices.TotalRecords);
                 LatestDateDisplay = stats.Prices.LatestDate ?? "—";
 
