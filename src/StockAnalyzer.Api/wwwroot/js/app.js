@@ -1779,10 +1779,13 @@ const App = {
         this._extendingRange = true;
 
         try {
+            // Track previous earliest date to detect growth
+            const prevEarliestDate = this.historyData?.data?.[0]?.date;
+
             const chartData = await API.getChartData(this.currentTicker, null, fromDate, toDate);
             if (!chartData?.data || chartData.data.length === 0) return;
 
-            // Save current zoom range before re-render
+            // Capture current zoom AFTER fetch (user may have scrolled further during fetch)
             const chartEl = document.getElementById('stock-chart');
             const currentRange = chartEl?._fullLayout?.xaxis?.range;
 
@@ -1830,6 +1833,17 @@ const App = {
             // Restore the zoom position the user was viewing
             if (currentRange && chartEl) {
                 Plotly.relayout(chartEl, { 'xaxis.range': currentRange });
+            }
+
+            // If visible range still extends past data AND data actually grew, retry
+            if (currentRange && this.historyData?.data?.length > 0) {
+                const dataStartMs = new Date(this.historyData.data[0].date).getTime();
+                const visibleStartMs = new Date(currentRange[0]).getTime();
+                const dataGrew = this.historyData.data[0].date !== prevEarliestDate;
+                if (visibleStartMs < dataStartMs && dataGrew) {
+                    const fmt = (ms) => new Date(ms).toISOString().split('T')[0];
+                    setTimeout(() => this.extendChartRange(fmt(visibleStartMs), toDate), 500);
+                }
             }
         } catch (error) {
             console.warn('Failed to extend chart range:', error);

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Primitives;
 using StockAnalyzer.Core.Data.Entities;
 using StockAnalyzer.Core.Helpers;
 using StockAnalyzer.Core.Models;
@@ -38,6 +39,9 @@ public class AggregatedStockDataService
 
     // Coalesce concurrent cache misses for the same key (stampede prevention)
     private static readonly ConcurrentDictionary<string, Task<HistoricalDataResult?>> _inflight = new();
+
+    // Per-symbol cancellation tokens for cache eviction (covers all key patterns including custom date ranges)
+    private static readonly ConcurrentDictionary<string, CancellationTokenSource> _symbolCacheTokens = new();
 
     public AggregatedStockDataService(
         IEnumerable<IStockDataProvider> providers,
@@ -78,7 +82,7 @@ public class AggregatedStockDataService
             if (result != null)
             {
                 _logger?.LogInformation("Got {Symbol} from {Provider}", LogSanitizer.Sanitize(symbol), provider.ProviderName);
-                _cache.Set(cacheKey, result, QuoteCacheDuration);
+                _cache.Set(cacheKey, result, SymbolCacheOptions(symbol.ToUpper(), QuoteCacheDuration));
                 return result;
             }
         }
@@ -163,7 +167,7 @@ public class AggregatedStockDataService
                 _logger?.LogInformation(
                     "Got history for {Symbol} from database ({Count} points)",
                     LogSanitizer.Sanitize(upperSymbol), dbResult.Data.Count);
-                _cache.Set(cacheKey, dbResult, HistoryCacheDuration);
+                _cache.Set(cacheKey, dbResult, SymbolCacheOptions(upperSymbol, HistoryCacheDuration));
                 return dbResult;
             }
         }
@@ -197,7 +201,7 @@ public class AggregatedStockDataService
                 _logger?.LogInformation(
                     "Got history for {Symbol} from {Provider} ({Count} points)",
                     LogSanitizer.Sanitize(upperSymbol), provider.ProviderName, result.Data.Count);
-                _cache.Set(cacheKey, result, HistoryCacheDuration);
+                _cache.Set(cacheKey, result, SymbolCacheOptions(upperSymbol, HistoryCacheDuration));
 
                 // Queue background backfill to database for future requests
                 QueueBackgroundBackfill(upperSymbol);
@@ -339,17 +343,31 @@ public class AggregatedStockDataService
     }
 
     /// <summary>
+    /// Get cache entry options tied to a per-symbol cancellation token.
+    /// When InvalidateCache is called, the token is cancelled and ALL entries
+    /// for that symbol are evicted — including custom date range keys.
+    /// </summary>
+    private MemoryCacheEntryOptions SymbolCacheOptions(string upperSymbol, TimeSpan expiration)
+    {
+        var cts = _symbolCacheTokens.GetOrAdd(upperSymbol, _ => new CancellationTokenSource());
+        return new MemoryCacheEntryOptions()
+            .SetAbsoluteExpiration(expiration)
+            .AddExpirationToken(new CancellationChangeToken(cts.Token));
+    }
+
+    /// <summary>
     /// Invalidate cache for a specific symbol.
+    /// Cancels the per-symbol token, evicting all cache entries (quotes, history periods, custom date ranges).
     /// </summary>
     public void InvalidateCache(string symbol)
     {
         var upperSymbol = symbol.ToUpper();
-        _cache.Remove($"quote:{upperSymbol}");
 
-        // Remove all period variants for history
-        foreach (var period in new[] { "1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "15y", "20y", "30y", "max", "all", "ytd", "mtd" })
+        // Cancel the per-symbol token — evicts ALL cache entries registered with it
+        if (_symbolCacheTokens.TryRemove(upperSymbol, out var cts))
         {
-            _cache.Remove($"history:{upperSymbol}:{period}");
+            cts.Cancel();
+            cts.Dispose();
         }
 
         _logger?.LogDebug("Cache invalidated for {Symbol}", LogSanitizer.Sanitize(symbol));

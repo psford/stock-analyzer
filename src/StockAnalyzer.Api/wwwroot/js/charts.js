@@ -41,6 +41,53 @@ const Charts = {
     },
 
     /**
+     * Attach a plotly_relayout listener that updates the chart title
+     * to reflect the currently visible date range on scroll/zoom.
+     */
+    _attachDynamicTitle(elementId, symbol, comparisonSymbol) {
+        const chartEl = document.getElementById(elementId);
+        if (!chartEl) return;
+
+        // Remove previous listener to avoid duplicates on Plotly.react re-renders
+        if (chartEl._titleUpdater) {
+            chartEl.removeListener('plotly_relayout', chartEl._titleUpdater);
+        }
+
+        const fmt = (dateStr) => {
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return '';
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        };
+
+        const prefix = comparisonSymbol
+            ? `${symbol} vs ${comparisonSymbol}`
+            : symbol;
+
+        chartEl._titleUpdater = (eventData) => {
+            // Only react to x-axis range changes
+            if (!eventData['xaxis.range'] &&
+                !eventData['xaxis.range[0]'] &&
+                !eventData['xaxis.autorange']) return;
+
+            // Read the current range from the layout (up to date after relayout)
+            const range = chartEl._fullLayout?.xaxis?.range;
+            if (!range || range.length < 2) return;
+
+            const startFmt = fmt(range[0]);
+            const endFmt = fmt(range[1]);
+            if (!startFmt || !endFmt) return;
+
+            // Update DOM directly to avoid infinite relayout loop
+            const titleEl = chartEl.querySelector('.gtitle');
+            if (titleEl) {
+                titleEl.textContent = `${prefix} - ${startFmt} - ${endFmt}`;
+            }
+        };
+
+        chartEl.on('plotly_relayout', chartEl._titleUpdater);
+    },
+
+    /**
      * Check if dark mode is currently enabled
      */
     isDarkMode() {
@@ -245,7 +292,9 @@ const Charts = {
                 modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
             };
 
-            this._smartPlot(elementId, traces, layout, config);
+            this._smartPlot(elementId, traces, layout, config).then(() => {
+                this._attachDynamicTitle(elementId, historyData.symbol, comparisonTicker);
+            });
 
             return; // Exit early for comparison mode
         }
@@ -663,7 +712,9 @@ const Charts = {
             modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
         };
 
-        this._smartPlot(elementId, traces, layout, config);
+        this._smartPlot(elementId, traces, layout, config).then(() => {
+            this._attachDynamicTitle(elementId, historyData.symbol, null);
+        });
     },
 
     /**

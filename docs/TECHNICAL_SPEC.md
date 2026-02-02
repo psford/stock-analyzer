@@ -191,6 +191,8 @@ AggregatedStockDataService (orchestrator)
 - Historical data: 1 hour
 - Search results: 24 hours
 
+**Cache invalidation:** Per-symbol `CancellationTokenSource` tokens ensure ALL cache entries (period-based and custom date range) are evicted when `InvalidateCache(symbol)` is called. Prevents stale API fallback results from blocking subsequent DB queries after background backfill completes.
+
 **Rate Limiting:** Each provider tracks its own rate limits. When limits are approached, requests automatically fall through to the next provider.
 
 **Configuration:**
@@ -1157,6 +1159,7 @@ const API = {
 - Portfolio chart for combined view
 - Responsive layout
 - Theme-aware colors (light/dark mode)
+- Dynamic chart title: updates to reflect visible date range on scroll/zoom via `plotly_relayout` listener (`_attachDynamicTitle` method). Title DOM is updated directly (no Plotly.relayout loop).
 
 **storage.js** - LocalStorage watchlist persistence:
 - Privacy-first client-side storage (no PII sent to server)
@@ -1225,7 +1228,7 @@ Results sorted by score descending, then alphabetically for ties.
 - Escape: Dismiss pinned bubble or cancel active drag
 - Supports both price charts (`dataType: 'price'`) and portfolio percent-change charts (`dataType: 'percent'`)
 - Comparison mode shows both stocks' returns with colored labels
-- `onRangeExtend` callback enables fetching additional historical data when user scrolls past data bounds (right edge clamped to last data point — no future dates)
+- `onRangeExtend` callback enables fetching additional historical data when user scrolls past data bounds (right edge clamped to last data point — no future dates). After extension completes, auto-retries if visible range still extends past data AND data actually grew (prevents infinite loops).
 - Binary search (O(log n)) for nearest data point lookup
 - Coordinate conversion via Plotly's `xaxis.p2c()` / `xaxis.d2p()` with linear interpolation fallback
 - Attached in `app.js` (stock charts) and `watchlist.js` (portfolio charts)
