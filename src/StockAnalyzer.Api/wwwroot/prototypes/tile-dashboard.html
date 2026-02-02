@@ -1,0 +1,1386 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tile Dashboard Prototype — Stock Analyzer</title>
+
+    <!-- GridStack.js v12 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@12/dist/gridstack.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/gridstack@12/dist/gridstack-all.min.js"></script>
+
+    <!-- Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f9fafb; color: #111827;
+            min-height: 100vh; display: flex; flex-direction: column;
+            transition: background-color 0.2s, color 0.2s;
+        }
+        html.dark body { background: #111827; color: #f9fafb; }
+
+        /* Header */
+        .app-header {
+            background: #fff; border-bottom: 1px solid #e5e7eb;
+            padding: 0.75rem 1.5rem; display: flex; align-items: center;
+            justify-content: space-between; flex-shrink: 0; z-index: 20;
+            transition: background-color 0.2s, border-color 0.2s;
+        }
+        html.dark .app-header { background: #1f2937; border-bottom-color: #374151; }
+        .app-header h1 { font-size: 1.25rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem; }
+        .header-controls { display: flex; align-items: center; gap: 0.5rem; }
+        .header-btn {
+            padding: 0.5rem; border-radius: 0.5rem; background: #f3f4f6; border: none;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            transition: background-color 0.15s; color: #4b5563;
+        }
+        .header-btn:hover { background: #e5e7eb; }
+        html.dark .header-btn { background: #374151; color: #d1d5db; }
+        html.dark .header-btn:hover { background: #4b5563; }
+
+        /* Search Bar */
+        .mock-search {
+            background: #fff; border: 1px solid #e5e7eb; border-radius: 0.5rem;
+            padding: 1rem 1.5rem; margin: 1rem 1.5rem 0.5rem;
+            display: flex; align-items: flex-start; gap: 0.5rem;
+            transition: background-color 0.2s, border-color 0.2s;
+        }
+        html.dark .mock-search { background: #1f2937; border-color: #374151; }
+        .search-bar-content {
+            flex: 1; display: flex; flex-direction: column; gap: 0.75rem;
+            transition: max-height 0.3s ease, opacity 0.2s ease; overflow: hidden;
+        }
+        .mock-search.collapsed .search-bar-content { max-height: 0; opacity: 0; margin: 0; }
+        .mock-search.collapsed { padding: 0.5rem 1rem; align-items: center; }
+        .mock-search.collapsed #search-collapse-btn svg { transform: rotate(180deg); }
+        .search-row { display: flex; align-items: flex-end; gap: 0.75rem; flex-wrap: wrap; }
+        .search-field { display: flex; flex-direction: column; gap: 0.25rem; }
+        .search-field-wide { flex: 1; min-width: 200px; }
+        .mock-label { font-size: 0.7rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 500; }
+        html.dark .mock-label { color: #9ca3af; }
+        .mock-search input, .mock-search select {
+            padding: 0.5rem 0.75rem; border: 1px solid #d1d5db; border-radius: 0.375rem;
+            font-size: 0.875rem; background: #fff; color: #111827;
+            transition: border-color 0.15s, background-color 0.2s, color 0.2s;
+        }
+        html.dark .mock-search input, html.dark .mock-search select { background: #111827; border-color: #4b5563; color: #f9fafb; }
+        .mock-search input:focus, .mock-search select:focus { outline: none; border-color: #3b82f6; }
+        .mock-btn { padding: 0.5rem 1rem; border-radius: 0.375rem; border: none; font-size: 0.875rem; font-weight: 500; cursor: pointer; }
+        .mock-btn-primary { background: #3b82f6; color: #fff; }
+        .mock-btn-primary:hover { background: #2563eb; }
+        .mock-btn-secondary { background: #e5e7eb; color: #374151; }
+        .mock-btn-secondary:hover { background: #d1d5db; }
+        html.dark .mock-btn-secondary { background: #374151; color: #d1d5db; }
+        html.dark .mock-btn-secondary:hover { background: #4b5563; }
+        .search-checks { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+        .search-checks label {
+            display: flex; align-items: center; gap: 0.3rem; font-size: 0.8125rem; color: #374151; cursor: pointer;
+        }
+        html.dark .search-checks label { color: #d1d5db; }
+        .search-checks input[type="checkbox"] { width: 0.9rem; height: 0.9rem; accent-color: #3b82f6; cursor: pointer; }
+        .search-indicator-label { font-size: 0.8125rem; color: #6b7280; font-weight: 500; margin-right: 0.25rem; }
+        html.dark .search-indicator-label { color: #9ca3af; }
+        .quick-compare-btns { display: flex; gap: 0.375rem; flex-wrap: wrap; }
+        .quick-compare-btn {
+            padding: 0.3rem 0.6rem; border-radius: 0.375rem; font-size: 0.75rem; font-weight: 500;
+            background: #374151; color: #f9fafb; border: none; cursor: pointer;
+            transition: background-color 0.15s;
+        }
+        .quick-compare-btn:hover { background: #4b5563; }
+        html.dark .quick-compare-btn { background: #4b5563; }
+        html.dark .quick-compare-btn:hover { background: #6b7280; }
+        .threshold-row { display: flex; align-items: center; gap: 0.5rem; }
+        .threshold-row input[type="range"] {
+            width: 120px; accent-color: #3b82f6; cursor: pointer;
+        }
+        .threshold-value { font-size: 0.8125rem; font-weight: 600; color: #111827; min-width: 2rem; }
+        html.dark .threshold-value { color: #f9fafb; }
+
+        /* Panel Dropdown */
+        .panel-dropdown-wrapper { position: relative; }
+        .panel-dropdown {
+            display: none; position: absolute; right: 0; top: calc(100% + 0.5rem);
+            width: 220px; background: #fff; border: 1px solid #e5e7eb;
+            border-radius: 0.5rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+            z-index: 50; padding: 0.5rem 0; transition: background-color 0.2s, border-color 0.2s;
+        }
+        html.dark .panel-dropdown { background: #1f2937; border-color: #374151; }
+        .panel-dropdown.open { display: block; }
+        .panel-dropdown label {
+            display: flex; align-items: center; gap: 0.5rem;
+            padding: 0.5rem 0.75rem; cursor: pointer; font-size: 0.875rem;
+        }
+        .panel-dropdown label:hover { background: #f3f4f6; }
+        html.dark .panel-dropdown label:hover { background: #374151; }
+        .panel-dropdown input[type="checkbox"] { width: 1rem; height: 1rem; accent-color: #3b82f6; }
+        .panel-dropdown-divider { border-top: 1px solid #e5e7eb; margin: 0.25rem 0; }
+        html.dark .panel-dropdown-divider { border-top-color: #374151; }
+        .panel-dropdown .reset-btn {
+            display: block; width: calc(100% - 1rem); margin: 0.25rem 0.5rem;
+            padding: 0.375rem 0.5rem; font-size: 0.8125rem; text-align: center;
+            border-radius: 0.375rem; border: 1px solid #d1d5db;
+            background: transparent; color: #6b7280; cursor: pointer;
+        }
+        .panel-dropdown .reset-btn:hover { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
+        html.dark .panel-dropdown .reset-btn { border-color: #4b5563; color: #9ca3af; }
+        html.dark .panel-dropdown .reset-btn:hover { background: rgba(220,38,38,0.15); color: #f87171; border-color: #f87171; }
+
+        /* Grid */
+        .grid-wrapper { flex: 1; padding: 0.5rem 1.5rem 1.5rem; }
+        .grid-stack {
+            min-height: 400px;
+            background-image: radial-gradient(circle, #d1d5db 1px, transparent 1px);
+            background-size: calc(100% / 12) 70px;
+            background-position: 6px 6px;
+        }
+        html.dark .grid-stack {
+            background-image: radial-gradient(circle, #374151 1px, transparent 1px);
+        }
+
+        /* Tile Card */
+        .grid-stack-item-content { height: 100% !important; padding: 6px; }
+        .tile-card {
+            height: 100%; display: flex; flex-direction: column;
+            background: #fff; border-radius: 0.5rem; border: 1px solid #e5e7eb;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05); overflow: hidden;
+            transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s;
+        }
+        html.dark .tile-card { background: #1f2937; border-color: #374151; }
+        .tile-card:hover { box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1); }
+
+        .tile-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0.375rem 0.75rem; background: #f9fafb;
+            border-bottom: 1px solid #e5e7eb; cursor: grab;
+            user-select: none; flex-shrink: 0;
+            transition: background-color 0.2s, border-color 0.2s;
+        }
+        html.dark .tile-header { background: #111827; border-bottom-color: #374151; }
+        .tile-header:active { cursor: grabbing; }
+
+        .tile-title {
+            font-size: 0.8125rem; font-weight: 600; color: #374151;
+            display: flex; align-items: center; gap: 0.375rem;
+        }
+        html.dark .tile-title { color: #d1d5db; }
+        .tile-title svg { width: 1rem; height: 1rem; opacity: 0.6; }
+
+        .tile-close {
+            width: 1.5rem; height: 1.5rem; border-radius: 0.25rem; border: none;
+            background: transparent; color: #9ca3af; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1rem; line-height: 1; transition: all 0.15s; opacity: 0;
+        }
+        .tile-card:hover .tile-close { opacity: 0.5; }
+        .tile-close:hover { opacity: 1 !important; background: #fee2e2; color: #dc2626; }
+        html.dark .tile-close:hover { background: rgba(220,38,38,0.2); color: #f87171; }
+
+        .tile-body { flex: 1; overflow: auto; padding: 0.75rem; min-height: 0; }
+
+        /* GridStack positioning fix — ensure absolute positioning works */
+        .grid-stack { position: relative !important; }
+        .grid-stack > .grid-stack-item { position: absolute !important; }
+        /* GridStack v12 sets position:fixed during drag — our !important above blocks it, so re-allow it */
+        .grid-stack > .grid-stack-item.ui-draggable-dragging { position: fixed !important; }
+
+        /* GridStack overrides */
+        .grid-stack-placeholder > .placeholder-content {
+            background: rgba(59,130,246,0.08) !important;
+            border: 2px dashed rgba(59,130,246,0.3) !important;
+            border-radius: 0.5rem;
+        }
+        html.dark .grid-stack-placeholder > .placeholder-content {
+            background: rgba(59,130,246,0.1) !important;
+            border-color: rgba(59,130,246,0.3) !important;
+        }
+        .grid-stack-item > .ui-resizable-se {
+            width: 16px !important; height: 16px !important; background: none !important;
+        }
+        .grid-stack-item > .ui-resizable-se::after {
+            content: ''; position: absolute; right: 9px; bottom: 9px;
+            width: 8px; height: 8px; border-right: 2px solid #d1d5db;
+            border-bottom: 2px solid #d1d5db; border-radius: 0 0 2px 0;
+        }
+        html.dark .grid-stack-item > .ui-resizable-se::after { border-right-color: #4b5563; border-bottom-color: #4b5563; }
+        .grid-stack-item:hover > .ui-resizable-se::after { border-right-color: #3b82f6; border-bottom-color: #3b82f6; }
+
+        /* Mock content styles */
+        .mock-chart { width: 100%; height: 100%; min-height: 150px; }
+        .mock-metric { display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #f3f4f6; font-size: 0.8125rem; }
+        html.dark .mock-metric { border-bottom-color: #374151; }
+        .mock-metric:last-child { border-bottom: none; }
+        .mock-metric-label { color: #6b7280; }
+        html.dark .mock-metric-label { color: #9ca3af; }
+        .mock-metric-value { font-weight: 600; color: #111827; }
+        html.dark .mock-metric-value { color: #f9fafb; }
+        .mock-bio-header { font-size: 1.125rem; font-weight: 700; margin-bottom: 0.25rem; }
+        .mock-bio-subtitle { font-size: 0.8125rem; color: #6b7280; margin-bottom: 0.75rem; }
+        html.dark .mock-bio-subtitle { color: #9ca3af; }
+        .mock-bio-text { font-size: 0.875rem; line-height: 1.6; color: #374151; }
+        html.dark .mock-bio-text { color: #d1d5db; }
+        .mock-move-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.375rem 0; font-size: 0.8125rem; border-bottom: 1px solid #f3f4f6; }
+        html.dark .mock-move-item { border-bottom-color: #374151; }
+        .mock-move-item:last-child { border-bottom: none; }
+        .mock-move-date { color: #6b7280; min-width: 5rem; }
+        html.dark .mock-move-date { color: #9ca3af; }
+        .mock-move-badge { padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+        .mock-move-up { background: #dcfce7; color: #16a34a; }
+        html.dark .mock-move-up { background: rgba(22,163,74,0.15); color: #4ade80; }
+        .mock-move-down { background: #fee2e2; color: #dc2626; }
+        html.dark .mock-move-down { background: rgba(220,38,38,0.15); color: #f87171; }
+        .mock-news-item { padding: 0.5rem 0; border-bottom: 1px solid #f3f4f6; }
+        html.dark .mock-news-item { border-bottom-color: #374151; }
+        .mock-news-item:last-child { border-bottom: none; }
+        .mock-news-title { font-size: 0.875rem; font-weight: 600; color: #3b82f6; margin-bottom: 0.25rem; }
+        .mock-news-summary { font-size: 0.8125rem; color: #6b7280; line-height: 1.4; }
+        html.dark .mock-news-summary { color: #9ca3af; }
+        .mock-news-meta { font-size: 0.75rem; color: #9ca3af; margin-top: 0.25rem; }
+        .mock-watchlist-item { display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0.25rem; border-bottom: 1px solid #f3f4f6; cursor: pointer; border-radius: 0.25rem; }
+        html.dark .mock-watchlist-item { border-bottom-color: #374151; }
+        .mock-watchlist-item:hover { background: #f3f4f6; }
+        html.dark .mock-watchlist-item:hover { background: #374151; }
+        .mock-watchlist-ticker { font-weight: 700; font-size: 0.875rem; }
+        .mock-watchlist-name { font-size: 0.75rem; color: #6b7280; }
+        html.dark .mock-watchlist-name { color: #9ca3af; }
+        .mock-watchlist-price { text-align: right; }
+        .mock-watchlist-pct { font-size: 0.75rem; font-weight: 600; }
+        .perf-positive { color: #16a34a; }
+        html.dark .perf-positive { color: #4ade80; }
+        .perf-negative { color: #dc2626; }
+        html.dark .perf-negative { color: #f87171; }
+
+        .app-footer {
+            background: #fff; border-top: 1px solid #e5e7eb; padding: 0.75rem 1.5rem;
+            text-align: center; font-size: 0.75rem; color: #9ca3af; flex-shrink: 0;
+        }
+        html.dark .app-footer { background: #1f2937; border-top-color: #374151; }
+
+        /* ========== PHYSICS ENGINE CSS ========== */
+
+        /* Spring transition for vertical tile movements and size changes.
+           Horizontal (left) is handled by MutationObserver FLIP animation in JS
+           because GridStack v12 sets left via generated stylesheet attribute selectors
+           ([gs-x="N"]{left:X%}) which don't trigger CSS transitions.
+           Apply when grid-stack-animate present (normal) AND during active drag
+           (GridStack may remove grid-stack-animate during drag internally) */
+        .grid-stack-animate > .grid-stack-item:not(.tile-dragging):not(.tile-just-dropped),
+        .grid-stack.drag-active > .grid-stack-item:not(.tile-dragging):not(.tile-just-dropped) {
+            transition: top 0.38s cubic-bezier(0.25, 1.1, 0.5, 1),
+                        width 0.35s cubic-bezier(0.22, 0.8, 0.5, 1),
+                        height 0.35s cubic-bezier(0.22, 0.8, 0.5, 1) !important;
+        }
+
+        /* Lift effect: tile being dragged */
+        .grid-stack-item.tile-dragging {
+            z-index: 100 !important;
+            transition: none !important;
+        }
+        .tile-dragging .tile-card {
+            transform: scale(1.025);
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.2), 0 12px 24px -8px rgba(0,0,0,0.12);
+            opacity: 0.92;
+            border-color: #3b82f6;
+            transition: transform 0.15s cubic-bezier(0.34, 1.4, 0.64, 1),
+                        box-shadow 0.15s ease-out,
+                        opacity 0.15s ease-out,
+                        border-color 0.15s ease-out;
+        }
+        html.dark .tile-dragging .tile-card {
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5), 0 12px 24px -8px rgba(0,0,0,0.3);
+            border-color: #60a5fa;
+        }
+
+        /* Snap flash: tile just dropped into position */
+        .grid-stack-animate > .grid-stack-item.tile-just-dropped {
+            transition: none !important; /* suppress left/top animation during fixed→absolute switch */
+        }
+        .tile-just-dropped .tile-card {
+            animation: snapSettle 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        @keyframes snapSettle {
+            0% { transform: scale(1.02); box-shadow: 0 0 0 3px rgba(59,130,246,0.4), 0 8px 16px -4px rgba(0,0,0,0.1); }
+            50% { transform: scale(0.995); }
+            100% { transform: scale(1); box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+        }
+
+        /* Placeholder entrance animation */
+        .grid-stack-placeholder > .placeholder-content {
+            animation: placeholderReveal 0.2s ease-out !important;
+        }
+        @keyframes placeholderReveal {
+            0% { transform: scale(0.92); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        /* Grid lines glow during drag */
+        .grid-stack.drag-active {
+            background-image: radial-gradient(circle, rgba(59,130,246,0.35) 1.5px, transparent 1.5px);
+        }
+        html.dark .grid-stack.drag-active {
+            background-image: radial-gradient(circle, rgba(96,165,250,0.25) 1.5px, transparent 1.5px);
+        }
+
+        /* Locked tile styling */
+        .tile-locked .tile-header { cursor: default !important; }
+        .tile-locked .tile-card {
+            border-style: dashed;
+            border-color: #d1d5db;
+        }
+        html.dark .tile-locked .tile-card {
+            border-color: #4b5563;
+        }
+        .tile-locked .tile-card::after {
+            content: '';
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: repeating-linear-gradient(
+                -45deg, transparent, transparent 8px,
+                rgba(0,0,0,0.015) 8px, rgba(0,0,0,0.015) 9px
+            );
+            pointer-events: none; border-radius: 0.5rem;
+        }
+        html.dark .tile-locked .tile-card::after {
+            background: repeating-linear-gradient(
+                -45deg, transparent, transparent 8px,
+                rgba(255,255,255,0.02) 8px, rgba(255,255,255,0.02) 9px
+            );
+        }
+
+        /* Lock button in tile header */
+        .tile-lock {
+            width: 1.5rem; height: 1.5rem; border-radius: 0.25rem; border: none;
+            background: transparent; color: #9ca3af; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.75rem; line-height: 1; transition: all 0.15s; opacity: 0;
+            margin-right: 0.25rem;
+        }
+        .tile-card:hover .tile-lock { opacity: 0.4; }
+        .tile-lock:hover { opacity: 1 !important; background: #f3f4f6; color: #3b82f6; }
+        html.dark .tile-lock:hover { background: #374151; color: #60a5fa; }
+        .tile-locked .tile-lock { opacity: 0.7 !important; color: #3b82f6; }
+        html.dark .tile-locked .tile-lock { color: #60a5fa; }
+
+        /* Audio toggle in header */
+        .audio-enabled { color: #3b82f6 !important; background: #eff6ff !important; }
+        html.dark .audio-enabled { color: #60a5fa !important; background: #1e3a5f !important; }
+
+        @media (max-width: 768px) {
+            .grid-wrapper { padding: 0.5rem; }
+            .mock-search { margin: 0.5rem; padding: 0.75rem; }
+            .app-header { padding: 0.5rem 1rem; }
+        }
+    </style>
+</head>
+<body>
+    <header class="app-header">
+        <h1>
+            <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:#3b82f6">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+            </svg>
+            Stock Analyzer
+            <span style="font-size:0.7rem; font-weight:400; color:#9ca3af; margin-left:0.5rem;">Tile Dashboard Prototype</span>
+        </h1>
+        <div class="header-controls">
+            <div class="panel-dropdown-wrapper">
+                <button id="panel-toggle-btn" class="header-btn" title="Toggle panels">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"/>
+                    </svg>
+                </button>
+                <div id="panel-dropdown" class="panel-dropdown"></div>
+            </div>
+            <button id="audio-toggle" class="header-btn" title="Toggle snap sounds (off)">
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
+                </svg>
+            </button>
+            <button id="dark-mode-toggle" class="header-btn" title="Toggle dark mode">
+                <svg id="sun-icon" width="20" height="20" fill="currentColor" viewBox="0 0 20 20" style="display:none; color:#eab308;">
+                    <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/>
+                </svg>
+                <svg id="moon-icon" width="20" height="20" fill="currentColor" viewBox="0 0 20 20" style="color:#4b5563;">
+                    <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <div class="mock-search" id="search-bar">
+        <div class="search-bar-content" id="search-bar-content">
+            <!-- Row 1: Ticker, Compare, Chart Type, Analyze/Clear -->
+            <div class="search-row">
+                <div class="search-field search-field-wide">
+                    <div class="mock-label">Search by Ticker or Company Name</div>
+                    <input type="text" value="AAPL" readonly style="width:100%;">
+                </div>
+                <div class="search-field search-field-wide">
+                    <div class="mock-label">Compare to (Optional)</div>
+                    <input type="text" placeholder="Add comparison stock..." readonly style="width:100%;">
+                </div>
+                <div class="search-field">
+                    <div class="mock-label">Chart Type</div>
+                    <select style="min-width:120px;">
+                        <option>Line</option>
+                        <option>Candlestick</option>
+                        <option>OHLC</option>
+                        <option>Area</option>
+                    </select>
+                </div>
+                <button class="mock-btn mock-btn-primary">Analyze</button>
+                <button class="mock-btn mock-btn-secondary">Clear</button>
+            </div>
+
+            <!-- Row 2: Date ranges -->
+            <div class="search-row">
+                <div class="search-field">
+                    <div class="mock-label">End Date</div>
+                    <div style="display:flex; gap:0.375rem;">
+                        <select style="min-width:140px;">
+                            <option>Prior Business Day</option>
+                            <option>Today</option>
+                            <option>Custom</option>
+                        </select>
+                        <input type="text" value="01 / 30 / 2026" readonly style="width:120px;">
+                    </div>
+                </div>
+                <div class="search-field">
+                    <div class="mock-label">Start Date</div>
+                    <div style="display:flex; gap:0.375rem;">
+                        <select style="min-width:100px;">
+                            <option>1 Year</option>
+                            <option>6 Months</option>
+                            <option>3 Months</option>
+                            <option>1 Month</option>
+                            <option>YTD</option>
+                            <option>5 Years</option>
+                            <option>Custom</option>
+                        </select>
+                        <input type="text" value="01 / 31 / 2025" readonly style="width:120px;">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Row 3: SMA checkboxes -->
+            <div class="search-checks">
+                <label><input type="checkbox" checked> SMA 20</label>
+                <label><input type="checkbox" checked> SMA 50</label>
+                <label><input type="checkbox"> SMA 200</label>
+            </div>
+
+            <!-- Row 4: Technical Indicators -->
+            <div class="search-checks">
+                <span class="search-indicator-label">Technical Indicators:</span>
+                <label><input type="checkbox"> RSI (14)</label>
+                <label><input type="checkbox"> MACD</label>
+                <label><input type="checkbox"> Bollinger</label>
+                <label><input type="checkbox"> Stochastic</label>
+            </div>
+
+            <!-- Row 5: Quick Compare -->
+            <div class="search-checks">
+                <span class="search-indicator-label">Quick Compare:</span>
+                <div class="quick-compare-btns">
+                    <button class="quick-compare-btn">S&amp;P 500 (SPY)</button>
+                    <button class="quick-compare-btn">Nasdaq 100 (QQQ)</button>
+                    <button class="quick-compare-btn">Dow Jones (^DJI)</button>
+                </div>
+            </div>
+
+            <!-- Row 6: Significant Move Threshold -->
+            <div class="search-checks">
+                <span class="search-indicator-label">Significant Move Threshold:</span>
+                <div class="threshold-row">
+                    <input type="range" min="1" max="20" value="5">
+                    <span class="threshold-value">5%</span>
+                    <label style="margin-left:0.5rem;"><input type="checkbox"> Show markers on chart</label>
+                </div>
+            </div>
+        </div>
+        <button id="search-collapse-btn" class="header-btn" title="Collapse search" style="margin-left:0.5rem; flex-shrink:0; align-self:flex-start; margin-top:0.25rem;">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+        </button>
+    </div>
+
+    <!-- GridStack: tiles defined as static HTML so GridStack discovers them -->
+    <div class="grid-wrapper">
+        <div class="grid-stack" id="tile-grid">
+
+            <!-- Stock Chart -->
+            <div class="grid-stack-item" gs-id="tile-chart" gs-x="0" gs-y="0" gs-w="9" gs-h="5" gs-min-w="4" gs-min-h="3">
+                <div class="grid-stack-item-content">
+                    <div class="tile-card">
+                        <div class="tile-header">
+                            <span class="tile-title">
+                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+                                Stock Chart
+                            </span>
+                            <span><button class="tile-lock" data-tile-id="tile-chart" title="Lock position">&#x1f512;</button><button class="tile-close" data-tile-id="tile-chart" title="Close">&times;</button></span>
+                        </div>
+                        <div class="tile-body" id="tile-chart-body">
+                            <div id="mock-chart" class="mock-chart"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Watchlist -->
+            <div class="grid-stack-item" gs-id="tile-watchlist" gs-x="9" gs-y="0" gs-w="3" gs-h="5" gs-min-w="2" gs-min-h="3">
+                <div class="grid-stack-item-content">
+                    <div class="tile-card">
+                        <div class="tile-header">
+                            <span class="tile-title">
+                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/></svg>
+                                Watchlist
+                            </span>
+                            <span><button class="tile-lock" data-tile-id="tile-watchlist" title="Lock position">&#x1f512;</button><button class="tile-close" data-tile-id="tile-watchlist" title="Close">&times;</button></span>
+                        </div>
+                        <div class="tile-body" id="tile-watchlist-body">
+                            <div style="font-size:0.8125rem; font-weight:600; margin-bottom:0.5rem;">Tech Growth</div>
+                            <div class="mock-watchlist-item"><div><div class="mock-watchlist-ticker">AAPL</div><div class="mock-watchlist-name">Apple Inc.</div></div><div class="mock-watchlist-price"><div style="font-size:0.8125rem; font-weight:600;">$187.44</div><div class="mock-watchlist-pct perf-positive">+1.23%</div></div></div>
+                            <div class="mock-watchlist-item"><div><div class="mock-watchlist-ticker">MSFT</div><div class="mock-watchlist-name">Microsoft Corp.</div></div><div class="mock-watchlist-price"><div style="font-size:0.8125rem; font-weight:600;">$415.60</div><div class="mock-watchlist-pct perf-positive">+0.87%</div></div></div>
+                            <div class="mock-watchlist-item"><div><div class="mock-watchlist-ticker">NVDA</div><div class="mock-watchlist-name">NVIDIA Corp.</div></div><div class="mock-watchlist-price"><div style="font-size:0.8125rem; font-weight:600;">$878.35</div><div class="mock-watchlist-pct perf-negative">-0.45%</div></div></div>
+                            <div class="mock-watchlist-item"><div><div class="mock-watchlist-ticker">GOOGL</div><div class="mock-watchlist-name">Alphabet Inc.</div></div><div class="mock-watchlist-price"><div style="font-size:0.8125rem; font-weight:600;">$175.98</div><div class="mock-watchlist-pct perf-positive">+2.10%</div></div></div>
+                            <div class="mock-watchlist-item"><div><div class="mock-watchlist-ticker">AMZN</div><div class="mock-watchlist-name">Amazon.com</div></div><div class="mock-watchlist-price"><div style="font-size:0.8125rem; font-weight:600;">$198.62</div><div class="mock-watchlist-pct perf-positive">+0.34%</div></div></div>
+                            <div class="mock-watchlist-item"><div><div class="mock-watchlist-ticker">META</div><div class="mock-watchlist-name">Meta Platforms</div></div><div class="mock-watchlist-price"><div style="font-size:0.8125rem; font-weight:600;">$502.30</div><div class="mock-watchlist-pct perf-negative">-1.12%</div></div></div>
+                            <div class="mock-watchlist-item"><div><div class="mock-watchlist-ticker">TSLA</div><div class="mock-watchlist-name">Tesla Inc.</div></div><div class="mock-watchlist-price"><div style="font-size:0.8125rem; font-weight:600;">$248.42</div><div class="mock-watchlist-pct perf-positive">+3.45%</div></div></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Company Bio -->
+            <div class="grid-stack-item" gs-id="tile-bio" gs-x="0" gs-y="5" gs-w="6" gs-h="3" gs-min-w="2" gs-min-h="2">
+                <div class="grid-stack-item-content">
+                    <div class="tile-card">
+                        <div class="tile-header">
+                            <span class="tile-title">
+                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                Company Info
+                            </span>
+                            <span><button class="tile-lock" data-tile-id="tile-bio" title="Lock position">&#x1f512;</button><button class="tile-close" data-tile-id="tile-bio" title="Close">&times;</button></span>
+                        </div>
+                        <div class="tile-body">
+                            <div class="mock-bio-header">Apple Inc. (AAPL)</div>
+                            <div class="mock-bio-subtitle">Technology &bull; Consumer Electronics &bull; NASDAQ</div>
+                            <div class="mock-bio-text">Apple Inc. designs, manufactures, and markets smartphones, personal computers, tablets, wearables, and accessories worldwide. The company offers iPhone, Mac, iPad, and wearables, home and accessories. It also provides AppleCare support and cloud services, and operates various platforms including the App Store. Apple was incorporated in 1977 and is headquartered in Cupertino, California.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Key Metrics -->
+            <div class="grid-stack-item" gs-id="tile-metrics" gs-x="6" gs-y="5" gs-w="3" gs-h="3" gs-min-w="2" gs-min-h="2">
+                <div class="grid-stack-item-content">
+                    <div class="tile-card">
+                        <div class="tile-header">
+                            <span class="tile-title">
+                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3v-6m-3 6v-1M3 3h18v18H3z"/></svg>
+                                Key Metrics
+                            </span>
+                            <span><button class="tile-lock" data-tile-id="tile-metrics" title="Lock position">&#x1f512;</button><button class="tile-close" data-tile-id="tile-metrics" title="Close">&times;</button></span>
+                        </div>
+                        <div class="tile-body">
+                            <div class="mock-metric"><span class="mock-metric-label">Market Cap</span><span class="mock-metric-value">$2.89T</span></div>
+                            <div class="mock-metric"><span class="mock-metric-label">P/E Ratio</span><span class="mock-metric-value">30.42</span></div>
+                            <div class="mock-metric"><span class="mock-metric-label">EPS (TTM)</span><span class="mock-metric-value">$6.16</span></div>
+                            <div class="mock-metric"><span class="mock-metric-label">Dividend Yield</span><span class="mock-metric-value">0.51%</span></div>
+                            <div class="mock-metric"><span class="mock-metric-label">52W High</span><span class="mock-metric-value">$199.62</span></div>
+                            <div class="mock-metric"><span class="mock-metric-label">52W Low</span><span class="mock-metric-value">$164.08</span></div>
+                            <div class="mock-metric"><span class="mock-metric-label">Avg Volume</span><span class="mock-metric-value">54.2M</span></div>
+                            <div class="mock-metric"><span class="mock-metric-label">Beta</span><span class="mock-metric-value">1.24</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Performance -->
+            <div class="grid-stack-item" gs-id="tile-performance" gs-x="9" gs-y="5" gs-w="3" gs-h="3" gs-min-w="2" gs-min-h="2">
+                <div class="grid-stack-item-content">
+                    <div class="tile-card">
+                        <div class="tile-header">
+                            <span class="tile-title">
+                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6m6 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0h6m2 0v-3a2 2 0 012-2h2a2 2 0 012 2v3"/></svg>
+                                Performance
+                            </span>
+                            <span><button class="tile-lock" data-tile-id="tile-performance" title="Lock position">&#x1f512;</button><button class="tile-close" data-tile-id="tile-performance" title="Close">&times;</button></span>
+                        </div>
+                        <div class="tile-body">
+                            <div class="mock-metric"><span class="mock-metric-label">1 Day</span><span class="mock-metric-value perf-positive">+1.23%</span></div>
+                            <div class="mock-metric"><span class="mock-metric-label">1 Week</span><span class="mock-metric-value perf-positive">+3.45%</span></div>
+                            <div class="mock-metric"><span class="mock-metric-label">1 Month</span><span class="mock-metric-value perf-negative">-2.18%</span></div>
+                            <div class="mock-metric"><span class="mock-metric-label">3 Months</span><span class="mock-metric-value perf-positive">+8.92%</span></div>
+                            <div class="mock-metric"><span class="mock-metric-label">6 Months</span><span class="mock-metric-value perf-positive">+15.67%</span></div>
+                            <div class="mock-metric"><span class="mock-metric-label">YTD</span><span class="mock-metric-value perf-positive">+22.34%</span></div>
+                            <div class="mock-metric"><span class="mock-metric-label">1 Year</span><span class="mock-metric-value perf-positive">+31.08%</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Significant Moves -->
+            <div class="grid-stack-item" gs-id="tile-moves" gs-x="0" gs-y="8" gs-w="6" gs-h="3" gs-min-w="2" gs-min-h="2">
+                <div class="grid-stack-item-content">
+                    <div class="tile-card">
+                        <div class="tile-header">
+                            <span class="tile-title">
+                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                                Significant Moves
+                            </span>
+                            <span><button class="tile-lock" data-tile-id="tile-moves" title="Lock position">&#x1f512;</button><button class="tile-close" data-tile-id="tile-moves" title="Close">&times;</button></span>
+                        </div>
+                        <div class="tile-body">
+                            <div class="mock-move-item"><span class="mock-move-date">Jan 24, 2026</span><span class="mock-move-badge mock-move-up">+7.2%</span></div>
+                            <div class="mock-move-item"><span class="mock-move-date">Jan 15, 2026</span><span class="mock-move-badge mock-move-down">-5.8%</span></div>
+                            <div class="mock-move-item"><span class="mock-move-date">Dec 20, 2025</span><span class="mock-move-badge mock-move-up">+6.1%</span></div>
+                            <div class="mock-move-item"><span class="mock-move-date">Nov 05, 2025</span><span class="mock-move-badge mock-move-down">-8.3%</span></div>
+                            <div class="mock-move-item"><span class="mock-move-date">Oct 28, 2025</span><span class="mock-move-badge mock-move-up">+5.4%</span></div>
+                            <div class="mock-move-item"><span class="mock-move-date">Sep 10, 2025</span><span class="mock-move-badge mock-move-up">+9.7%</span></div>
+                            <div class="mock-move-item"><span class="mock-move-date">Aug 22, 2025</span><span class="mock-move-badge mock-move-down">-6.5%</span></div>
+                            <div class="mock-move-item"><span class="mock-move-date">Jul 30, 2025</span><span class="mock-move-badge mock-move-up">+5.1%</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- News -->
+            <div class="grid-stack-item" gs-id="tile-news" gs-x="6" gs-y="8" gs-w="6" gs-h="3" gs-min-w="2" gs-min-h="2">
+                <div class="grid-stack-item-content">
+                    <div class="tile-card">
+                        <div class="tile-header">
+                            <span class="tile-title">
+                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"/></svg>
+                                Recent News
+                            </span>
+                            <span><button class="tile-lock" data-tile-id="tile-news" title="Lock position">&#x1f512;</button><button class="tile-close" data-tile-id="tile-news" title="Close">&times;</button></span>
+                        </div>
+                        <div class="tile-body">
+                            <div class="mock-news-item"><div class="mock-news-title">Apple Reports Record Q1 Earnings, Beats Estimates</div><div class="mock-news-summary">Apple posted revenue of $124.3B, exceeding analyst expectations of $118.2B driven by strong iPhone and Services growth.</div><div class="mock-news-meta">Reuters &bull; 2h ago</div></div>
+                            <div class="mock-news-item"><div class="mock-news-title">Vision Pro Sales Surge in Enterprise Market</div><div class="mock-news-summary">Enterprise adoption of Apple Vision Pro accelerates with 40% QoQ growth in B2B sales.</div><div class="mock-news-meta">Bloomberg &bull; 5h ago</div></div>
+                            <div class="mock-news-item"><div class="mock-news-title">Apple Expands AI Features in iOS 19 Beta</div><div class="mock-news-summary">New on-device AI capabilities for Siri, Photos, and Mail enter beta testing ahead of WWDC.</div><div class="mock-news-meta">TechCrunch &bull; 8h ago</div></div>
+                            <div class="mock-news-item"><div class="mock-news-title">Analyst Upgrades AAPL to Strong Buy</div><div class="mock-news-summary">Morgan Stanley raises price target to $220 citing Services revenue acceleration.</div><div class="mock-news-meta">MarketWatch &bull; 1d ago</div></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <footer class="app-footer">Tile Dashboard Prototype &mdash; GridStack.js v12 &mdash; Stock Analyzer</footer>
+
+    <script>
+    (function() {
+        'use strict';
+
+        const TILE_IDS = ['tile-chart', 'tile-watchlist', 'tile-bio', 'tile-metrics', 'tile-performance', 'tile-moves', 'tile-news'];
+        const TILE_NAMES = { 'tile-chart': 'Stock Chart', 'tile-watchlist': 'Watchlist', 'tile-bio': 'Company Info', 'tile-metrics': 'Key Metrics', 'tile-performance': 'Performance', 'tile-moves': 'Significant Moves', 'tile-news': 'Recent News' };
+        const STORAGE_KEY = 'stockanalyzer_tile_layout_proto';
+        const LAYOUT_VERSION = 3; // Bump to invalidate stale saved layouts
+
+        let grid = null;
+        let tileVisibility = {};
+        let chartResizeObserver = null;
+
+        // Store inner content + grid options for each tile (for reopen)
+        const tileContentCache = {};
+        const tileGridOpts = {};
+
+        // ========== INIT ==========
+
+        function init() {
+            // Cache tile content and grid options before GridStack modifies anything
+            TILE_IDS.forEach(id => {
+                const el = document.querySelector(`[gs-id="${id}"]`);
+                if (el) {
+                    const contentDiv = el.querySelector('.grid-stack-item-content');
+                    tileContentCache[id] = contentDiv ? contentDiv.innerHTML : '';
+                    tileGridOpts[id] = {
+                        w: parseInt(el.getAttribute('gs-w')) || 3,
+                        h: parseInt(el.getAttribute('gs-h')) || 3,
+                        minW: parseInt(el.getAttribute('gs-min-w')) || 2,
+                        minH: parseInt(el.getAttribute('gs-min-h')) || 2,
+                    };
+                }
+            });
+
+            // Init visibility
+            TILE_IDS.forEach(id => { tileVisibility[id] = true; });
+
+            // Init GridStack (discovers static HTML items)
+            grid = GridStack.init({
+                column: 12,
+                cellHeight: 70,
+                margin: 12,
+                animate: true,
+                float: false,
+                handle: '.tile-header',
+                resizable: { handles: 'e, se, s, w, sw' },
+                columnOpts: {
+                    breakpointForWindow: true,
+                    breakpoints: [{ w: 768, c: 1 }]
+                }
+            }, '#tile-grid');
+
+            // Restore saved layout if exists (only if version matches)
+            restoreLayout();
+
+            // Events
+            grid.on('change', saveLayout);
+
+            // Close button delegation
+            document.getElementById('tile-grid').addEventListener('click', (e) => {
+                const btn = e.target.closest('.tile-close');
+                if (btn) {
+                    e.stopPropagation();
+                    closeTile(btn.dataset.tileId);
+                }
+            });
+
+            setupPanelDropdown();
+            updatePanelDropdown();
+            initMockChart();
+            initDarkMode();
+        }
+
+        // ========== LAYOUT PERSISTENCE ==========
+
+        function saveLayout() {
+            if (!grid) return;
+            const items = grid.getGridItems().map(el => {
+                const node = el.gridstackNode;
+                return { id: node.id, x: node.x, y: node.y, w: node.w, h: node.h };
+            });
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                version: LAYOUT_VERSION, tiles: items, visibility: { ...tileVisibility }
+            }));
+        }
+
+        function loadSavedLayout() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                if (!raw) return null;
+                const parsed = JSON.parse(raw);
+                if (parsed.version !== LAYOUT_VERSION) {
+                    localStorage.removeItem(STORAGE_KEY);
+                    return null;
+                }
+                return parsed;
+            } catch { return null; }
+        }
+
+        function restoreLayout() {
+            const saved = loadSavedLayout();
+            if (!saved) return;
+
+            // Apply saved positions
+            grid.batchUpdate();
+            saved.tiles.forEach(t => {
+                const el = document.querySelector(`[gs-id="${t.id}"]`);
+                if (el) grid.update(el, { x: t.x, y: t.y, w: t.w, h: t.h });
+            });
+            grid.batchUpdate(false);
+
+            // Remove tiles that were hidden
+            if (saved.visibility) {
+                TILE_IDS.forEach(id => {
+                    if (saved.visibility[id] === false) {
+                        const el = document.querySelector(`[gs-id="${id}"]`);
+                        if (el) grid.removeWidget(el, true, false);
+                        tileVisibility[id] = false;
+                    }
+                });
+            }
+        }
+
+        function resetLayout() {
+            localStorage.removeItem(STORAGE_KEY);
+            location.reload();
+        }
+
+        // ========== CLOSE / REOPEN ==========
+
+        function closeTile(tileId) {
+            const el = document.querySelector(`[gs-id="${tileId}"]`);
+            if (!el || !grid) return;
+            if (tileId === 'tile-chart' && chartResizeObserver) {
+                chartResizeObserver.disconnect();
+                chartResizeObserver = null;
+            }
+            grid.removeWidget(el, true, false);
+            tileVisibility[tileId] = false;
+            updatePanelDropdown();
+            saveLayout();
+        }
+
+        function reopenTile(tileId) {
+            const content = tileContentCache[tileId];
+            const opts = tileGridOpts[tileId];
+            if (content === undefined || !opts || !grid) return;
+
+            // Build a fresh grid-stack-item element
+            const wrapper = document.createElement('div');
+            wrapper.classList.add('grid-stack-item');
+            wrapper.setAttribute('gs-id', tileId);
+            wrapper.setAttribute('gs-min-w', opts.minW);
+            wrapper.setAttribute('gs-min-h', opts.minH);
+
+            const contentDiv = document.createElement('div');
+            contentDiv.classList.add('grid-stack-item-content');
+            contentDiv.innerHTML = content;
+            wrapper.appendChild(contentDiv);
+
+            // Let GridStack place it (auto-position)
+            grid.addWidget(wrapper, { w: opts.w, h: opts.h, autoPosition: true });
+            tileVisibility[tileId] = true;
+            updatePanelDropdown();
+            saveLayout();
+
+            // Re-init chart if needed
+            if (tileId === 'tile-chart') {
+                setTimeout(initMockChart, 200);
+            }
+        }
+
+        // ========== PANEL DROPDOWN ==========
+
+        function setupPanelDropdown() {
+            const btn = document.getElementById('panel-toggle-btn');
+            const dropdown = document.getElementById('panel-dropdown');
+            btn.addEventListener('click', (e) => { e.stopPropagation(); dropdown.classList.toggle('open'); });
+            document.addEventListener('click', () => dropdown.classList.remove('open'));
+            dropdown.addEventListener('click', (e) => e.stopPropagation());
+        }
+
+        function updatePanelDropdown() {
+            const dropdown = document.getElementById('panel-dropdown');
+            dropdown.innerHTML = TILE_IDS.map(id => `
+                <label>
+                    <input type="checkbox" data-tile-id="${id}" ${tileVisibility[id] ? 'checked' : ''}>
+                    ${TILE_NAMES[id]}
+                </label>
+            `).join('') +
+            '<div class="panel-dropdown-divider"></div>' +
+            '<button class="reset-btn" id="reset-layout-btn">Reset Layout</button>';
+
+            dropdown.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                cb.addEventListener('change', (e) => {
+                    if (e.target.checked) reopenTile(e.target.dataset.tileId);
+                    else closeTile(e.target.dataset.tileId);
+                });
+            });
+            const resetBtn = document.getElementById('reset-layout-btn');
+            if (resetBtn) resetBtn.addEventListener('click', resetLayout);
+        }
+
+        // ========== MOCK CHART ==========
+
+        function getChartTheme(isDark) {
+            return isDark
+                ? { plotBg: '#1f2937', paperBg: '#1f2937', gridColor: '#374151', textColor: '#d1d5db' }
+                : { plotBg: '#fff', paperBg: '#fff', gridColor: '#e5e7eb', textColor: '#374151' };
+        }
+
+        function initMockChart() {
+            const chartEl = document.getElementById('mock-chart');
+            if (!chartEl) return;
+
+            const isDark = document.documentElement.classList.contains('dark');
+            const colors = getChartTheme(isDark);
+
+            // Generate mock price data
+            const dates = [], prices = [];
+            let price = 170;
+            const start = new Date('2025-06-01');
+            for (let i = 0; i < 180; i++) {
+                const d = new Date(start); d.setDate(d.getDate() + i);
+                if (d.getDay() === 0 || d.getDay() === 6) continue;
+                dates.push(d.toISOString().split('T')[0]);
+                price += (Math.random() - 0.48) * 3;
+                prices.push(Math.round(price * 100) / 100);
+            }
+
+            Plotly.newPlot(chartEl, [{
+                x: dates, y: prices, type: 'scatter', mode: 'lines',
+                line: { color: '#3b82f6', width: 1.5 },
+                fill: 'tonexty',
+                fillcolor: isDark ? 'rgba(59,130,246,0.08)' : 'rgba(59,130,246,0.05)',
+                name: 'AAPL'
+            }], {
+                autosize: true,
+                margin: { t: 30, r: 15, b: 30, l: 50 },
+                title: { text: 'AAPL \u2014 Jun 2025 \u2013 Feb 2026', font: { size: 13 } },
+                xaxis: { gridcolor: colors.gridColor, linecolor: colors.gridColor, tickfont: { color: colors.textColor, size: 10 } },
+                yaxis: { gridcolor: colors.gridColor, linecolor: colors.gridColor, tickfont: { color: colors.textColor, size: 10 }, tickprefix: '$' },
+                plot_bgcolor: colors.plotBg, paper_bgcolor: colors.paperBg,
+                font: { color: colors.textColor }, showlegend: false
+            }, { responsive: true, displayModeBar: false });
+
+            // ResizeObserver for chart tile
+            if (chartResizeObserver) chartResizeObserver.disconnect();
+            const tileBody = document.getElementById('tile-chart-body');
+            if (tileBody) {
+                chartResizeObserver = new ResizeObserver(() => {
+                    if (chartEl && chartEl.data) Plotly.Plots.resize(chartEl);
+                });
+                chartResizeObserver.observe(tileBody);
+            }
+        }
+
+        // ========== DARK MODE ==========
+
+        function initDarkMode() {
+            const toggle = document.getElementById('dark-mode-toggle');
+            const sunIcon = document.getElementById('sun-icon');
+            const moonIcon = document.getElementById('moon-icon');
+
+            if (localStorage.getItem('stockanalyzer_dark_mode_proto') === 'dark') {
+                document.documentElement.classList.add('dark');
+                sunIcon.style.display = 'block'; moonIcon.style.display = 'none';
+            }
+
+            toggle.addEventListener('click', () => {
+                const isDark = document.documentElement.classList.toggle('dark');
+                sunIcon.style.display = isDark ? 'block' : 'none';
+                moonIcon.style.display = isDark ? 'none' : 'block';
+                localStorage.setItem('stockanalyzer_dark_mode_proto', isDark ? 'dark' : 'light');
+
+                const chartEl = document.getElementById('mock-chart');
+                if (chartEl && chartEl.data) {
+                    const c = getChartTheme(isDark);
+                    Plotly.relayout(chartEl, {
+                        'plot_bgcolor': c.plotBg, 'paper_bgcolor': c.paperBg,
+                        'xaxis.gridcolor': c.gridColor, 'xaxis.linecolor': c.gridColor,
+                        'xaxis.tickfont.color': c.textColor,
+                        'yaxis.gridcolor': c.gridColor, 'yaxis.linecolor': c.gridColor,
+                        'yaxis.tickfont.color': c.textColor,
+                        'font.color': c.textColor
+                    });
+                    Plotly.restyle(chartEl, { fillcolor: isDark ? 'rgba(59,130,246,0.08)' : 'rgba(59,130,246,0.05)' });
+                }
+            });
+        }
+
+        // ========== TILE PHYSICS ENGINE ==========
+
+        const Physics = {
+            // Configuration
+            MAGNETIC_THRESHOLD: 50,   // px — distance within which magnetic pull activates
+            MAGNETIC_STRENGTH: 0.35,  // 0-1 — how much to pull toward snap target
+            SETTLE_MS: 400,           // ms — snap settle animation duration
+
+            // State
+            _grid: null,
+            _audioCtx: null,
+            _audioEnabled: false,
+            _lockedTiles: new Set(),
+            _lastDragPos: null,
+            _lastDragTime: null,
+            _velocity: { x: 0, y: 0 },
+
+            init(gridInstance) {
+                this._grid = gridInstance;
+                this._attachGridEvents();
+                this._attachLockEvents();
+                this._attachAudioToggle();
+            },
+
+            // ---------- GRID EVENTS ----------
+
+            _attachGridEvents() {
+                const g = this._grid;
+                g.on('dragstart', (event, el) => this._onDragStart(el));
+                g.on('drag', (event, el) => this._onDrag(el));
+                g.on('dragstop', (event, el) => this._onDragStop(el));
+                g.on('resizestart', (event, el) => this._onResizeStart(el));
+                g.on('resizestop', (event, el) => this._onResizeStop(el));
+            },
+
+            _onDragStart(el) {
+                // Lift effect
+                el.classList.add('tile-dragging');
+                el.style.willChange = 'transform';
+
+                // Glow grid dots to show snap points
+                this._grid.el.classList.add('drag-active');
+
+                // Cache placeholder reference for duration of drag
+                this._placeholder = this._grid.el.querySelector('.grid-stack-placeholder');
+
+                // Reset velocity tracking
+                this._lastDragPos = null;
+                this._lastDragTime = null;
+                this._velocity = { x: 0, y: 0 };
+                this._dropRect = null;
+
+                // Capture exact element position at pointerup — fires BEFORE GridStack cleanup
+                const captureDropPos = () => {
+                    this._dropRect = el.getBoundingClientRect();
+                    document.removeEventListener('pointerup', captureDropPos, true);
+                    document.removeEventListener('touchend', captureDropPos, true);
+                };
+                this._cleanupDropCapture = () => {
+                    document.removeEventListener('pointerup', captureDropPos, true);
+                    document.removeEventListener('touchend', captureDropPos, true);
+                };
+                document.addEventListener('pointerup', captureDropPos, true);
+                document.addEventListener('touchend', captureDropPos, true);
+
+                // MutationObserver FLIP: watch gs-x attribute changes on neighbors
+                // GridStack v12 uses generated stylesheet rules like [gs-x="3"]{left:25%}
+                // CSS transitions don't fire across attribute-selector rule changes,
+                // so we use WAAPI FLIP animations triggered by MutationObserver instead.
+                this._flipDraggedEl = el;
+                this._flipObserver = new MutationObserver((mutations) => {
+                    const cols = this._grid.opts.column || 12;
+                    const colWidth = this._grid.el.offsetWidth / cols;
+                    for (const mut of mutations) {
+                        if (mut.attributeName !== 'gs-x') continue;
+                        const tileEl = mut.target;
+                        if (tileEl === el || !tileEl.classList.contains('grid-stack-item')) continue;
+                        const oldX = parseInt(mut.oldValue) || 0;
+                        const newX = parseInt(tileEl.getAttribute('gs-x')) || 0;
+                        if (oldX === newX) continue;
+                        const dx = (oldX - newX) * colWidth;
+                        if (Math.abs(dx) > 1) {
+                            // Cancel any in-progress FLIP and accumulate offset
+                            let currentOffset = 0;
+                            if (tileEl._flipAnim && tileEl._flipAnim.playState === 'running') {
+                                try {
+                                    const ct = getComputedStyle(tileEl).transform;
+                                    if (ct && ct !== 'none') currentOffset = new DOMMatrix(ct).m41;
+                                } catch(e) {}
+                                tileEl._flipAnim.cancel();
+                            }
+                            const totalDx = dx + currentOffset;
+                            if (Math.abs(totalDx) > 1) {
+                                tileEl._flipAnim = tileEl.animate([
+                                    { transform: `translateX(${totalDx}px)` },
+                                    { transform: 'translateX(0)' }
+                                ], {
+                                    duration: 380,
+                                    easing: 'cubic-bezier(0.25, 1.1, 0.5, 1)',
+                                    fill: 'none'
+                                });
+                                tileEl._flipAnim.onfinish = () => { tileEl._flipAnim = null; };
+                            }
+                        }
+                    }
+                });
+                this._flipObserver.observe(this._grid.el, {
+                    subtree: true,
+                    attributes: true,
+                    attributeFilter: ['gs-x'],
+                    attributeOldValue: true
+                });
+
+                // Haptic feedback on mobile
+                if (navigator.vibrate) navigator.vibrate(10);
+            },
+
+            _onDrag(el) {
+                // Track velocity for inertia feel
+                const now = performance.now();
+                const rect = el.getBoundingClientRect();
+                const pos = { x: rect.left, y: rect.top };
+
+                if (this._lastDragPos && this._lastDragTime) {
+                    const dt = (now - this._lastDragTime) / 1000;
+                    if (dt > 0.005) { // Avoid division by tiny dt
+                        // Exponential moving average for smooth velocity
+                        const alpha = 0.3;
+                        this._velocity.x = alpha * ((pos.x - this._lastDragPos.x) / dt) + (1 - alpha) * this._velocity.x;
+                        this._velocity.y = alpha * ((pos.y - this._lastDragPos.y) / dt) + (1 - alpha) * this._velocity.y;
+                    }
+                }
+
+                this._lastDragPos = pos;
+                this._lastDragTime = now;
+
+                // Magnetic attraction toward placeholder
+                this._applyMagneticPull(el);
+            },
+
+            _applyMagneticPull(el) {
+                // Use cached placeholder (refreshed on dragstart)
+                if (!this._placeholder || !this._placeholder.isConnected) {
+                    this._placeholder = this._grid.el.querySelector('.grid-stack-placeholder');
+                }
+                if (!this._placeholder) {
+                    el.style.transform = 'scale(1.025)';
+                    return;
+                }
+
+                const elRect = el.getBoundingClientRect();
+                const phRect = this._placeholder.getBoundingClientRect();
+
+                // Vector from dragged tile center to placeholder center
+                const dx = (phRect.left + phRect.width / 2) - (elRect.left + elRect.width / 2);
+                const dy = (phRect.top + phRect.height / 2) - (elRect.top + elRect.height / 2);
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist < this.MAGNETIC_THRESHOLD && dist > 2) {
+                    // Quadratic ease — stronger pull as you get closer
+                    const t = 1 - (dist / this.MAGNETIC_THRESHOLD);
+                    const strength = t * t * this.MAGNETIC_STRENGTH;
+                    const pullX = dx * strength;
+                    const pullY = dy * strength;
+                    el.style.transform = `translate(${pullX}px, ${pullY}px) scale(1.025)`;
+                } else {
+                    el.style.transform = 'scale(1.025)';
+                }
+            },
+
+            _onDragStop(el) {
+                // Use pointerup-captured rect (before GridStack cleanup), fall back to last drag pos
+                const dropRect = this._dropRect;
+                if (this._cleanupDropCapture) {
+                    this._cleanupDropCapture();
+                    this._cleanupDropCapture = null;
+                }
+                const dropPos = dropRect
+                    ? { x: dropRect.left, y: dropRect.top }
+                    : (this._lastDragPos ? { ...this._lastDragPos } : null);
+
+                // Clean up drag state
+                el.classList.remove('tile-dragging');
+                el.style.willChange = '';
+                el.style.transform = '';
+                this._grid.el.classList.remove('drag-active');
+                this._placeholder = null;
+
+                // Clean up FLIP MutationObserver
+                if (this._flipObserver) {
+                    this._flipObserver.disconnect();
+                    this._flipObserver = null;
+                }
+                this._flipDraggedEl = null;
+
+                // Suppress left/top transition during fixed→absolute position switch
+                el.classList.add('tile-just-dropped');
+
+                const card = el.querySelector('.tile-card');
+
+                if (dropPos && card) {
+                    // GridStack has already repositioned — get snap position
+                    const snapRect = el.getBoundingClientRect();
+                    const dx = dropPos.x - snapRect.left;
+                    const dy = dropPos.y - snapRect.top;
+
+                    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+                        // Disable CSS snapSettle animation — JS drives this
+                        card.style.animation = 'none';
+                        // Place card visually at the drop position (offset from snap)
+                        card.style.transition = 'none';
+                        card.style.transform = `translate(${dx}px, ${dy}px) scale(1.015)`;
+                        card.offsetHeight; // force reflow
+
+                        // Animate card sliding into snap position
+                        card.style.transition = 'transform 0.35s cubic-bezier(0.25, 1.1, 0.5, 1)';
+                        card.style.transform = 'translate(0, 0) scale(1)';
+
+                        const cleanup = () => {
+                            card.style.transition = '';
+                            card.style.transform = '';
+                            card.style.animation = '';
+                            el.classList.remove('tile-just-dropped');
+                        };
+                        card.addEventListener('transitionend', cleanup, { once: true });
+                        setTimeout(cleanup, 400); // fallback if transitionend doesn't fire
+                    } else {
+                        // Tile barely moved — just do the quick scale settle
+                        setTimeout(() => el.classList.remove('tile-just-dropped'), this.SETTLE_MS);
+                    }
+                } else {
+                    setTimeout(() => el.classList.remove('tile-just-dropped'), this.SETTLE_MS);
+                }
+
+                // Snap sound
+                if (this._audioEnabled) this._playSnap();
+
+                // Haptic feedback on mobile
+                if (navigator.vibrate) navigator.vibrate([5, 30, 5]);
+            },
+
+            _onResizeStart(el) {
+                el.style.willChange = 'width, height';
+                this._grid.el.classList.add('drag-active');
+
+                // MutationObserver FLIP for neighbor horizontal animation during resize
+                this._flipDraggedEl = el;
+                this._flipObserver = new MutationObserver((mutations) => {
+                    const cols = this._grid.opts.column || 12;
+                    const colWidth = this._grid.el.offsetWidth / cols;
+                    for (const mut of mutations) {
+                        if (mut.attributeName !== 'gs-x') continue;
+                        const tileEl = mut.target;
+                        if (tileEl === el || !tileEl.classList.contains('grid-stack-item')) continue;
+                        const oldX = parseInt(mut.oldValue) || 0;
+                        const newX = parseInt(tileEl.getAttribute('gs-x')) || 0;
+                        if (oldX === newX) continue;
+                        const dx = (oldX - newX) * colWidth;
+                        if (Math.abs(dx) > 1) {
+                            let currentOffset = 0;
+                            if (tileEl._flipAnim && tileEl._flipAnim.playState === 'running') {
+                                try {
+                                    const ct = getComputedStyle(tileEl).transform;
+                                    if (ct && ct !== 'none') currentOffset = new DOMMatrix(ct).m41;
+                                } catch(e) {}
+                                tileEl._flipAnim.cancel();
+                            }
+                            const totalDx = dx + currentOffset;
+                            if (Math.abs(totalDx) > 1) {
+                                tileEl._flipAnim = tileEl.animate([
+                                    { transform: `translateX(${totalDx}px)` },
+                                    { transform: 'translateX(0)' }
+                                ], {
+                                    duration: 380,
+                                    easing: 'cubic-bezier(0.25, 1.1, 0.5, 1)',
+                                    fill: 'none'
+                                });
+                                tileEl._flipAnim.onfinish = () => { tileEl._flipAnim = null; };
+                            }
+                        }
+                    }
+                });
+                this._flipObserver.observe(this._grid.el, {
+                    subtree: true,
+                    attributes: true,
+                    attributeFilter: ['gs-x'],
+                    attributeOldValue: true
+                });
+            },
+
+            _onResizeStop(el) {
+                el.style.willChange = '';
+                this._grid.el.classList.remove('drag-active');
+
+                // Clean up FLIP MutationObserver
+                if (this._flipObserver) {
+                    this._flipObserver.disconnect();
+                    this._flipObserver = null;
+                }
+                this._flipDraggedEl = null;
+
+                // Snap settle
+                el.classList.add('tile-just-dropped');
+                setTimeout(() => el.classList.remove('tile-just-dropped'), this.SETTLE_MS);
+
+                if (this._audioEnabled) this._playSnap();
+                if (navigator.vibrate) navigator.vibrate([5, 30, 5]);
+            },
+
+            // ---------- SNAP AUDIO ----------
+
+            _playSnap() {
+                try {
+                    if (!this._audioCtx) {
+                        this._audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    }
+                    const ctx = this._audioCtx;
+                    if (ctx.state === 'suspended') ctx.resume();
+
+                    // Create a short, satisfying "tick" — two layered tones
+                    const now = ctx.currentTime;
+
+                    // High tick
+                    const osc1 = ctx.createOscillator();
+                    const gain1 = ctx.createGain();
+                    osc1.connect(gain1);
+                    gain1.connect(ctx.destination);
+                    osc1.frequency.value = 1200;
+                    osc1.type = 'sine';
+                    gain1.gain.setValueAtTime(0.08, now);
+                    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+                    osc1.start(now);
+                    osc1.stop(now + 0.04);
+
+                    // Low thud
+                    const osc2 = ctx.createOscillator();
+                    const gain2 = ctx.createGain();
+                    osc2.connect(gain2);
+                    gain2.connect(ctx.destination);
+                    osc2.frequency.value = 300;
+                    osc2.type = 'sine';
+                    gain2.gain.setValueAtTime(0.06, now);
+                    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+                    osc2.start(now);
+                    osc2.stop(now + 0.06);
+                } catch (e) {
+                    // Audio not available — silently ignore
+                }
+            },
+
+            _attachAudioToggle() {
+                const btn = document.getElementById('audio-toggle');
+                if (!btn) return;
+                btn.addEventListener('click', () => {
+                    this._audioEnabled = !this._audioEnabled;
+                    btn.classList.toggle('audio-enabled', this._audioEnabled);
+                    btn.title = `Toggle snap sounds (${this._audioEnabled ? 'on' : 'off'})`;
+
+                    // Play a test snap when enabling
+                    if (this._audioEnabled) this._playSnap();
+                });
+            },
+
+            // ---------- TILE LOCKING ----------
+
+            _attachLockEvents() {
+                document.getElementById('tile-grid').addEventListener('click', (e) => {
+                    const btn = e.target.closest('.tile-lock');
+                    if (!btn) return;
+                    e.stopPropagation();
+                    this._toggleLock(btn.dataset.tileId);
+                });
+            },
+
+            _toggleLock(tileId) {
+                const el = document.querySelector(`[gs-id="${tileId}"]`);
+                if (!el || !this._grid) return;
+
+                const isLocked = this._lockedTiles.has(tileId);
+
+                if (isLocked) {
+                    // Unlock
+                    this._lockedTiles.delete(tileId);
+                    el.classList.remove('tile-locked');
+                    this._grid.update(el, { noMove: false, noResize: false, locked: false });
+                } else {
+                    // Lock
+                    this._lockedTiles.add(tileId);
+                    el.classList.add('tile-locked');
+                    this._grid.update(el, { noMove: true, noResize: true, locked: true });
+
+                    if (this._audioEnabled) this._playSnap();
+                    if (navigator.vibrate) navigator.vibrate(15);
+                }
+            },
+
+            isLocked(tileId) {
+                return this._lockedTiles.has(tileId);
+            }
+        };
+
+        // ========== SEARCH BAR COLLAPSE ==========
+
+        function initSearchCollapse() {
+            const btn = document.getElementById('search-collapse-btn');
+            const bar = document.getElementById('search-bar');
+            btn.addEventListener('click', () => {
+                bar.classList.toggle('collapsed');
+            });
+        }
+
+        // ========== BOOT ==========
+        document.addEventListener('DOMContentLoaded', () => {
+            init();
+            Physics.init(grid);
+            initSearchCollapse();
+        });
+    })();
+    </script>
+</body>
+</html>
