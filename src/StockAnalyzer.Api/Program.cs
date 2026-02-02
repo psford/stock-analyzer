@@ -317,10 +317,11 @@ app.Use(async (context, next) =>
     // - Tailwind CSS now built locally (no CDN needed, no 'unsafe-inline' for styles)
     // - Plotly.js requires 'unsafe-eval' and 'unsafe-inline' for chart rendering
     // - marked.js from jsdelivr for markdown rendering in docs
+    // - flatpickr from cdnjs for desktop date picker
     context.Response.Headers["Content-Security-Policy"] =
         "default-src 'self'; " +
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.plot.ly https://cdn.jsdelivr.net; " +
-        "style-src 'self' 'unsafe-inline'; " +
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.plot.ly https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; " +
+        "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; " +
         "img-src 'self' data: blob:; " +
         "font-src 'self' https:; " +
         "connect-src 'self' https://psford.github.io";

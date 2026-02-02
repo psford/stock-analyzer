@@ -10,7 +10,11 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <!-- Tailwind CSS - built locally from src/input.css -->
-    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/styles.css?v=3.0.5">
+    <!-- Flatpickr date picker (desktop only, with SRI) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css"
+          integrity="sha512-MQXduO8IQnJVq1qmySpN87QQkiR1bZHtorbJBD0tzy7/0U9+YIC93QWHeGTEoojMVHWWNkoCp8V6OzVSYrX0oQ=="
+          crossorigin="anonymous" referrerpolicy="no-referrer" />
     <!-- Plotly.js for charts (with SRI) - pragma: allowlist secret -->
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"
             integrity="sha384-Hl48Kq2HifOWdXEjMsKo6qxqvRLTYqIGbvlENBmkHAxZKIGCXv43H6W1jA671RzC"
@@ -97,30 +101,6 @@
                         </div>
                     </div>
                     <div class="flex-1 min-w-0 flex flex-col">
-                        <label for="period-select" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            Time Period
-                        </label>
-                        <select id="period-select"
-                            class="block w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-primary mt-auto">
-                            <option value="1d">1 Day</option>
-                            <option value="5d">5 Days</option>
-                            <option value="mtd">MTD</option>
-                            <option value="1mo">1 Month</option>
-                            <option value="3mo">3 Months</option>
-                            <option value="6mo">6 Months</option>
-                            <option value="ytd">YTD</option>
-                            <option value="1y" selected>1 Year</option>
-                            <option value="2y">2 Years</option>
-                            <option value="5y">5 Years</option>
-                            <option value="10y">10 Years</option>
-                            <option value="15y">15 Years</option>
-                            <option value="20y">20 Years</option>
-                            <option value="30y">30 Years</option>
-                            <option value="max">Since Inception</option>
-                            <option value="custom">Custom Range...</option>
-                        </select>
-                    </div>
-                    <div class="flex-1 min-w-0 flex flex-col">
                         <label for="chart-type" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                             Chart Type
                         </label>
@@ -144,22 +124,51 @@
                     </div>
                 </div>
 
-                <!-- Custom Date Range (shown when "Custom Range..." is selected) -->
-                <div id="custom-date-range" class="hidden mt-3 flex flex-wrap items-end gap-3">
-                    <div class="flex-1 min-w-[140px]">
-                        <label for="date-from" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">From</label>
-                        <input type="date" id="date-from"
-                            class="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm">
+                <!-- Date Range -->
+                <div class="mt-3 flex flex-col sm:flex-row gap-4">
+                    <!-- End Date -->
+                    <div class="flex flex-col">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">End Date</label>
+                        <div class="flex items-center gap-2">
+                            <select id="end-date-preset"
+                                class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-primary">
+                                <option value="PBD" selected>Prior Business Day</option>
+                                <option value="LME">Last Month End</option>
+                                <option value="LQE">Last Quarter End</option>
+                                <option value="LYE">Last Year End</option>
+                                <option value="custom">Custom</option>
+                            </select>
+                            <input type="date" id="end-date-resolved" readonly
+                                class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg cursor-default">
+                        </div>
                     </div>
-                    <div class="flex-1 min-w-[140px]">
-                        <label for="date-to" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">To</label>
-                        <input type="date" id="date-to"
-                            class="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm">
+                    <!-- Start Date -->
+                    <div class="flex flex-col">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start Date</label>
+                        <div class="flex items-center gap-2">
+                            <select id="start-date-preset"
+                                class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-primary">
+                                <option value="1d">1 Day</option>
+                                <option value="5d">5 Days</option>
+                                <option value="mtd">MTD</option>
+                                <option value="1mo">1 Month</option>
+                                <option value="3mo">3 Months</option>
+                                <option value="6mo">6 Months</option>
+                                <option value="ytd">YTD</option>
+                                <option value="1y" selected>1 Year</option>
+                                <option value="2y">2 Years</option>
+                                <option value="5y">5 Years</option>
+                                <option value="10y">10 Years</option>
+                                <option value="15y">15 Years</option>
+                                <option value="20y">20 Years</option>
+                                <option value="30y">30 Years</option>
+                                <option value="max">Since Inception</option>
+                                <option value="custom">Custom</option>
+                            </select>
+                            <input type="date" id="start-date-resolved" readonly
+                                class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg cursor-default">
+                        </div>
                     </div>
-                    <button id="apply-date-range"
-                        class="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-blue-600 focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors">
-                        Apply
-                    </button>
                 </div>
 
                 <!-- Moving Averages Toggle -->
@@ -649,11 +658,15 @@
         </div>
     </div>
 
-    <script src="js/storage.js?v=3.0.3"></script>
-    <script src="js/symbolSearch.js?v=3.0.3"></script>
-    <script src="js/api.js?v=3.0.3"></script>
-    <script src="js/charts.js?v=3.0.3"></script>
-    <script src="js/watchlist.js?v=3.0.3"></script>
-    <script src="js/app.js?v=3.0.3"></script>
+    <!-- Flatpickr date picker (with SRI) - pragma: allowlist secret -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"
+            integrity="sha512-K/oyQtMXpxI4+K0W7H25UopjM8pzq0yrVdFdG21Fh5dBe91I40pDd9A4lzNlHPHBIP2cwZuoxaUSX0GJSObvGA=="
+            crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="js/storage.js?v=3.0.5"></script>
+    <script src="js/symbolSearch.js?v=3.0.5"></script>
+    <script src="js/api.js?v=3.0.5"></script>
+    <script src="js/charts.js?v=3.0.5"></script>
+    <script src="js/watchlist.js?v=3.0.5"></script>
+    <script src="js/app.js?v=3.0.5"></script>
 </body>
 </html>

@@ -4,9 +4,10 @@
  */
 const App = {
     currentTicker: null,
-    currentPeriod: '1y',
-    customDateFrom: null,
-    customDateTo: null,
+    endDatePreset: 'PBD',
+    startDatePreset: '1y',
+    resolvedEndDate: null,
+    resolvedStartDate: null,
     currentThreshold: 5,
     currentAnimal: 'cats',
     historyData: null,
@@ -17,6 +18,10 @@ const App = {
     hoverTimeout: null,
     hideTimeout: null,
     isHoverCardHovered: false,
+
+    // Desktop detection: use flatpickr instead of native date picker
+    usesFlatpickr: window.matchMedia('(pointer: fine)').matches && typeof flatpickr !== 'undefined',
+    flatpickrInstances: { end: null, start: null },
 
     // Cache for pre-fetched news (keyed by "TICKER:YYYY-MM-DD:up/down")
     newsCache: {},
@@ -48,6 +53,70 @@ const App = {
     appVersion: null,
 
     /**
+     * Parse a date string in various US-format styles into YYYY-MM-DD.
+     * Supports: 3/3/2023, 03/03/23, 3-mar-2023, mar 3 2023, march 3, 2023,
+     *           2023-03-03 (ISO), etc. Does NOT handle EU DD-MM-YYYY.
+     * Returns null if unparseable.
+     */
+    parseDateFlexible(str) {
+        if (!str || typeof str !== 'string') return null;
+        str = str.trim();
+        if (!str) return null;
+
+        const monthNames = {
+            jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2,
+            apr: 3, april: 3, may: 4, jun: 5, june: 5,
+            jul: 6, july: 6, aug: 7, august: 7, sep: 8, september: 8,
+            oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11
+        };
+
+        const expandYear = (y) => {
+            if (y < 100) return y < 50 ? 2000 + y : 1900 + y;
+            return y;
+        };
+
+        const pad = (n) => String(n).padStart(2, '0');
+
+        const toYMD = (year, month, day) => {
+            year = expandYear(year);
+            const d = new Date(year, month, day);
+            if (isNaN(d.getTime()) || d.getMonth() !== month) return null;
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        };
+
+        // ISO: 2023-03-03 or 2023/03/03
+        const iso = str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+        if (iso) return toYMD(+iso[1], +iso[2] - 1, +iso[3]);
+
+        // US numeric: M/D/YYYY or M-D-YYYY or M.D.YYYY (also 2-digit year)
+        const us = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);
+        if (us) return toYMD(+us[3], +us[1] - 1, +us[2]);
+
+        // Day-MonthName-Year: 3-mar-2023, 3 mar 2023
+        const dmy = str.match(/^(\d{1,2})[-\s]+([a-z]+)[-,\s]+(\d{2,4})$/i);
+        if (dmy) {
+            const m = monthNames[dmy[2].toLowerCase()];
+            if (m !== undefined) return toYMD(+dmy[3], m, +dmy[1]);
+        }
+
+        // MonthName Day Year: mar 3 2023, march 3, 2023
+        const mdy = str.match(/^([a-z]+)[-\s]+(\d{1,2})[-,\s]+(\d{2,4})$/i);
+        if (mdy) {
+            const m = monthNames[mdy[1].toLowerCase()];
+            if (m !== undefined) return toYMD(+mdy[3], m, +mdy[2]);
+        }
+
+        // MonthName Day, Year: "March 3, 2023"
+        const mdyComma = str.match(/^([a-z]+)\s+(\d{1,2}),?\s+(\d{2,4})$/i);
+        if (mdyComma) {
+            const m = monthNames[mdyComma[1].toLowerCase()];
+            if (m !== undefined) return toYMD(+mdyComma[3], m, +mdyComma[2]);
+        }
+
+        return null;
+    },
+
+    /**
      * Initialize the application
      */
     init() {
@@ -59,25 +128,234 @@ const App = {
         this.fetchAppVersion();
         // Start idle-time image cache building (doesn't block anything)
         this.scheduleIdleImageLoad();
-        // If browser restored "custom" in the period select, show the date inputs
-        this.initPeriodSelect();
+        // Initialize date range panel with resolved defaults
+        this.initDateRangePanel();
     },
 
     /**
-     * Handle browser-restored period select value on page load.
-     * Browsers preserve form values across refreshes but don't fire change events.
+     * Initialize the End Date / Start Date panel on page load.
+     * Resolves default dates and handles browser form restoration.
      */
-    initPeriodSelect() {
-        const periodSelect = document.getElementById('period-select');
-        if (periodSelect && periodSelect.value === 'custom') {
-            const customRow = document.getElementById('custom-date-range');
-            customRow.classList.remove('hidden');
-            const today = new Date().toISOString().split('T')[0];
-            const yearAgo = new Date(Date.now() - 365 * 86400000).toISOString().split('T')[0];
-            const fromInput = document.getElementById('date-from');
-            const toInput = document.getElementById('date-to');
-            if (!fromInput.value) fromInput.value = yearAgo;
-            if (!toInput.value) toInput.value = today;
+    initDateRangePanel() {
+        const endSelect = document.getElementById('end-date-preset');
+        const startSelect = document.getElementById('start-date-preset');
+        const endInput = document.getElementById('end-date-resolved');
+        const startInput = document.getElementById('start-date-resolved');
+
+        // Check browser-restored values
+        this.endDatePreset = endSelect.value || 'PBD';
+        this.startDatePreset = startSelect.value || '1y';
+
+        if (this.endDatePreset === 'custom' && endInput.value) {
+            // Browser restored "custom" end date
+            this.setDateInputEditable(endInput, true);
+            this.resolvedEndDate = endInput.value;
+        } else {
+            this.resolvedEndDate = this.resolveEndDate(this.endDatePreset);
+            endInput.value = this.resolvedEndDate;
+        }
+
+        if (this.startDatePreset === 'custom' && startInput.value) {
+            // Browser restored "custom" start date
+            this.setDateInputEditable(startInput, true);
+            this.resolvedStartDate = startInput.value;
+        } else {
+            this.resolvedStartDate = this.resolveStartDate(this.startDatePreset, this.resolvedEndDate);
+            startInput.value = this.resolvedStartDate;
+        }
+    },
+
+    // ── Date Resolution Functions ──────────────────────────────────────
+
+    /**
+     * Format a Date object as YYYY-MM-DD string (local timezone)
+     */
+    formatDateYMD(d) {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    },
+
+    /**
+     * Resolve an End Date preset to a YYYY-MM-DD string
+     */
+    resolveEndDate(preset) {
+        const today = new Date();
+        switch (preset) {
+            case 'PBD': return this.priorBusinessDay(today);
+            case 'LME': return this.lastMonthEnd(today);
+            case 'LQE': return this.lastQuarterEnd(today);
+            case 'LYE': return this.lastYearEnd(today);
+            default: return this.priorBusinessDay(today);
+        }
+    },
+
+    /**
+     * Prior business day: walk back from date, skipping weekends
+     */
+    priorBusinessDay(date) {
+        const d = new Date(date);
+        d.setDate(d.getDate() - 1);
+        while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
+        return this.formatDateYMD(d);
+    },
+
+    /**
+     * Last month end: last day of the previous month
+     */
+    lastMonthEnd(date) {
+        return this.formatDateYMD(new Date(date.getFullYear(), date.getMonth(), 0));
+    },
+
+    /**
+     * Last quarter end: most recent Mar 31, Jun 30, Sep 30, or Dec 31 before today
+     */
+    lastQuarterEnd(date) {
+        const year = date.getFullYear();
+        const qEnds = [
+            new Date(year - 1, 11, 31), // Dec 31 prior year
+            new Date(year, 2, 31),      // Mar 31
+            new Date(year, 5, 30),      // Jun 30
+            new Date(year, 8, 30),      // Sep 30
+            new Date(year, 11, 31)      // Dec 31
+        ];
+        const past = qEnds.filter(d => d < date).sort((a, b) => b - a);
+        return this.formatDateYMD(past[0]);
+    },
+
+    /**
+     * Last year end: Dec 31 of the prior year
+     */
+    lastYearEnd(date) {
+        return this.formatDateYMD(new Date(date.getFullYear() - 1, 11, 31));
+    },
+
+    /**
+     * Resolve a Start Date preset relative to a resolved end date (YYYY-MM-DD).
+     * Periods are INCLUSIVE: 1Y ending 12/31/2025 = start 1/1/2025
+     */
+    resolveStartDate(preset, endDateStr) {
+        const end = new Date(endDateStr + 'T00:00:00'); // local timezone
+
+        // Year-based: subtract N years, +1 day (inclusive)
+        const yearPeriods = { '1y': 1, '2y': 2, '5y': 5, '10y': 10, '15y': 15, '20y': 20, '30y': 30 };
+        if (yearPeriods[preset]) {
+            const d = new Date(end);
+            d.setFullYear(d.getFullYear() - yearPeriods[preset]);
+            d.setDate(d.getDate() + 1);
+            return this.formatDateYMD(d);
+        }
+
+        // Month-based: subtract N months, +1 day (inclusive)
+        const monthPeriods = { '1mo': 1, '3mo': 3, '6mo': 6 };
+        if (monthPeriods[preset]) {
+            const d = new Date(end);
+            d.setMonth(d.getMonth() - monthPeriods[preset]);
+            d.setDate(d.getDate() + 1);
+            return this.formatDateYMD(d);
+        }
+
+        // Day-based (inclusive: 5 days = end - 4)
+        if (preset === '1d') return endDateStr;
+        if (preset === '5d') {
+            const d = new Date(end);
+            d.setDate(d.getDate() - 4);
+            return this.formatDateYMD(d);
+        }
+
+        // MTD: first of the end date's month
+        if (preset === 'mtd') return this.formatDateYMD(new Date(end.getFullYear(), end.getMonth(), 1));
+
+        // YTD: first of the end date's year
+        if (preset === 'ytd') return this.formatDateYMD(new Date(end.getFullYear(), 0, 1));
+
+        // Max: earliest possible
+        if (preset === 'max') return '1900-01-01';
+
+        return endDateStr;
+    },
+
+    /**
+     * Recalculate start date when end date changes (unless start is custom)
+     */
+    recalculateStartDate() {
+        if (!this.resolvedEndDate) return;
+        const startInput = document.getElementById('start-date-resolved');
+
+        if (this.startDatePreset === 'custom') {
+            // Validate custom start isn't after end
+            if (this.resolvedStartDate > this.resolvedEndDate) {
+                this.resolvedStartDate = this.resolvedEndDate;
+                startInput.value = this.resolvedStartDate;
+            }
+            return;
+        }
+
+        this.resolvedStartDate = this.resolveStartDate(this.startDatePreset, this.resolvedEndDate);
+        startInput.value = this.resolvedStartDate;
+    },
+
+    /**
+     * Toggle a date input between read-only (gray) and editable (white).
+     * On desktop (pointer: fine), uses flatpickr for custom date selection.
+     * On mobile, falls back to the native date picker.
+     */
+    setDateInputEditable(input, editable) {
+        const key = input.id === 'end-date-resolved' ? 'end' : 'start';
+
+        if (editable) {
+            input.removeAttribute('readonly');
+            input.classList.remove('bg-gray-50', 'cursor-default');
+            input.classList.add('bg-white', 'cursor-text');
+
+            // Initialize flatpickr on desktop
+            if (this.usesFlatpickr && !this.flatpickrInstances[key]) {
+                // Switch to text input so native date picker doesn't conflict
+                input.type = 'text';
+                this.flatpickrInstances[key] = flatpickr(input, {
+                    dateFormat: 'Y-m-d',
+                    defaultDate: input.value || undefined,
+                    allowInput: true,
+                    parseDate: (dateStr) => {
+                        const ymd = this.parseDateFlexible(dateStr);
+                        return ymd ? new Date(ymd + 'T00:00:00') : null;
+                    },
+                    onChange: (selectedDates, dateStr) => {
+                        input.value = dateStr;
+                        input.dispatchEvent(new Event('change'));
+                    }
+                });
+            }
+        } else {
+            // Destroy flatpickr instance if active
+            if (this.flatpickrInstances[key]) {
+                this.flatpickrInstances[key].destroy();
+                this.flatpickrInstances[key] = null;
+                // Restore native date input for mobile compatibility
+                input.type = 'date';
+            }
+            input.setAttribute('readonly', true);
+            input.classList.remove('bg-white', 'cursor-text');
+            input.classList.add('bg-gray-50', 'cursor-default');
+        }
+    },
+
+    /**
+     * Re-fetch chart data when date range changes (if a stock is loaded)
+     */
+    async triggerReanalysis() {
+        if (!this.currentTicker || !this.resolvedStartDate || !this.resolvedEndDate) return;
+        if (this.resolvedStartDate > this.resolvedEndDate) return;
+
+        if (this.comparisonTicker) {
+            const comparisonTicker = this.comparisonTicker;
+            this.comparisonTicker = null;
+            this.comparisonHistoryData = null;
+            await this.analyzeStock();
+            await this.setComparison(comparisonTicker);
+        } else {
+            await this.analyzeStock();
         }
     },
 
@@ -432,67 +710,57 @@ const App = {
             }
         });
 
-        // Period change
-        document.getElementById('period-select').addEventListener('change', async (e) => {
-            const value = e.target.value;
-            const customRow = document.getElementById('custom-date-range');
-
-            if (value === 'custom') {
-                // Show custom date inputs, don't trigger analysis yet
-                customRow.classList.remove('hidden');
-                // Default "to" to today, "from" to 1 year ago
-                const today = new Date().toISOString().split('T')[0];
-                const yearAgo = new Date(Date.now() - 365 * 86400000).toISOString().split('T')[0];
-                const fromInput = document.getElementById('date-from');
-                const toInput = document.getElementById('date-to');
-                if (!fromInput.value) fromInput.value = yearAgo;
-                if (!toInput.value) toInput.value = today;
-                return;
+        // End Date preset change
+        document.getElementById('end-date-preset').addEventListener('change', (e) => {
+            const endInput = document.getElementById('end-date-resolved');
+            this.endDatePreset = e.target.value;
+            if (e.target.value === 'custom') {
+                this.setDateInputEditable(endInput, true);
+            } else {
+                this.setDateInputEditable(endInput, false);
+                this.resolvedEndDate = this.resolveEndDate(e.target.value);
+                endInput.value = this.resolvedEndDate;
             }
-
-            // Standard period selected — hide custom inputs, clear custom dates
-            customRow.classList.add('hidden');
-            this.currentPeriod = value;
-            this.customDateFrom = null;
-            this.customDateTo = null;
-
-            if (this.currentTicker) {
-                if (this.comparisonTicker) {
-                    const comparisonTicker = this.comparisonTicker;
-                    this.comparisonTicker = null;
-                    this.comparisonHistoryData = null;
-                    await this.analyzeStock();
-                    await this.setComparison(comparisonTicker);
-                } else {
-                    await this.analyzeStock();
-                }
-            }
+            this.recalculateStartDate();
+            this.triggerReanalysis();
         });
 
-        // Apply custom date range
-        document.getElementById('apply-date-range').addEventListener('click', async () => {
-            const from = document.getElementById('date-from').value;
-            const to = document.getElementById('date-to').value;
-            if (!from || !to) return;
-            if (from > to) {
-                this.showError('Start date must be before end date');
-                return;
-            }
-            this.customDateFrom = from;
-            this.customDateTo = to;
-            this.currentPeriod = 'custom';
+        // End Date resolved input change (custom mode) — debounced to avoid
+        // rapid redraws while scrolling through the native date picker calendar.
+        // Normalizes flexible date formats (e.g. "3-mar-2023") to YYYY-MM-DD.
+        let endDateTimer = null;
+        document.getElementById('end-date-resolved').addEventListener('change', (e) => {
+            const normalized = this.parseDateFlexible(e.target.value) || e.target.value;
+            if (normalized !== e.target.value) e.target.value = normalized;
+            this.resolvedEndDate = normalized;
+            this.recalculateStartDate();
+            clearTimeout(endDateTimer);
+            endDateTimer = setTimeout(() => this.triggerReanalysis(), 600);
+        });
 
-            if (this.currentTicker) {
-                if (this.comparisonTicker) {
-                    const comparisonTicker = this.comparisonTicker;
-                    this.comparisonTicker = null;
-                    this.comparisonHistoryData = null;
-                    await this.analyzeStock();
-                    await this.setComparison(comparisonTicker);
-                } else {
-                    await this.analyzeStock();
-                }
+        // Start Date preset change
+        document.getElementById('start-date-preset').addEventListener('change', (e) => {
+            const startInput = document.getElementById('start-date-resolved');
+            this.startDatePreset = e.target.value;
+            if (e.target.value === 'custom') {
+                this.setDateInputEditable(startInput, true);
+            } else {
+                this.setDateInputEditable(startInput, false);
+                this.resolvedStartDate = this.resolveStartDate(e.target.value, this.resolvedEndDate);
+                startInput.value = this.resolvedStartDate;
             }
+            this.triggerReanalysis();
+        });
+
+        // Start Date resolved input change (custom mode) — debounced.
+        // Normalizes flexible date formats to YYYY-MM-DD.
+        let startDateTimer = null;
+        document.getElementById('start-date-resolved').addEventListener('change', (e) => {
+            const normalized = this.parseDateFlexible(e.target.value) || e.target.value;
+            if (normalized !== e.target.value) e.target.value = normalized;
+            this.resolvedStartDate = normalized;
+            clearTimeout(startDateTimer);
+            startDateTimer = setTimeout(() => this.triggerReanalysis(), 600);
         });
 
         // Chart type change
@@ -680,26 +948,6 @@ const App = {
             });
         }
 
-        // Mobile period select sync
-        const mobilePeriodSelect = document.getElementById('mobile-period-select');
-        const desktopPeriodSelect = document.getElementById('period-select');
-        if (mobilePeriodSelect && desktopPeriodSelect) {
-            mobilePeriodSelect.addEventListener('change', async (e) => {
-                this.currentPeriod = e.target.value;
-                desktopPeriodSelect.value = e.target.value; // Sync desktop
-                if (this.currentTicker) {
-                    if (this.comparisonTicker) {
-                        const comparisonTicker = this.comparisonTicker;
-                        this.comparisonTicker = null;
-                        this.comparisonHistoryData = null;
-                        await this.analyzeStock();
-                        await this.setComparison(comparisonTicker);
-                    } else {
-                        await this.analyzeStock();
-                    }
-                }
-            });
-        }
 
         // Mobile chart type sync
         const mobileChartType = document.getElementById('mobile-chart-type');
@@ -960,7 +1208,7 @@ const App = {
 
             // Fetch comparison history data
             this.comparisonHistoryData = await API.getHistory(
-                ticker, this.currentPeriod, this.customDateFrom, this.customDateTo);
+                ticker, null, this.resolvedStartDate, this.resolvedEndDate);
             this.comparisonTicker = ticker;
 
             // Disable technical indicators (they don't make sense for comparison)
@@ -1004,9 +1252,8 @@ const App = {
     clearAll() {
         // Clear data state
         this.currentTicker = null;
-        this.currentPeriod = '1y';
-        this.customDateFrom = null;
-        this.customDateTo = null;
+        this.endDatePreset = 'PBD';
+        this.startDatePreset = '1y';
         this.historyData = null;
         this.analysisData = null;
         this.significantMovesData = null;
@@ -1021,10 +1268,16 @@ const App = {
         // Reset form inputs
         document.getElementById('ticker-input').value = '';
         document.getElementById('ticker-input').focus();
-        document.getElementById('period-select').value = '1y';
-        document.getElementById('custom-date-range').classList.add('hidden');
-        document.getElementById('date-from').value = '';
-        document.getElementById('date-to').value = '';
+        document.getElementById('end-date-preset').value = 'PBD';
+        document.getElementById('start-date-preset').value = '1y';
+        const endInput = document.getElementById('end-date-resolved');
+        const startInput = document.getElementById('start-date-resolved');
+        this.setDateInputEditable(endInput, false);
+        this.setDateInputEditable(startInput, false);
+        this.resolvedEndDate = this.resolveEndDate('PBD');
+        endInput.value = this.resolvedEndDate;
+        this.resolvedStartDate = this.resolveStartDate('1y', this.resolvedEndDate);
+        startInput.value = this.resolvedStartDate;
         document.getElementById('chart-type').value = 'line';
         document.getElementById('threshold-slider').value = 5;
         document.getElementById('threshold-value').textContent = '5%';
@@ -1116,24 +1369,8 @@ const App = {
         }
 
         this.currentTicker = ticker;
-        const periodSelect = document.getElementById('period-select').value;
-        if (periodSelect !== 'custom') {
-            this.currentPeriod = periodSelect;
-            this.customDateFrom = null;
-            this.customDateTo = null;
-        } else {
-            // Custom period — read dates from inputs if not already set
-            // (handles Search/Enter without clicking Apply)
-            this.currentPeriod = 'custom';
-            if (!this.customDateFrom || !this.customDateTo) {
-                const fromVal = document.getElementById('date-from').value;
-                const toVal = document.getElementById('date-to').value;
-                if (fromVal && toVal) {
-                    this.customDateFrom = fromVal;
-                    this.customDateTo = toVal;
-                }
-            }
-        }
+        const from = this.resolvedStartDate;
+        const to = this.resolvedEndDate;
         this.newsCache = {}; // Clear news cache for new ticker
         if (typeof Charts !== 'undefined' && Charts.resetChart) {
             Charts.resetChart('stock-chart');
@@ -1142,8 +1379,7 @@ const App = {
 
         try {
             // PHASE 1: Critical path - single request for history + analysis
-            const chartData = await API.getChartData(
-                ticker, this.currentPeriod, this.customDateFrom, this.customDateTo);
+            const chartData = await API.getChartData(ticker, null, from, to);
 
             // Split combined response into history and analysis shapes
             this.historyData = {

@@ -168,27 +168,41 @@ Page Load                    User Types Query
 
 **User Story:** *As an investor, I want to see an interactive chart so that I can zoom into specific time periods of interest.*
 
-### 3.3 Time Period Selection (FR-003)
+### 3.3 Date Range Selection (FR-003)
 
 | ID | Requirement |
 |----|-------------|
-| FR-003.1 | The system must allow users to select the chart time period |
-| FR-003.2 | The system must support: YTD, 1 month, 3 months, 6 months, 1 year, 2 years, 5 years, 10 years |
-| FR-003.3 | The system must default to 1 year when first loading a stock |
-| FR-003.4 | The system must refresh the chart when the period is changed |
+| FR-003.1 | The system must allow users to select end date and start date independently |
+| FR-003.2 | End Date presets: Prior Business Day, Last Month End, Last Quarter End, Last Year End, Custom |
+| FR-003.3 | Start Date presets: 1D, 5D, MTD, 1mo, 3mo, 6mo, YTD, 1Y, 2Y, 5Y, 10Y, 15Y, 20Y, 30Y, Since Inception, Custom |
+| FR-003.4 | The system must default to End Date = Prior Business Day, Start Date = 1 Year |
+| FR-003.5 | The system must refresh the chart when either date is changed |
+| FR-003.6 | Start Date must resolve relative to End Date, not today's date |
+| FR-003.7 | Periods are inclusive: 1Y ending 12/31/2025 means start = 1/1/2025 |
+| FR-003.8 | Selecting "Custom" makes the resolved date input editable |
+| FR-003.9 | Non-custom presets show a read-only resolved date |
 
-**Supported Periods:**
+**End Date Presets:**
 
-| Selection | Data Range |
-|-----------|------------|
-| YTD | January 1st of current year to today |
-| 1mo | Last 30 calendar days |
-| 3mo | Last 90 calendar days |
-| 6mo | Last 180 calendar days |
-| 1y | Last 365 calendar days |
-| 2y | Last 730 calendar days |
-| 5y | Last 1,825 calendar days |
-| 10y | Last 3,650 calendar days |
+| Preset | Resolution |
+|--------|------------|
+| Prior Business Day (PBD) | Yesterday, skipping weekends |
+| Last Month End (LME) | Last day of previous month |
+| Last Quarter End (LQE) | Most recent quarter-end (Mar 31, Jun 30, Sep 30, Dec 31) |
+| Last Year End (LYE) | December 31 of previous year |
+| Custom | User enters date manually |
+
+**Start Date Presets (relative to End Date):**
+
+| Preset | Resolution |
+|--------|------------|
+| 1D | Same as End Date |
+| 5D | End Date minus 4 days |
+| MTD | First day of End Date's month |
+| 1mo–30Y | Subtract N period(s), add 1 day (inclusive) |
+| YTD | January 1st of End Date's year |
+| Since Inception | 1900-01-01 (returns all available data) |
+| Custom | User enters date manually |
 
 ### 3.4 Moving Averages (FR-004)
 
@@ -697,8 +711,9 @@ Page Load                    User Types Query
 │  📈 Stock Analyzer                    Powered by .NET 8 + Plotly.js    [🌙/☀️]   │
 ├─────────────────────────────────────────────────────────────────────┬────────────┤
 │  ┌───────────────────────────────────────────────────────────────┐  │ WATCHLISTS │
-│  │ [Search Box with Autocomplete] [Period ▼] [Chart ▼] [Analyze]│  │ ────────── │
-│  │ ☑ SMA 20   ☑ SMA 50   ☐ SMA 200   ☐ RSI   ☐ MACD            │  │ [+ New]    │
+│  │ [Search Box] [Compare] [Chart ▼] [Analyze] [Clear]   │  │ ────────── │
+│  │ End Date [PBD ▼] [2026-01-30]  Start [1Y ▼] [2025-01-31]│  │ [+ New]    │
+│  │ ☑ SMA 20   ☑ SMA 50   ☐ SMA 200   ☐ RSI   ☐ MACD            │  │            │
 │  └───────────────────────────────────────────────────────────────┘  │            │
 │                                                                      │ ▼ Tech     │
 │  ┌─────────────────────────────┐  ┌────────────────────────────┐   │   AAPL $150│
@@ -732,7 +747,10 @@ Page Load                    User Types Query
 | Control | Type | Options | Default |
 |---------|------|---------|---------|
 | Search Stock | Text input with autocomplete dropdown | Any ticker/company | Empty |
-| Time Period | Dropdown | 1mo, 3mo, 6mo, 1y, 2y, 5y | 1y |
+| End Date Preset | Dropdown | PBD, LME, LQE, LYE, Custom | PBD |
+| End Date Resolved | Date input (readonly unless Custom) | Any date | Prior Business Day |
+| Start Date Preset | Dropdown | 1D–30Y, MTD, YTD, Max, Custom | 1Y |
+| Start Date Resolved | Date input (readonly unless Custom) | Any date | 1Y before End Date |
 | Chart Type | Dropdown | Candlestick, Line | Candlestick |
 | SMA-20 | Checkbox | On/Off | On |
 | SMA-50 | Checkbox | On/Off | On |
@@ -964,6 +982,7 @@ The dashboard is fully responsive and adapts to mobile devices.
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
+| 2.9 | 2026-02-01 | **Date Range UI Redesign (FR-003):** Replaced single Time Period dropdown + hidden From/To inputs with two-field date range panel. End Date (PBD/LME/LQE/LYE/Custom) + Start Date (1D–30Y/MTD/YTD/Max/Custom), each with resolved date display. Start Date resolves relative to End Date (not today). Periods are inclusive. Custom mode makes date input editable. Changes trigger immediate reanalysis. | Claude |
 | 2.8 | 2026-01-23 | Enhanced sentiment analysis: 3-tier ensemble (keyword 60% + VADER 40%), word-boundary matching to prevent false positives, optional FinBERT ML tier | Claude |
 | 2.7 | 2026-01-22 | Sentiment-filtered news (FR-005.16-19): Headlines must match price direction, positive headlines don't show for drops, market news fallback when no matched company news | Claude |
 | 2.6 | 2026-01-22 | Weighted relevance scoring for search (FR-001.15-18): Results ranked by match type + popularity boost, Ford/Apple surface before substring matches | Claude |

@@ -1409,6 +1409,46 @@ Toggle Combined View → GET /api/watchlists/{id}/combined
                       Show hover card with market news + animal image
 ```
 
+### 6.7 Date Range Selection with Flatpickr
+
+The date picker uses a device-aware strategy: modern desktop browsers get the flatpickr widget for rich UX, while mobile devices fall back to the native `<input type="date">` picker for optimal touch experience.
+
+**Device Detection:**
+```javascript
+const hasFineTouchPointer = window.matchMedia('(pointer: fine)').matches;
+// true: desktop (mouse/trackpad) → use flatpickr
+// false: mobile/tablet (coarse touch) → use native <input type="date">
+```
+
+**Flatpickr Integration (Desktop Only):**
+- Library: flatpickr 4.6.13 (~16KB + 4KB CSS, CDN with SRI hash)
+- Initialized only when user selects "Custom" date mode
+- Destroyed when switching back to preset mode to save memory
+- Includes time picker for intraday analysis (time portion not currently used in API)
+
+**CSS Theming:**
+- Dark mode support via CSS custom properties (`--fp-*` variables)
+- Override mechanism: `.dark .flatpickr-calendar { --fp-bg-color: ... }`
+- No JavaScript theme swapping required; theme follows app-wide `dark` class
+
+**Date Range State Management:**
+```javascript
+app.dateRange = {
+    endDatePreset: 'PBD',                // Previous Business Day / LME / LQE / LYE / Custom
+    startDatePreset: '1Y',               // 1D–30Y / MTD / YTD / Max / Custom
+    resolvedEndDate: '2026-02-01',       // Actual calculated date (readonly input display)
+    resolvedStartDate: '2025-02-01',     // Actual calculated date (readonly input display)
+    customEndDate: null,                 // User-selected custom end date (flatpickr)
+    customStartDate: null                // User-selected custom start date (flatpickr)
+};
+```
+
+**Flatpickr Lifecycle:**
+1. Page load: flatpickr lib loaded but NOT initialized
+2. User selects "Custom" end/start preset: flatpickr instance created on first focus
+3. User picks date: `resolvedEndDate`/`resolvedStartDate` updated, chart re-fetched
+4. User switches back to preset: flatpickr destroyed, memory freed
+
 ---
 
 ## 7. Configuration
@@ -2702,10 +2742,19 @@ SRI hashes verify that CDN-loaded scripts haven't been tampered with.
 - Content changes per request, so hash verification would fail
 - For production, pre-build Tailwind locally: `npx tailwindcss -o styles.css`
 
+**flatpickr** - SRI enabled:
+```html
+<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"
+        integrity="sha384-..." crossorigin="anonymous"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css"
+      integrity="sha384-..." crossorigin="anonymous">
+```
+
 | Resource | SRI Status | Reason |
 |----------|------------|--------|
 | Plotly.js 2.27.0 | ✅ Enabled | Static versioned file |
 | Tailwind CSS CDN | ❌ Not applicable | Dynamic JIT compiler |
+| flatpickr 4.6.13 | ✅ Enabled | Static versioned file (~16KB + 4KB CSS) |
 
 ---
 
@@ -2758,6 +2807,8 @@ const newsPromise = API.getAggregatedNews(ticker, 30, 10);
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.41 | 2026-02-01 | **Flatpickr Date Picker Integration:** (1) **Desktop/mobile device detection** — `window.matchMedia('(pointer: fine)')` detects mouse/trackpad → uses flatpickr widget; touch-only devices → native `<input type="date">` for optimal UX. (2) **Flatpickr initialization** — only when "Custom" date mode selected, destroyed when switching back to preset to save memory. (3) **CSS theming** — dark mode support via CSS custom properties (`--fp-*` variables) with `.dark .flatpickr-calendar` selector; no JS theme swapping. (4) **External dependency** — flatpickr 4.6.13 (~16KB + 4KB CSS) loaded from CDN with SRI hash. New subsection 6.7 documents device detection, lifecycle, state management, and CSS theming. SRI table updated (Section 12.5). (5) **Privacy disclosure** — Device Detection added to about.html privacy section (pointer-fine media query is observable but read-only). |
+| 2.40 | 2026-02-01 | **Date Range UI Redesign:** Replaced `#period-select` dropdown + `#custom-date-range` (hidden From/To/Apply) with a two-row date range sub-panel. **New HTML:** `#end-date-preset` (PBD/LME/LQE/LYE/Custom) + `#end-date-resolved` (readonly date input) on row 1; `#start-date-preset` (1D–30Y/MTD/YTD/Max/Custom) + `#start-date-resolved` on row 2. **New state model:** replaced `currentPeriod`/`customDateFrom`/`customDateTo` with `endDatePreset`/`startDatePreset`/`resolvedEndDate`/`resolvedStartDate`. **Date resolution functions:** `resolveEndDate(preset)` computes PBD (skip weekends), LME, LQE, LYE. `resolveStartDate(preset, endDateStr)` computes relative to End Date with inclusive periods (subtract N, +1 day). `recalculateStartDate()` re-derives start when end changes. `triggerReanalysis()` re-fetches data on date change. **bindEvents:** 4 new listeners for preset dropdowns and resolved inputs, replacing period-select and apply-date-range handlers. `setDateInputEditable()` toggles readonly + CSS classes for Custom mode. **analyzeStock/setComparison:** now use `resolvedStartDate`/`resolvedEndDate` directly, period param always null. **clearAll:** resets to PBD + 1Y defaults. **charts.js:** `formatPeriodLabel()` simplified to always show date range when startDate/endDate exist. **Dead code removed:** `initPeriodSelect()`, `currentPeriod`, `customDateFrom`, `customDateTo`, mobile period select sync, `#period-select`, `#custom-date-range`, `#date-from`, `#date-to`, `#apply-date-range`. |
 | 2.39 | 2026-02-01 | **Significant Moves Date Range Structural Fix:** Decoupled significant moves fetching from UI state. Both `analyzeStock()` and `refreshSignificantMoves()` now derive date range from `chartData.startDate`/`chartData.endDate` (the actual dates returned by the chart-data endpoint) instead of `this.currentPeriod`/`this.customDateFrom`/`this.customDateTo` (UI input state). This eliminates the class of bugs where significant move markers extend past the visible chart because the UI state disagrees with the actual data range. The `period` parameter is passed as `null` and `from`/`to` are always populated from chart response. Added `historyData` null guard to `refreshSignificantMoves()`. |
 | 2.38 | 2026-02-01 | **Custom Date Ranges + Real-Time Crawler Stats:** (1) **Extended period options** — added 1D, 5D, MTD, 15Y, 20Y, 30Y, and Since Inception (max/all) to `GetDateRangeForPeriod`. (2) **Custom from/to date support** — `/chart-data` and `/history` endpoints now accept optional `from` and `to` query parameters for arbitrary date ranges. New `GetHistoricalDataAsync(symbol, from, to)` overload in AggregatedStockDataService with separate cache key pattern `history:{SYMBOL}:{from}:{to}`. API provider fallback synthesizes an appropriate period and filters results to requested range. (3) **Frontend date range UI** — period `<select>` expanded with all new options plus "Custom Range..." which reveals start/end date inputs with Apply button. (4) **Combined portfolio period buttons** — added YTD, 5Y, and All buttons. (5) **EODHD Loader real-time stats** — Price Records card now updates live during crawling (base count + session inserts, zero API overhead). Tracked/Untracked/Unavailable cards update locally when promoting or marking securities unavailable. |
 | 2.37 | 2026-02-01 | **News Service Quality Overhaul:** 5 fixes to improve news relevance and completeness: (1) **Tightened relevance scoring** — HeadlineRelevanceService `CalculateTickerScore` demoted `RelatedSymbols`-only matches from 1.0 to 0.3 (Finnhub tags loosely related articles). Headline mentions now score 1.0, summary mentions 0.7. This filters out ~60% noise articles. (2) **Enriched `/news` endpoint** — now applies SentimentAnalyzer + HeadlineRelevanceService to all articles, looks up company profile for name-based relevance, filters to top 30 by relevance (was 249 raw). Added `limit` query parameter. (3) **Extended `/news/move` date window** — `GetNewsForDateAsync` now looks date-2 to date+3 (was date+1), capturing explanatory articles written after significant moves. (4) **Fixed market news fallback for historical dates** — old dates (>3 days) now return best-available company news instead of attempting market news lookup (which always fetched current news, useless for old dates). (5) **Added `/news/move` response metadata** — new `MoveNewsResult` model with `source` ("company"/"market"), `directionMatch` (bool). Cache type updated from `List<NewsItem>` to `MoveNewsResult`. |

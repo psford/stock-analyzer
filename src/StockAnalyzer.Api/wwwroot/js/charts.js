@@ -33,11 +33,11 @@ const Charts = {
      * Shows actual date range for custom periods instead of "CUSTOM".
      */
     formatPeriodLabel(historyData) {
-        if (historyData.period === 'custom' && historyData.startDate && historyData.endDate) {
+        if (historyData.startDate && historyData.endDate) {
             const fmt = (d) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
             return `${fmt(historyData.startDate)} - ${fmt(historyData.endDate)}`;
         }
-        return historyData.period.toUpperCase();
+        return historyData.period ? historyData.period.toUpperCase() : '';
     },
 
     /**

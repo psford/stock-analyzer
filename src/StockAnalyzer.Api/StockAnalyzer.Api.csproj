@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Application version - single source of truth for footer, API, and cache-busting -->
-    <Version>3.0.3</Version>
+    <Version>3.0.5</Version>
   </PropertyGroup>
 
   <ItemGroup>

@@ -326,6 +326,93 @@ html {
     padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* Dark mode styling for native date inputs — browser UA styles override Tailwind classes,
+   so we must use explicit CSS with higher specificity */
+.dark input[type="date"] {
+    color-scheme: dark;
+    background-color: #374151 !important; /* gray-700 */
+    color: #D1D5DB !important; /* gray-300 */
+    border-color: #4B5563 !important; /* gray-600 */
+}
+.dark input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+}
+
+/* ============================================
+   Flatpickr Theming — CSS Custom Properties
+   Future skins override --fp-* variables only
+   ============================================ */
+
+/* Light mode defaults */
+.flatpickr-calendar {
+    --fp-bg: #ffffff;
+    --fp-text: #374151;
+    --fp-text-muted: #9ca3af;
+    --fp-border: #e5e7eb;
+    --fp-hover-bg: #f3f4f6;
+    --fp-accent: #3b82f6;
+    --fp-accent-light: #60a5fa;
+    --fp-today-border: #3b82f6;
+    --fp-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+    --fp-nav-arrow: #6b7280;
+    --fp-nav-arrow-hover: #3b82f6;
+}
+
+/* Dark mode overrides */
+.dark .flatpickr-calendar {
+    --fp-bg: #1f2937;
+    --fp-text: #e5e7eb;
+    --fp-text-muted: #6b7280;
+    --fp-border: #374151;
+    --fp-hover-bg: #374151;
+    --fp-accent: #3b82f6;
+    --fp-accent-light: #60a5fa;
+    --fp-today-border: #60a5fa;
+    --fp-shadow: 0 4px 6px -1px rgba(0,0,0,0.3);
+    --fp-nav-arrow: #e5e7eb;
+    --fp-nav-arrow-hover: #3b82f6;
+}
+
+/* Apply variables to flatpickr elements */
+.flatpickr-calendar {
+    background: var(--fp-bg) !important;
+    border-color: var(--fp-border) !important;
+    box-shadow: var(--fp-shadow) !important;
+}
+.flatpickr-months .flatpickr-month,
+.flatpickr-current-month .flatpickr-monthDropdown-months {
+    background: var(--fp-bg) !important;
+    color: var(--fp-text) !important;
+}
+.flatpickr-weekdays { background: var(--fp-bg) !important; }
+span.flatpickr-weekday { color: var(--fp-text-muted) !important; }
+.flatpickr-day { color: var(--fp-text) !important; }
+.flatpickr-day:hover {
+    background: var(--fp-hover-bg) !important;
+    border-color: var(--fp-hover-bg) !important;
+}
+.flatpickr-day.selected {
+    background: var(--fp-accent) !important;
+    border-color: var(--fp-accent) !important;
+    color: #ffffff !important;
+}
+.flatpickr-day.today { border-color: var(--fp-today-border) !important; }
+.flatpickr-day.prevMonthDay,
+.flatpickr-day.nextMonthDay { color: var(--fp-text-muted) !important; }
+.flatpickr-months .flatpickr-prev-month,
+.flatpickr-months .flatpickr-next-month {
+    fill: var(--fp-nav-arrow) !important;
+    color: var(--fp-nav-arrow) !important;
+}
+.flatpickr-months .flatpickr-prev-month:hover,
+.flatpickr-months .flatpickr-next-month:hover {
+    fill: var(--fp-nav-arrow-hover) !important;
+    color: var(--fp-nav-arrow-hover) !important;
+}
+.flatpickr-current-month input.cur-year {
+    color: var(--fp-text) !important;
+}
+
 /* Extra bottom padding on mobile for iOS address bar */
 @media (max-width: 768px) {
     .pb-safe {

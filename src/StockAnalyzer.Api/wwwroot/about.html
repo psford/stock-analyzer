@@ -10,7 +10,7 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <!-- Tailwind CSS - built locally from src/input.css -->
-    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/styles.css?v=3.0.5">
 </head>
 <body class="min-h-full bg-gray-50 dark:bg-gray-900 transition-colors pb-safe">
     <div class="min-h-full flex flex-col">
@@ -113,6 +113,25 @@
                                 <p class="text-gray-600 dark:text-gray-400 text-sm mt-1">
                                     We do not share any data with X (formerly Twitter), Meta (Facebook/Instagram), or any other social
                                     media platform. Your usage data stays with you.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Device Detection -->
+                        <div class="flex items-start gap-4">
+                            <div class="flex-shrink-0 w-10 h-10 bg-yellow-100 dark:bg-yellow-900 rounded-lg flex items-center justify-center">
+                                <svg class="w-5 h-5 text-yellow-600 dark:text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 class="font-medium text-gray-900 dark:text-white">Device Detection</h3>
+                                <p class="text-gray-600 dark:text-gray-400 text-sm mt-1">
+                                    We use a standard CSS media query (<code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">pointer: fine</code>)
+                                    to detect whether your device has a mouse or trackpad. This determines whether to show an enhanced
+                                    calendar date picker (desktop) or your device's built-in date picker (mobile). This check runs
+                                    entirely in your browser &mdash; no data is collected, stored, or transmitted. It's the same mechanism
+                                    browsers use to adapt page layouts to different screen sizes.
                                 </p>
                             </div>
                         </div>
