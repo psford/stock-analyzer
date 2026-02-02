@@ -108,6 +108,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 
 | Feature | Description | Status |
 |---------|-------------|--------|
+| Social media chart export | Generate shareable stock chart images from pinned drag-measure selections; platform-specific aspect ratios for Instagram, TikTok, Bluesky; button appears on pinned bubble (Slack #178) | Planned |
 | Server-side watchlists | Move watchlists to server with zero-knowledge encrypted sync for privacy-preserving multi-device access | Planned |
 | News caching service | Cache headlines, descriptions, and URLs from API calls; feed into sentiment analyzer to reduce API reliance | Planned |
 | Anonymous API monitoring | Track popular stocks anonymously (similar to heat scores) to pre-cache news for common searches | Planned |
