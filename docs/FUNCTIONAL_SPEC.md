@@ -724,13 +724,42 @@ Page Load                    User Types Query
 
 ---
 
+### 3.17 Draggable Tile Dashboard (FR-017)
+
+The results section displays stock data in 6 draggable, resizable tiles powered by GridStack.js. Users can rearrange tiles to customize their workspace, and layouts persist across sessions.
+
+**Functional Requirements:**
+
+| ID | Requirement |
+|----|-------------|
+| FR-017.1 | Results must display in 6 tiles: Stock Chart, Company Info, Key Metrics, Performance, Significant Moves, News |
+| FR-017.2 | Tiles must be draggable by their header bar |
+| FR-017.3 | Tiles must be resizable via drag handles on edges |
+| FR-017.4 | Tile layout must persist in localStorage and restore on next visit |
+| FR-017.5 | Each tile must have a close button (×) to hide it |
+| FR-017.6 | A panel dropdown in the header must show checkboxes to toggle each tile's visibility |
+| FR-017.7 | The panel dropdown must include a "Reset Layout" button that restores default tile positions |
+| FR-017.8 | Each tile must have a lock button (🔒) that prevents dragging and resizing when engaged |
+| FR-017.9 | Dragging a tile must produce a lift effect (slight scale + shadow) and highlight the drop zone |
+| FR-017.10 | Dropping a tile must produce a spring-settle animation (overshoot + glow) |
+| FR-017.11 | Neighboring tiles must animate smoothly when displaced by a drag operation |
+| FR-017.12 | An optional snap sound must play on tile drop (toggle via audio button in header) |
+| FR-017.13 | On mobile (<768px), tiles must stack in a single column |
+| FR-017.14 | The Stock Chart tile must resize Plotly to fill the tile when resized |
+| FR-017.15 | All existing functionality (search, charts, news, DragMeasure, watchlists, dark mode) must work identically within tiles |
+| FR-017.16 | The "Add to Watchlist" dropdown in the Company Info tile must not be clipped by tile boundaries |
+
+**User Story:** *As a power user, I want to rearrange my stock analysis dashboard tiles to prioritize the information most important to me, and have that layout remembered automatically.*
+
+---
+
 ## 4. User Interface Specifications
 
 ### 4.1 Page Layout
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────┐
-│  📈 Stock Analyzer                    Powered by .NET 8 + Plotly.js    [🌙/☀️]   │
+│  📈 Stock Analyzer              [⊞ Panels] [🔊] [🌙/☀️]                          │
 ├─────────────────────────────────────────────────────────────────────┬────────────┤
 │  ┌───────────────────────────────────────────────────────────────┐  │ WATCHLISTS │
 │  │ [Search Box] [Compare] [Chart ▼] [Analyze] [Clear]   │  │ ────────── │
@@ -738,29 +767,27 @@ Page Load                    User Types Query
 │  │ ☑ SMA 20   ☑ SMA 50   ☐ SMA 200   ☐ RSI   ☐ MACD            │  │            │
 │  └───────────────────────────────────────────────────────────────┘  │            │
 │                                                                      │ ▼ Tech     │
-│  ┌─────────────────────────────┐  ┌────────────────────────────┐   │   AAPL $150│
-│  │ SYMBOL                      │  │ Key Metrics                │   │   MSFT $380│
-│  │ Company Name                │  │ - Market Cap               │   │   GOOGL$140│
-│  │ Exchange • Currency         │  │ - P/E Ratio                │   │            │
-│  │         $XXX.XX [⭐ Add]    │  │ - 52W High/Low             │   │ ▶ Energy   │
-│  │         +X.XX (+X%)         │  │ - Avg Volume               │   │            │
-│  └─────────────────────────────┘  │ - Dividend Yield           │   │ ▶ Finance  │
-│                                   └────────────────────────────┘   │            │
-│  ┌───────────────────────────────────────────────────────────────┐  │            │
-│  │                    INTERACTIVE PLOTLY CHART                    │  │            │
-│  └───────────────────────────────────────────────────────────────┘  │            │
-│                                                                      │            │
-│  ┌─────────────────────────┐  ┌────────────────────────────────┐   │            │
-│  │ Performance             │  │ Significant Moves (>3%)        │   │            │
-│  │ - Total Return          │  │ Date | +X.XX%                  │   │            │
-│  │ - Volatility            │  │ Date | -X.XX%                  │   │            │
-│  └─────────────────────────┘  └────────────────────────────────┘   │            │
-│                                                                      │            │
-│  ┌───────────────────────────────────────────────────────────────┐  │            │
-│  │ Recent News - [Headline - Source • Date]                       │  │            │
-│  └───────────────────────────────────────────────────────────────┘  │            │
+│  ┌─── GridStack 12-column tile grid (draggable/resizable) ──────┐  │   AAPL $150│
+│  │ ┌────────────────────────── tile-chart (12w) ──────────────┐ │  │   MSFT $380│
+│  │ │ 📈 Stock Chart                              [🔒] [×]     │ │  │   GOOGL$140│
+│  │ │            INTERACTIVE PLOTLY CHART                       │ │  │            │
+│  │ └──────────────────────────────────────────────────────────┘ │  │ ▶ Energy   │
+│  │ ┌──── tile-info (8w) ──────┐ ┌── tile-metrics (4w) ──────┐ │  │            │
+│  │ │ ℹ Company Info    [🔒][×]│ │ 📊 Key Metrics     [🔒][×]│ │  │ ▶ Finance  │
+│  │ │ SYMBOL  $XXX.XX [⭐ Add] │ │ - Market Cap               │ │  │            │
+│  │ │ Company Name              │ │ - P/E Ratio                │ │  │            │
+│  │ └──────────────────────────┘ └────────────────────────────┘ │  │            │
+│  │ ┌── tile-performance (6w) ─┐ ┌── tile-moves (6w) ────────┐ │  │            │
+│  │ │ 📈 Performance    [🔒][×]│ │ 📉 Significant Moves[🔒][×]│ │  │            │
+│  │ │ - Total Return            │ │ Date | +X.XX%              │ │  │            │
+│  │ └──────────────────────────┘ └────────────────────────────┘ │  │            │
+│  │ ┌────────────────────────── tile-news (12w) ───────────────┐ │  │            │
+│  │ │ 📰 Recent News                              [🔒] [×]     │ │  │            │
+│  │ │ [Headline - Source • Date]                                │ │  │            │
+│  │ └──────────────────────────────────────────────────────────┘ │  │            │
+│  └──────────────────────────────────────────────────────────────┘  │            │
 ├─────────────────────────────────────────────────────────────────────┴────────────┤
-│  Stock Analyzer © 2026 | Data from Yahoo Finance & Finnhub                       │
+│  Stock Analyzer v3.1.0 © 2026 | Data from Yahoo Finance & Finnhub               │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1004,6 +1031,7 @@ The dashboard is fully responsive and adapts to mobile devices.
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
+| 3.0 | 2026-02-02 | **Draggable Tile Dashboard (FR-017):** New section 3.17 with 16 functional requirements covering tile drag/resize, layout persistence, close/reopen via panel dropdown, lock button, physics animations (lift effect, spring settle, neighbor FLIP), snap audio toggle, mobile single-column stacking, chart auto-resize, and preservation of all existing functionality. | Claude |
 | 2.9 | 2026-02-01 | **Date Range UI Redesign (FR-003):** Replaced single Time Period dropdown + hidden From/To inputs with two-field date range panel. End Date (PBD/LME/LQE/LYE/Custom) + Start Date (1D–30Y/MTD/YTD/Max/Custom), each with resolved date display. Start Date resolves relative to End Date (not today). Periods are inclusive. Custom mode makes date input editable. Changes trigger immediate reanalysis. | Claude |
 | 2.8 | 2026-01-23 | Enhanced sentiment analysis: 3-tier ensemble (keyword 60% + VADER 40%), word-boundary matching to prevent false positives, optional FinBERT ML tier | Claude |
 | 2.7 | 2026-01-22 | Sentiment-filtered news (FR-005.16-19): Headlines must match price direction, positive headlines don't show for drops, market news fallback when no matched company news | Claude |

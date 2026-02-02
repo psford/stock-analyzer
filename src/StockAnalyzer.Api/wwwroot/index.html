@@ -9,8 +9,10 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <!-- GridStack.js v12 (local) -->
+    <link rel="stylesheet" href="lib/gridstack/gridstack.min.css">
     <!-- Tailwind CSS - built locally from src/input.css -->
-    <link rel="stylesheet" href="css/styles.css?v=3.0.5">
+    <link rel="stylesheet" href="css/styles.css?v=3.1.0">
     <!-- Flatpickr date picker (desktop only, with SRI) -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css"
           integrity="sha512-MQXduO8IQnJVq1qmySpN87QQkiR1bZHtorbJBD0tzy7/0U9+YIC93QWHeGTEoojMVHWWNkoCp8V6OzVSYrX0oQ=="
@@ -38,6 +40,22 @@
                         <button id="mobile-watchlist-toggle" class="lg:hidden flex-shrink-0 p-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors" title="Toggle watchlists">
                             <svg class="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                            </svg>
+                        </button>
+                        <!-- Panel toggle button (tile dashboard) -->
+                        <div class="panel-dropdown-wrapper">
+                            <button id="panel-toggle-btn" class="flex-shrink-0 p-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors" title="Toggle panels">
+                                <svg class="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"/>
+                                </svg>
+                            </button>
+                            <div id="panel-dropdown" class="panel-dropdown"></div>
+                        </div>
+                        <!-- Audio toggle button (tile dashboard) -->
+                        <button id="audio-toggle" class="flex-shrink-0 p-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors" title="Toggle snap sounds (off)">
+                            <svg class="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
                             </svg>
                         </button>
                         <!-- Dark mode toggle -->
@@ -253,77 +271,173 @@
                 </div>
             </div>
 
-            <!-- Results Section (hidden until search) -->
+            <!-- Results Section (hidden until search) — GridStack tile grid -->
             <div id="results-section" class="hidden">
-                <!-- Chart (first — most important visual) -->
-                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-6">
-                    <div id="stock-chart" style="height: 500px; width: 100%;"></div>
-                </div>
+                <div class="grid-stack" id="tile-grid">
 
-                <!-- Stock Info Card -->
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-                    <div class="lg:col-span-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-                        <div class="flex items-start justify-between">
-                            <div id="stock-info" class="flex-1">
-                                <!-- Populated by JS -->
+                    <!-- Tile: Stock Chart -->
+                    <div class="grid-stack-item" gs-id="tile-chart" gs-x="0" gs-y="0" gs-w="12" gs-h="5" gs-min-w="4" gs-min-h="3">
+                        <div class="grid-stack-item-content">
+                            <div class="tile-card">
+                                <div class="tile-header">
+                                    <span class="tile-title">
+                                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+                                        Stock Chart
+                                    </span>
+                                    <span>
+                                        <button class="tile-lock" data-tile-id="tile-chart" title="Lock position">&#x1f512;</button>
+                                        <button class="tile-close" data-tile-id="tile-chart" title="Close">&times;</button>
+                                    </span>
+                                </div>
+                                <div class="tile-body" id="tile-chart-body" style="padding: 0;">
+                                    <div id="stock-chart" style="height: 500px; width: 100%;"></div>
+                                </div>
                             </div>
-                            <!-- Add to Watchlist Button -->
-                            <div id="add-to-watchlist-container" class="ml-4 flex-shrink-0 hidden">
-                                <div class="relative">
-                                    <button id="add-to-watchlist-btn" class="flex items-center gap-2 px-2 sm:px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors" title="Add to Watchlist">
-                                        <svg class="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"></path>
-                                        </svg>
-                                        <span class="hidden sm:inline">Add to Watchlist</span>
-                                    </button>
-                                    <!-- Watchlist dropdown -->
-                                    <div id="watchlist-dropdown" class="hidden absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-20">
-                                        <div class="py-1" id="watchlist-dropdown-items">
+                        </div>
+                    </div>
+
+                    <!-- Tile: Company Info -->
+                    <div class="grid-stack-item" gs-id="tile-info" gs-x="0" gs-y="5" gs-w="8" gs-h="4" gs-min-w="3" gs-min-h="2">
+                        <div class="grid-stack-item-content">
+                            <div class="tile-card">
+                                <div class="tile-header">
+                                    <span class="tile-title">
+                                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                        Company Info
+                                    </span>
+                                    <span>
+                                        <button class="tile-lock" data-tile-id="tile-info" title="Lock position">&#x1f512;</button>
+                                        <button class="tile-close" data-tile-id="tile-info" title="Close">&times;</button>
+                                    </span>
+                                </div>
+                                <div class="tile-body">
+                                    <div class="flex items-start justify-between">
+                                        <div id="stock-info" class="flex-1">
                                             <!-- Populated by JS -->
                                         </div>
-                                        <div class="border-t border-gray-200 dark:border-gray-700 p-2">
-                                            <button id="create-watchlist-from-dropdown" class="w-full flex items-center gap-2 px-3 py-2 text-sm text-primary hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-                                                </svg>
-                                                Create new watchlist
-                                            </button>
+                                        <!-- Add to Watchlist Button -->
+                                        <div id="add-to-watchlist-container" class="ml-4 flex-shrink-0 hidden">
+                                            <div class="relative">
+                                                <button id="add-to-watchlist-btn" class="flex items-center gap-2 px-2 sm:px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors" title="Add to Watchlist">
+                                                    <svg class="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"></path>
+                                                    </svg>
+                                                    <span class="hidden sm:inline">Add to Watchlist</span>
+                                                </button>
+                                                <!-- Watchlist dropdown -->
+                                                <div id="watchlist-dropdown" class="hidden absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-20">
+                                                    <div class="py-1" id="watchlist-dropdown-items">
+                                                        <!-- Populated by JS -->
+                                                    </div>
+                                                    <div class="border-t border-gray-200 dark:border-gray-700 p-2">
+                                                        <button id="create-watchlist-from-dropdown" class="w-full flex items-center gap-2 px-3 py-2 text-sm text-primary hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                                                            </svg>
+                                                            Create new watchlist
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Key Metrics</h3>
-                        <div id="key-metrics" class="space-y-3">
-                            <!-- Populated by JS -->
-                        </div>
-                    </div>
-                </div>
 
-                <!-- Performance & Significant Moves -->
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Performance</h3>
-                        <div id="performance-metrics" class="space-y-3">
-                            <!-- Populated by JS -->
+                    <!-- Tile: Key Metrics -->
+                    <div class="grid-stack-item" gs-id="tile-metrics" gs-x="8" gs-y="5" gs-w="4" gs-h="4" gs-min-w="2" gs-min-h="2">
+                        <div class="grid-stack-item-content">
+                            <div class="tile-card">
+                                <div class="tile-header">
+                                    <span class="tile-title">
+                                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3v-6m-3 6v-1M3 3h18v18H3z"/></svg>
+                                        Key Metrics
+                                    </span>
+                                    <span>
+                                        <button class="tile-lock" data-tile-id="tile-metrics" title="Lock position">&#x1f512;</button>
+                                        <button class="tile-close" data-tile-id="tile-metrics" title="Close">&times;</button>
+                                    </span>
+                                </div>
+                                <div class="tile-body">
+                                    <div id="key-metrics" class="space-y-3">
+                                        <!-- Populated by JS -->
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Significant Moves (>3%)</h3>
-                        <div id="significant-moves" class="space-y-2 max-h-64 overflow-y-auto">
-                            <!-- Populated by JS -->
-                        </div>
-                    </div>
-                </div>
 
-                <!-- News -->
-                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Recent News</h3>
-                    <div id="news-list" class="space-y-4">
-                        <!-- Populated by JS -->
+                    <!-- Tile: Performance -->
+                    <div class="grid-stack-item" gs-id="tile-performance" gs-x="0" gs-y="9" gs-w="6" gs-h="3" gs-min-w="3" gs-min-h="2">
+                        <div class="grid-stack-item-content">
+                            <div class="tile-card">
+                                <div class="tile-header">
+                                    <span class="tile-title">
+                                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6m6 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0h6m2 0v-3a2 2 0 012-2h2a2 2 0 012 2v3"/></svg>
+                                        Performance
+                                    </span>
+                                    <span>
+                                        <button class="tile-lock" data-tile-id="tile-performance" title="Lock position">&#x1f512;</button>
+                                        <button class="tile-close" data-tile-id="tile-performance" title="Close">&times;</button>
+                                    </span>
+                                </div>
+                                <div class="tile-body">
+                                    <div id="performance-metrics" class="space-y-3">
+                                        <!-- Populated by JS -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
+
+                    <!-- Tile: Significant Moves -->
+                    <div class="grid-stack-item" gs-id="tile-moves" gs-x="6" gs-y="9" gs-w="6" gs-h="3" gs-min-w="3" gs-min-h="2">
+                        <div class="grid-stack-item-content">
+                            <div class="tile-card">
+                                <div class="tile-header">
+                                    <span class="tile-title">
+                                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                                        Significant Moves
+                                    </span>
+                                    <span>
+                                        <button class="tile-lock" data-tile-id="tile-moves" title="Lock position">&#x1f512;</button>
+                                        <button class="tile-close" data-tile-id="tile-moves" title="Close">&times;</button>
+                                    </span>
+                                </div>
+                                <div class="tile-body">
+                                    <div id="significant-moves" class="space-y-2 max-h-64 overflow-y-auto">
+                                        <!-- Populated by JS -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tile: Recent News -->
+                    <div class="grid-stack-item" gs-id="tile-news" gs-x="0" gs-y="12" gs-w="12" gs-h="3" gs-min-w="4" gs-min-h="2">
+                        <div class="grid-stack-item-content">
+                            <div class="tile-card">
+                                <div class="tile-header">
+                                    <span class="tile-title">
+                                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"/></svg>
+                                        Recent News
+                                    </span>
+                                    <span>
+                                        <button class="tile-lock" data-tile-id="tile-news" title="Lock position">&#x1f512;</button>
+                                        <button class="tile-close" data-tile-id="tile-news" title="Close">&times;</button>
+                                    </span>
+                                </div>
+                                <div class="tile-body">
+                                    <div id="news-list" class="space-y-4">
+                                        <!-- Populated by JS -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
             </div>
 
@@ -433,7 +547,7 @@
                     </a>
                 </p>
                 <p class="text-sm text-gray-500 dark:text-gray-400 text-center mt-2">
-                    Stock Analyzer <span id="app-version">v3.0.3</span> &copy; 2026 | By Patrick Ford and Claude
+                    Stock Analyzer <span id="app-version">v3.1.0</span> &copy; 2026 | By Patrick Ford and Claude
                 </p>
             </div>
         </footer>
@@ -662,12 +776,15 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"
             integrity="sha512-K/oyQtMXpxI4+K0W7H25UopjM8pzq0yrVdFdG21Fh5dBe91I40pDd9A4lzNlHPHBIP2cwZuoxaUSX0GJSObvGA=="
             crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="js/storage.js?v=3.0.5"></script>
-    <script src="js/symbolSearch.js?v=3.0.5"></script>
-    <script src="js/api.js?v=3.0.5"></script>
-    <script src="js/charts.js?v=3.0.5"></script>
-    <script src="js/dragMeasure.js?v=3.0.5"></script>
-    <script src="js/watchlist.js?v=3.0.5"></script>
-    <script src="js/app.js?v=3.0.5"></script>
+    <!-- GridStack.js v12 (local) -->
+    <script src="lib/gridstack/gridstack-all.min.js"></script>
+    <script src="js/storage.js?v=3.1.0"></script>
+    <script src="js/symbolSearch.js?v=3.1.0"></script>
+    <script src="js/api.js?v=3.1.0"></script>
+    <script src="js/charts.js?v=3.1.0"></script>
+    <script src="js/dragMeasure.js?v=3.1.0"></script>
+    <script src="js/watchlist.js?v=3.1.0"></script>
+    <script src="js/app.js?v=3.1.0"></script>
+    <script src="js/tileDashboard.js?v=3.1.0"></script>
 </body>
 </html>

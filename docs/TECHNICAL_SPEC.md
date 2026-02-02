@@ -170,6 +170,7 @@ This specification covers:
 | Image Processing | SixLabors.ImageSharp | NuGet 3.1.7 |
 | Object Detection | YOLOv8n ONNX | ~12MB model |
 | Charting | Plotly.js | 2.27.0 (CDN) |
+| Tile Layout | GridStack.js | 12.4.2 (local) |
 | CSS Framework | Tailwind CSS | Built locally |
 | Serialization | System.Text.Json | Built-in |
 
@@ -1233,6 +1234,15 @@ Results sorted by score descending, then alphabetically for ties.
 - Coordinate conversion via Plotly's `xaxis.p2c()` / `xaxis.d2p()` with linear interpolation fallback
 - Attached in `app.js` (stock charts) and `watchlist.js` (portfolio charts)
 
+**tileDashboard.js** - GridStack tile layout manager with physics engine:
+- IIFE module `TileDashboard` — self-contained, no modifications to existing JS
+- MutationObserver on `#results-section` triggers lazy GridStack init when results become visible
+- Layout persistence via localStorage (`stockanalyzer_tile_layout` key, version 1)
+- Close/reopen tiles via panel dropdown with content caching
+- ResizeObserver on chart tile triggers `Plotly.Plots.resize()`
+- Physics engine: spring transitions, lift effect, magnetic pull, FLIP animations, snap settle
+- Web Audio API snap sound (1200Hz + 300Hz dual-oscillator)
+
 ### 6.3 Dark Mode Implementation
 
 The application supports light and dark color themes via Tailwind CSS class-based dark mode.
@@ -1467,6 +1477,88 @@ app.dateRange = {
 2. User selects "Custom" end/start preset: flatpickr instance created on first focus
 3. User picks date: `resolvedEndDate`/`resolvedStartDate` updated, chart re-fetched
 4. User switches back to preset: flatpickr destroyed, memory freed
+
+### 6.8 Tile Dashboard Architecture
+
+The results section uses GridStack.js v12 to render 6 draggable/resizable tiles with a physics-based animation engine. All existing JS (app.js, charts.js, etc.) remains completely unmodified — the tile system is a cosmetic overlay.
+
+**Library:** GridStack.js 12.4.2 (downloaded locally to `wwwroot/lib/gridstack/`)
+
+**Files:**
+| File | Purpose |
+|------|---------|
+| `lib/gridstack/gridstack-all.min.js` | GridStack v12 library (83KB) |
+| `lib/gridstack/gridstack.min.css` | GridStack base styles (4KB) |
+| `js/tileDashboard.js` | Tile management + physics engine (~520 lines) |
+| `src/input.css` | Tile CSS (~280 lines added to Tailwind source) |
+
+**Tile Layout (12-column grid):**
+
+| Tile ID | Content | gs-w | gs-h | min-w | min-h |
+|---------|---------|------|------|-------|-------|
+| `tile-chart` | `#stock-chart` (Plotly) | 12 | 5 | 4 | 3 |
+| `tile-info` | `#stock-info` + watchlist dropdown | 8 | 4 | 3 | 2 |
+| `tile-metrics` | `#key-metrics` | 4 | 4 | 2 | 2 |
+| `tile-performance` | `#performance-metrics` | 6 | 3 | 3 | 2 |
+| `tile-moves` | `#significant-moves` | 6 | 3 | 3 | 2 |
+| `tile-news` | `#news-list` | 12 | 3 | 4 | 2 |
+
+**GridStack Config:**
+```javascript
+GridStack.init({
+    column: 12, cellHeight: 70, margin: 12,
+    animate: true, float: false, handle: '.tile-header',
+    columnOpts: { breakpointForWindow: true, breakpoints: [{ w: 768, c: 1 }] }
+}, '#tile-grid');
+```
+
+**Lazy Initialization (zero app.js changes):**
+```
+DOMContentLoaded → TileDashboard.boot()
+    ↓
+MutationObserver on #results-section (watching 'class' attribute)
+    ↓
+App.showResults() removes 'hidden' class → observer fires
+    ↓
+requestAnimationFrame → initGridStack()
+    ↓
+Guard: if (initialized) return; — prevents re-init on subsequent searches
+```
+
+**Chart Integration:**
+- CSS `height: 100% !important` on `#stock-chart` overrides app.js inline pixel height
+- ResizeObserver on `#tile-chart-body` calls `Plotly.Plots.resize()` on tile resize
+- DragMeasure overlay unaffected — attaches to chart body, not tile header
+
+**Layout Persistence:**
+```javascript
+// localStorage key: 'stockanalyzer_tile_layout'
+// Format: { version: 1, tiles: [{ id, x, y, w, h, visible }] }
+// Saves on: GridStack 'change' event (move/resize)
+// Restores on: initGridStack() via grid.batchUpdate()
+```
+
+**Physics Engine (carried over from prototype):**
+
+| Feature | Implementation |
+|---------|---------------|
+| Spring transitions | CSS `cubic-bezier(0.25, 1.1, 0.5, 1)` on top/width/height (0.35s) |
+| Lift effect | Dragged tile: `scale(1.025)`, elevated shadow, `opacity: 0.92` |
+| Magnetic pull | Quadratic easing within 50px threshold, 0.35 strength factor |
+| Snap settle | `@keyframes snapSettle` — scale overshoot (1.012) + blue glow (400ms) |
+| Neighbor FLIP | MutationObserver on `gs-x` attribute changes → WAAPI `element.animate()` |
+| Placeholder | `@keyframes placeholderReveal` — fade in + scale from 0.96 (200ms) |
+| Grid dot glow | `.grid-stack.drag-active` — background dots pulse during drag |
+| Snap audio | Web Audio API: 1200Hz + 300Hz oscillators, 80ms duration |
+| Haptics | `navigator.vibrate(8)` on snap (mobile) |
+
+**Tile Header Controls:**
+- Lock button: Toggles `noMove`/`noResize`/`locked` via GridStack API + `tile-locked` class (dashed border, diagonal hatch)
+- Close button: Removes widget via `grid.removeWidget()`, content cached for reopen
+- Panel dropdown: 6 checkboxes (one per tile) + Reset Layout button
+
+**Watchlist Dropdown Fix:**
+- `.grid-stack-item[gs-id="tile-info"] .tile-card` and `.tile-body` have `overflow: visible` to prevent clipping
 
 ---
 
@@ -2826,6 +2918,7 @@ const newsPromise = API.getAggregatedNews(ticker, 30, 10);
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.43 | 2026-02-02 | **Tile Dashboard (GridStack.js v12):** Results section wrapped in 6 draggable/resizable tiles using GridStack.js 12.4.2 (downloaded locally). Tiles: Chart (12w), Company Info (8w), Key Metrics (4w), Performance (6w), Significant Moves (6w), News (12w). 12-column grid with `cellHeight: 70`, `margin: 12`, mobile single-column at `<768px`. Physics engine: spring CSS transitions (`cubic-bezier(0.25, 1.1, 0.5, 1)`), lift effect (`scale(1.025)` + shadow), magnetic pull (50px threshold, 0.35 strength), snap settle animation (400ms keyframes with scale overshoot + blue glow), FLIP neighbor animations via MutationObserver + WAAPI, placeholder reveal animation (200ms). Web Audio API snap sound (1200Hz + 300Hz dual-oscillator, 80ms). Tile locking (noMove/noResize + dashed border + diagonal hatch). Close/reopen via panel dropdown with content caching. Layout persistence in localStorage (`stockanalyzer_tile_layout`, version 1). Lazy init via MutationObserver on `#results-section` class changes — zero modifications to app.js/charts.js/symbolSearch.js/api.js/dragMeasure.js/watchlist.js/storage.js. Chart height: CSS `!important` override + ResizeObserver → `Plotly.Plots.resize()`. Watchlist dropdown overflow fix on tile-info. New files: `lib/gridstack/gridstack-all.min.js`, `lib/gridstack/gridstack.min.css`, `js/tileDashboard.js` (~520 lines). New CSS: ~280 lines in `input.css`. New section 6.8 documents architecture. |
 | 2.42 | 2026-02-01 | **Deploy Warmup & Bicep Drift Detection:** (1) Synced `main.bicep` to match live Azure config: F1/Free → B1/Basic SKU, `alwaysOn: true` (was false). (2) Added "Warm up application caches" step to deploy workflow — primes static files, symbol cache, DB pool, and health check before smoke tests. (3) Reduced container startup wait from 60s to 30s. (4) **Bicep drift detection** in deploy preflight: parses SKU and alwaysOn from `main.bicep`, compares against live Azure via `az` CLI, fails deployment if they diverge. Prevents stale Bicep from causing incorrect infrastructure assumptions. |
 | 2.41 | 2026-02-01 | **Flatpickr Date Picker Integration:** (1) **Desktop/mobile device detection** — `window.matchMedia('(pointer: fine)')` detects mouse/trackpad → uses flatpickr widget; touch-only devices → native `<input type="date">` for optimal UX. (2) **Flatpickr initialization** — only when "Custom" date mode selected, destroyed when switching back to preset to save memory. (3) **CSS theming** — dark mode support via CSS custom properties (`--fp-*` variables) with `.dark .flatpickr-calendar` selector; no JS theme swapping. (4) **External dependency** — flatpickr 4.6.13 (~16KB + 4KB CSS) loaded from CDN with SRI hash. New subsection 6.7 documents device detection, lifecycle, state management, and CSS theming. SRI table updated (Section 12.5). (5) **Privacy disclosure** — Device Detection added to about.html privacy section (pointer-fine media query is observable but read-only). |
 | 2.40 | 2026-02-01 | **Date Range UI Redesign:** Replaced `#period-select` dropdown + `#custom-date-range` (hidden From/To/Apply) with a two-row date range sub-panel. **New HTML:** `#end-date-preset` (PBD/LME/LQE/LYE/Custom) + `#end-date-resolved` (readonly date input) on row 1; `#start-date-preset` (1D–30Y/MTD/YTD/Max/Custom) + `#start-date-resolved` on row 2. **New state model:** replaced `currentPeriod`/`customDateFrom`/`customDateTo` with `endDatePreset`/`startDatePreset`/`resolvedEndDate`/`resolvedStartDate`. **Date resolution functions:** `resolveEndDate(preset)` computes PBD (skip weekends), LME, LQE, LYE. `resolveStartDate(preset, endDateStr)` computes relative to End Date with inclusive periods (subtract N, +1 day). `recalculateStartDate()` re-derives start when end changes. `triggerReanalysis()` re-fetches data on date change. **bindEvents:** 4 new listeners for preset dropdowns and resolved inputs, replacing period-select and apply-date-range handlers. `setDateInputEditable()` toggles readonly + CSS classes for Custom mode. **analyzeStock/setComparison:** now use `resolvedStartDate`/`resolvedEndDate` directly, period param always null. **clearAll:** resets to PBD + 1Y defaults. **charts.js:** `formatPeriodLabel()` simplified to always show date range when startDate/endDate exist. **Dead code removed:** `initPeriodSelect()`, `currentPeriod`, `customDateFrom`, `customDateTo`, mobile period select sync, `#period-select`, `#custom-date-range`, `#date-from`, `#date-to`, `#apply-date-range`. |

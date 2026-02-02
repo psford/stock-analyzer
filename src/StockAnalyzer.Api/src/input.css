@@ -589,3 +589,350 @@ span.flatpickr-weekday { color: var(--fp-text-muted) !important; }
     border-left-color: rgba(245, 158, 11, 0.5);
     border-right-color: rgba(245, 158, 11, 0.5);
 }
+
+/* ============================================
+   Tile Dashboard — GridStack Integration
+   ============================================ */
+
+/* Grid container — dot grid shows snap points */
+.grid-stack {
+    min-height: 200px;
+    background-image: radial-gradient(circle, #d1d5db 1px, transparent 1px);
+    background-size: calc(100% / 12) 70px;
+    background-position: 6px 6px;
+    position: relative !important;
+}
+.dark .grid-stack {
+    background-image: radial-gradient(circle, #374151 1px, transparent 1px);
+}
+
+/* GridStack positioning fix — ensure absolute positioning works */
+.grid-stack > .grid-stack-item {
+    position: absolute !important;
+}
+/* GridStack v12 sets position:fixed during drag — re-allow it */
+.grid-stack > .grid-stack-item.ui-draggable-dragging {
+    position: fixed !important;
+}
+
+/* Tile card structure */
+.grid-stack-item-content {
+    height: 100% !important;
+    padding: 6px;
+}
+.tile-card {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    border-radius: 0.5rem;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    overflow: hidden;
+    transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+.dark .tile-card {
+    background: #1f2937;
+    border-color: #374151;
+}
+.tile-card:hover {
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1);
+}
+
+/* Tile header (drag handle) */
+.tile-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.375rem 0.75rem;
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+    cursor: grab;
+    user-select: none;
+    flex-shrink: 0;
+    transition: background-color 0.2s, border-color 0.2s;
+}
+.dark .tile-header {
+    background: #111827;
+    border-bottom-color: #374151;
+}
+.tile-header:active { cursor: grabbing; }
+
+.tile-title {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #374151;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+}
+.dark .tile-title { color: #d1d5db; }
+.tile-title svg { width: 1rem; height: 1rem; opacity: 0.6; }
+
+/* Tile body — content area */
+.tile-body {
+    flex: 1;
+    overflow: auto;
+    padding: 0.75rem;
+    min-height: 0;
+}
+
+/* Close button (appears on hover) */
+.tile-close {
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 0.25rem;
+    border: none;
+    background: transparent;
+    color: #9ca3af;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    line-height: 1;
+    transition: all 0.15s;
+    opacity: 0;
+}
+.tile-card:hover .tile-close { opacity: 0.5; }
+.tile-close:hover { opacity: 1 !important; background: #fee2e2; color: #dc2626; }
+.dark .tile-close:hover { background: rgba(220,38,38,0.2); color: #f87171; }
+
+/* Lock button (appears on hover) */
+.tile-lock {
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 0.25rem;
+    border: none;
+    background: transparent;
+    color: #9ca3af;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    line-height: 1;
+    transition: all 0.15s;
+    opacity: 0;
+    margin-right: 0.25rem;
+}
+.tile-card:hover .tile-lock { opacity: 0.4; }
+.tile-lock:hover { opacity: 1 !important; background: #f3f4f6; color: #3b82f6; }
+.dark .tile-lock:hover { background: #374151; color: #60a5fa; }
+.tile-locked .tile-lock { opacity: 0.7 !important; color: #3b82f6; }
+.dark .tile-locked .tile-lock { color: #60a5fa; }
+
+/* Placeholder styling */
+.grid-stack-placeholder > .placeholder-content {
+    background: rgba(59,130,246,0.08) !important;
+    border: 2px dashed rgba(59,130,246,0.3) !important;
+    border-radius: 0.5rem;
+}
+.dark .grid-stack-placeholder > .placeholder-content {
+    background: rgba(59,130,246,0.1) !important;
+    border-color: rgba(59,130,246,0.3) !important;
+}
+
+/* Placeholder entrance animation */
+.grid-stack-placeholder > .placeholder-content {
+    animation: placeholderReveal 0.2s ease-out !important;
+}
+@keyframes placeholderReveal {
+    0% { transform: scale(0.92); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+/* Resize handle */
+.grid-stack-item > .ui-resizable-se {
+    width: 16px !important;
+    height: 16px !important;
+    background: none !important;
+}
+.grid-stack-item > .ui-resizable-se::after {
+    content: '';
+    position: absolute;
+    right: 9px;
+    bottom: 9px;
+    width: 8px;
+    height: 8px;
+    border-right: 2px solid #d1d5db;
+    border-bottom: 2px solid #d1d5db;
+    border-radius: 0 0 2px 0;
+}
+.dark .grid-stack-item > .ui-resizable-se::after {
+    border-right-color: #4b5563;
+    border-bottom-color: #4b5563;
+}
+.grid-stack-item:hover > .ui-resizable-se::after {
+    border-right-color: #3b82f6;
+    border-bottom-color: #3b82f6;
+}
+
+/* Chart tile: override app.js pixel height so chart fills tile */
+.grid-stack #stock-chart {
+    height: 100% !important;
+    width: 100% !important;
+}
+
+/* Watchlist dropdown overflow fix — prevent clipping inside tile */
+.grid-stack-item[gs-id="tile-info"] .tile-card { overflow: visible; }
+.grid-stack-item[gs-id="tile-info"] .tile-body { overflow: visible; }
+
+/* ===== PHYSICS ENGINE CSS ===== */
+
+/* Spring transition for vertical tile movements and size changes.
+   Horizontal (left) is handled by MutationObserver FLIP animation in JS
+   because GridStack v12 uses attribute-selector stylesheet rules
+   ([gs-x="N"]{left:X%}) which don't trigger CSS transitions. */
+.grid-stack-animate > .grid-stack-item:not(.tile-dragging):not(.tile-just-dropped),
+.grid-stack.drag-active > .grid-stack-item:not(.tile-dragging):not(.tile-just-dropped) {
+    transition: top 0.38s cubic-bezier(0.25, 1.1, 0.5, 1),
+                width 0.35s cubic-bezier(0.22, 0.8, 0.5, 1),
+                height 0.35s cubic-bezier(0.22, 0.8, 0.5, 1) !important;
+}
+
+/* Lift effect: tile being dragged */
+.grid-stack-item.tile-dragging {
+    z-index: 100 !important;
+    transition: none !important;
+}
+.tile-dragging .tile-card {
+    transform: scale(1.025);
+    box-shadow: 0 25px 50px -12px rgba(0,0,0,0.2), 0 12px 24px -8px rgba(0,0,0,0.12);
+    opacity: 0.92;
+    border-color: #3b82f6;
+    transition: transform 0.15s cubic-bezier(0.34, 1.4, 0.64, 1),
+                box-shadow 0.15s ease-out,
+                opacity 0.15s ease-out,
+                border-color 0.15s ease-out;
+}
+.dark .tile-dragging .tile-card {
+    box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5), 0 12px 24px -8px rgba(0,0,0,0.3);
+    border-color: #60a5fa;
+}
+
+/* Snap settle: tile just dropped into position */
+.grid-stack-animate > .grid-stack-item.tile-just-dropped {
+    transition: none !important;
+}
+.tile-just-dropped .tile-card {
+    animation: snapSettle 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes snapSettle {
+    0% { transform: scale(1.02); box-shadow: 0 0 0 3px rgba(59,130,246,0.4), 0 8px 16px -4px rgba(0,0,0,0.1); }
+    50% { transform: scale(0.995); }
+    100% { transform: scale(1); box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+}
+
+/* Grid dots glow during drag */
+.grid-stack.drag-active {
+    background-image: radial-gradient(circle, rgba(59,130,246,0.35) 1.5px, transparent 1.5px);
+}
+.dark .grid-stack.drag-active {
+    background-image: radial-gradient(circle, rgba(96,165,250,0.25) 1.5px, transparent 1.5px);
+}
+
+/* Locked tile styling */
+.tile-locked .tile-header { cursor: default !important; }
+.tile-locked .tile-card {
+    border-style: dashed;
+    border-color: #d1d5db;
+}
+.dark .tile-locked .tile-card { border-color: #4b5563; }
+.tile-locked .tile-card::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(
+        -45deg, transparent, transparent 8px,
+        rgba(0,0,0,0.015) 8px, rgba(0,0,0,0.015) 9px
+    );
+    pointer-events: none;
+    border-radius: 0.5rem;
+}
+.dark .tile-locked .tile-card::after {
+    background: repeating-linear-gradient(
+        -45deg, transparent, transparent 8px,
+        rgba(255,255,255,0.02) 8px, rgba(255,255,255,0.02) 9px
+    );
+}
+
+/* Audio toggle button state */
+.audio-enabled {
+    color: #3b82f6 !important;
+    background-color: #eff6ff !important;
+}
+.dark .audio-enabled {
+    color: #60a5fa !important;
+    background-color: #1e3a5f !important;
+}
+
+/* Panel dropdown */
+.panel-dropdown-wrapper { position: relative; }
+.panel-dropdown {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.5rem);
+    width: 220px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+    z-index: 50;
+    padding: 0.5rem 0;
+}
+.dark .panel-dropdown { background: #1f2937; border-color: #374151; }
+.panel-dropdown.open { display: block; }
+.panel-dropdown label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    font-size: 0.875rem;
+    color: #374151;
+}
+.dark .panel-dropdown label { color: #d1d5db; }
+.panel-dropdown label:hover { background: #f3f4f6; }
+.dark .panel-dropdown label:hover { background: #374151; }
+.panel-dropdown input[type="checkbox"] {
+    width: 1rem;
+    height: 1rem;
+    accent-color: #3b82f6;
+}
+.panel-dropdown-divider {
+    border-top: 1px solid #e5e7eb;
+    margin: 0.25rem 0;
+}
+.dark .panel-dropdown-divider { border-top-color: #374151; }
+.panel-dropdown .reset-btn {
+    display: block;
+    width: calc(100% - 1rem);
+    margin: 0.25rem 0.5rem;
+    padding: 0.375rem 0.5rem;
+    font-size: 0.8125rem;
+    text-align: center;
+    border-radius: 0.375rem;
+    border: 1px solid #d1d5db;
+    background: transparent;
+    color: #6b7280;
+    cursor: pointer;
+}
+.panel-dropdown .reset-btn:hover {
+    background: #fee2e2;
+    color: #dc2626;
+    border-color: #fca5a5;
+}
+.dark .panel-dropdown .reset-btn { border-color: #4b5563; color: #9ca3af; }
+.dark .panel-dropdown .reset-btn:hover {
+    background: rgba(220,38,38,0.15);
+    color: #f87171;
+    border-color: #f87171;
+}
+
+/* Mobile adjustments */
+@media (max-width: 768px) {
+    .grid-stack-item-content { padding: 3px; }
+    .tile-header { padding: 0.25rem 0.5rem; }
+}
