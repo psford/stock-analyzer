@@ -33,14 +33,14 @@ var sqlServerName = 'sql-${appName}-${shortSuffix}'
 var sqlDatabaseName = 'stockanalyzer-db'
 var keyVaultName = 'kv-stk-${shortSuffix}' // Must be 3-24 chars
 
-// App Service Plan (Linux, F1 Free tier for quota limits)
+// App Service Plan (Linux, B1 Basic tier — enables Always On to eliminate cold starts)
 resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
   name: appServicePlanName
   location: location
   kind: 'linux'
   sku: {
-    name: 'F1'
-    tier: 'Free'
+    name: 'B1'
+    tier: 'Basic'
     capacity: 1
   }
   properties: {
@@ -60,7 +60,7 @@ resource appService 'Microsoft.Web/sites@2023-01-01' = {
     serverFarmId: appServicePlan.id
     siteConfig: {
       linuxFxVersion: 'DOCKER|ghcr.io/psford/stockanalyzer:latest'
-      alwaysOn: false // F1 tier doesn't support alwaysOn
+      alwaysOn: true // B1 tier supports Always On — keeps app warm, eliminates idle cold starts
       http20Enabled: true
       minTlsVersion: '1.2'
       ftpsState: 'Disabled'
