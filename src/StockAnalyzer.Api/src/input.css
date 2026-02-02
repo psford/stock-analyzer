@@ -419,3 +419,173 @@ span.flatpickr-weekday { color: var(--fp-text-muted) !important; }
         padding-bottom: max(env(safe-area-inset-bottom, 0px), 1rem);
     }
 }
+
+/* ============================================
+   Drag-to-Measure Performance Overlay
+   ============================================ */
+
+#drag-measure-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10;
+}
+
+#drag-measure-region {
+    position: absolute;
+    pointer-events: none;
+    background: rgba(59, 130, 246, 0.08);
+    z-index: 10;
+}
+
+.dark #drag-measure-region {
+    background: rgba(59, 130, 246, 0.12);
+}
+
+#drag-measure-start-line {
+    position: absolute;
+    width: 1.5px;
+    background: rgba(59, 130, 246, 0.8);
+    pointer-events: none;
+    z-index: 11;
+}
+
+#drag-measure-end-line {
+    position: absolute;
+    width: 1.5px;
+    pointer-events: none;
+    z-index: 11;
+    background: repeating-linear-gradient(
+        to bottom,
+        rgba(59, 130, 246, 0.7) 0px,
+        rgba(59, 130, 246, 0.7) 4px,
+        transparent 4px,
+        transparent 8px
+    );
+}
+
+#drag-measure-bubble {
+    position: absolute;
+    min-width: 180px;
+    max-width: 260px;
+    padding: 0.625rem 0.75rem;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    pointer-events: none;
+    z-index: 20;
+    font-family: system-ui, -apple-system, sans-serif;
+    line-height: 1.4;
+}
+
+.dark #drag-measure-bubble {
+    background: rgba(31, 41, 55, 0.95);
+    border-color: #4b5563;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Bubble content classes */
+.dm-dates {
+    font-size: 0.7rem;
+    color: #6b7280;
+    margin-bottom: 0.25rem;
+}
+
+.dark .dm-dates {
+    color: #9ca3af;
+}
+
+.dm-main-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    margin-bottom: 0.125rem;
+}
+
+.dm-pct {
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.dm-positive {
+    color: #059669;
+}
+
+.dark .dm-positive {
+    color: #34d399;
+}
+
+.dm-negative {
+    color: #dc2626;
+}
+
+.dark .dm-negative {
+    color: #f87171;
+}
+
+.dm-dollar {
+    font-size: 0.8rem;
+    color: #374151;
+}
+
+.dark .dm-dollar {
+    color: #d1d5db;
+}
+
+.dm-prices {
+    font-size: 0.7rem;
+    color: #6b7280;
+}
+
+.dark .dm-prices {
+    color: #9ca3af;
+}
+
+.dm-comp-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+}
+
+.dm-primary-label {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: #2563eb;
+    min-width: 3rem;
+}
+
+.dark .dm-primary-label {
+    color: #60a5fa;
+}
+
+.dm-comp-label {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: #d97706;
+    min-width: 3rem;
+}
+
+.dark .dm-comp-label {
+    color: #fbbf24;
+}
+
+/* Right-click zoom selection region (amber to distinguish from blue measure) */
+#drag-zoom-region {
+    position: absolute;
+    pointer-events: none;
+    background: rgba(245, 158, 11, 0.1);
+    border-left: 2px solid rgba(245, 158, 11, 0.6);
+    border-right: 2px solid rgba(245, 158, 11, 0.6);
+    z-index: 10;
+}
+
+.dark #drag-zoom-region {
+    background: rgba(245, 158, 11, 0.15);
+    border-left-color: rgba(245, 158, 11, 0.5);
+    border-right-color: rgba(245, 158, 11, 0.5);
+}

@@ -161,8 +161,8 @@ Page Load                    User Types Query
 | FR-002.2 | The system must support Candlestick chart type |
 | FR-002.3 | The system must support Line chart type |
 | FR-002.4 | The system must allow users to switch between chart types |
-| FR-002.5 | The system must allow zooming via mouse scroll or touch pinch |
-| FR-002.6 | The system must allow panning via mouse drag or touch swipe |
+| FR-002.5 | The system must allow zooming via mouse scroll (cursor-centered) or touch pinch |
+| FR-002.6 | The system must allow zooming to a date range via right-click drag |
 | FR-002.7 | The system must show price details on hover (Open, High, Low, Close) |
 | FR-002.8 | The system must display volume bars below candlestick charts |
 
@@ -699,6 +699,28 @@ Page Load                    User Types Query
 | Equal Weight | Average of normalized percentage returns for each ticker |
 | Shares | Σ(shares × close price) for each historical date |
 | Dollars | Convert initial dollars to shares at period start, then track value |
+
+### 3.16 Click-and-Drag Performance Measurement (FR-016)
+
+**Purpose:** Allow users to measure price performance between any two points on the chart by clicking and dragging, with a real-time floating bubble showing returns.
+
+| ID | Requirement |
+|----|-------------|
+| FR-016.1 | Left-click drag on the chart must display a floating bubble with % return, $ change, price range, and date range |
+| FR-016.2 | The bubble must update in real time during the drag |
+| FR-016.3 | On mouse release, the bubble must stay pinned until dismissed |
+| FR-016.4 | Pinned bubble must be dismissed by clicking elsewhere or pressing Escape |
+| FR-016.5 | Right-click drag must zoom to the selected date range (with shaded preview during drag) |
+| FR-016.6 | Scroll wheel must zoom in/out centered on the cursor position |
+| FR-016.7 | Double-click must reset zoom to the full data range |
+| FR-016.8 | Scrolling out past the loaded data range must fetch additional historical data from the API |
+| FR-016.9 | The right edge of the chart must never extend past the last data point (no future dates) |
+| FR-016.10 | In comparison mode, the bubble must show returns for both stocks with colored labels |
+| FR-016.11 | On portfolio (combined view) charts, the bubble must show percentage change range instead of dollar values |
+| FR-016.12 | The chart cursor must display as crosshair when hovering over the chart area |
+| FR-016.13 | Visual elements: solid blue start line, dashed blue end line, light blue shaded region between |
+
+**User Story:** *As an investor, I want to click and drag across a chart to instantly see the return over any arbitrary period, so that I can quickly evaluate performance without manually reading axis values.*
 
 ---
 

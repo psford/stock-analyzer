@@ -1003,6 +1003,7 @@ wwwroot/
 │   ├── api.js          # API client wrapper + portfolio aggregation
 │   ├── app.js          # Main application logic
 │   ├── charts.js       # Plotly chart configuration
+│   ├── dragMeasure.js  # Click-and-drag performance measurement overlay
 │   ├── storage.js      # LocalStorage watchlist persistence
 │   └── watchlist.js    # Watchlist sidebar and combined view
 ├── tests/              # Frontend JavaScript unit tests
@@ -1213,6 +1214,21 @@ Results sorted by score descending, then alphabetically for ties.
 - ±5% significant move markers
 - Hover cards with market news
 - Escape key handler for modal dismissal
+
+**dragMeasure.js** - Click-and-drag performance measurement overlay:
+- Self-contained module with state machine: `IDLE → MEASURING → PINNED → IDLE` (left-click) and `IDLE → ZOOMING → IDLE` (right-click)
+- HTML overlay positioned over Plotly SVG for zero-flicker performance (no `Plotly.relayout()` during drag)
+- Left-click drag: Shows floating bubble with % return, $ change, and date range, updating in real time
+- Right-click drag: Zoom to selected date range with shaded preview
+- Scroll wheel: Cursor-centered zoom with rAF-based throttling (accumulate-then-apply pattern for high-speed scroll wheels)
+- Double-click: Reset zoom to full data range
+- Escape: Dismiss pinned bubble or cancel active drag
+- Supports both price charts (`dataType: 'price'`) and portfolio percent-change charts (`dataType: 'percent'`)
+- Comparison mode shows both stocks' returns with colored labels
+- `onRangeExtend` callback enables fetching additional historical data when user scrolls past data bounds (right edge clamped to last data point — no future dates)
+- Binary search (O(log n)) for nearest data point lookup
+- Coordinate conversion via Plotly's `xaxis.p2c()` / `xaxis.d2p()` with linear interpolation fallback
+- Attached in `app.js` (stock charts) and `watchlist.js` (portfolio charts)
 
 ### 6.3 Dark Mode Implementation
 

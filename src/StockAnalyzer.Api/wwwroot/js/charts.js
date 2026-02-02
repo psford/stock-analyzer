@@ -235,7 +235,8 @@ const Charts = {
                 },
                 autosize: true,
                 margin: { t: 50, r: 30, b: 60, l: 60, autoexpand: true },
-                hovermode: 'x unified'
+                hovermode: 'x unified',
+                dragmode: false
             };
 
             const config = {
@@ -612,7 +613,8 @@ const Charts = {
             autosize: true,
             margin: { t: 50, r: 30, b: 60, l: 60, autoexpand: true },
             hovermode: 'closest',
-            hoverdistance: 20
+            hoverdistance: 20,
+            dragmode: false
         };
 
         // Add RSI y-axis if shown

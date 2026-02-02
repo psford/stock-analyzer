@@ -15,7 +15,7 @@ const Watchlist = {
         period: '1y',
         benchmark: null,
         data: null,
-        showMarkers: true,
+        showMarkers: false,
         currentAnimal: 'cats', // 'cats' or 'dogs'
         marketNews: [],
         hoverTimeout: null,
@@ -131,9 +131,11 @@ const Watchlist = {
 
         document.getElementById('combined-clear-benchmark')?.addEventListener('click', () => this.clearBenchmark());
 
-        // Significant moves toggle
+        // Significant moves toggle — also controls cat/dog toggle visibility
         document.getElementById('combined-show-markers')?.addEventListener('change', (e) => {
             this.combinedView.showMarkers = e.target.checked;
+            const animalContainer = document.getElementById('combined-animal-container');
+            if (animalContainer) animalContainer.classList.toggle('hidden', !e.target.checked);
             if (this.combinedView.data) {
                 this.renderPortfolioChart(this.combinedView.data);
             }
@@ -724,15 +726,17 @@ const Watchlist = {
         this.updatePeriodButtons('1y');
         this.updateBenchmarkButtons(null);
 
-        // Reset markers checkbox
-        this.combinedView.showMarkers = true;
+        // Reset markers checkbox (off by default)
+        this.combinedView.showMarkers = false;
         const markersCheckbox = document.getElementById('combined-show-markers');
-        if (markersCheckbox) markersCheckbox.checked = true;
+        if (markersCheckbox) markersCheckbox.checked = false;
 
-        // Reset animal toggle to cats
+        // Reset animal toggle to cats (hidden since markers are off)
         this.combinedView.currentAnimal = 'cats';
         const animalToggle = document.getElementById('combined-animal-toggle');
         if (animalToggle) animalToggle.checked = false;
+        const animalContainer = document.getElementById('combined-animal-container');
+        if (animalContainer) animalContainer.classList.add('hidden');
 
         // Fetch and display data
         await this.loadCombinedData();
@@ -945,10 +949,23 @@ const Watchlist = {
                 x: 0.5,
                 font: { color: themeColors.text }
             },
-            margin: { t: 50, r: 30, b: 80, l: 60 }
+            margin: { t: 50, r: 30, b: 80, l: 60 },
+            dragmode: false
         };
 
         Plotly.newPlot(chartEl, traces, layout, { responsive: true });
+
+        // Attach drag-measure interaction (left-click: measure, right-click: zoom, scroll: zoom)
+        if (typeof DragMeasure !== 'undefined') {
+            DragMeasure.attach('portfolio-chart', {
+                dataSource: () => data?.data || [],
+                dataType: 'percent',
+                isComparisonMode: () => !!data?.benchmarkData,
+                getComparisonData: () => data?.benchmarkData ? { data: data.benchmarkData } : null,
+                getPrimarySymbol: () => data?.watchlistName || 'Portfolio',
+                getComparisonSymbol: () => data?.benchmarkSymbol || ''
+            });
+        }
 
         // Set up hover events for significant move markers
         if (this.combinedView.showMarkers && data.significantMoves && data.significantMoves.length > 0) {

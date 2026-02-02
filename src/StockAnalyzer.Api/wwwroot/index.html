@@ -232,13 +232,13 @@
                            class="w-32 h-2 bg-gray-200 dark:bg-gray-600 rounded-lg appearance-none cursor-pointer">
                     <span id="threshold-value" class="text-sm font-medium text-gray-900 dark:text-white w-8">5%</span>
                     <label class="inline-flex items-center ml-4">
-                        <input type="checkbox" id="show-markers" class="rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary" checked>
+                        <input type="checkbox" id="show-markers" class="rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary">
                         <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">Show markers on chart</span>
                     </label>
                 </div>
 
-                <!-- Cats vs Dogs Toggle -->
-                <div class="mt-4 flex items-center gap-4">
+                <!-- Cats vs Dogs Toggle (visible only when markers are shown) -->
+                <div id="animal-toggle-container" class="mt-4 flex items-center gap-4 hidden">
                     <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Popup thumbnails:</label>
                     <label class="inline-flex items-center">
                         <input type="radio" name="animal-type" id="animal-cats" value="cats"
@@ -255,6 +255,11 @@
 
             <!-- Results Section (hidden until search) -->
             <div id="results-section" class="hidden">
+                <!-- Chart (first — most important visual) -->
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-6">
+                    <div id="stock-chart" style="height: 500px; width: 100%;"></div>
+                </div>
+
                 <!-- Stock Info Card -->
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
                     <div class="lg:col-span-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
@@ -295,11 +300,6 @@
                             <!-- Populated by JS -->
                         </div>
                     </div>
-                </div>
-
-                <!-- Chart -->
-                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-6">
-                    <div id="stock-chart" style="height: 500px; width: 100%;"></div>
                 </div>
 
                 <!-- Performance & Significant Moves -->
@@ -599,12 +599,12 @@
                     <!-- Significant Moves Toggle and Animal Toggle -->
                     <div class="flex items-center gap-4 ml-auto">
                         <label class="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" id="combined-show-markers" class="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded" checked>
+                            <input type="checkbox" id="combined-show-markers" class="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
                             <span class="text-sm text-gray-600 dark:text-gray-400">Show ±5% Moves</span>
                         </label>
 
-                        <!-- Cat/Dog Toggle -->
-                        <div class="flex items-center gap-2 border-l border-gray-300 dark:border-gray-600 pl-4">
+                        <!-- Cat/Dog Toggle (visible only when markers are shown) -->
+                        <div id="combined-animal-container" class="flex items-center gap-2 border-l border-gray-300 dark:border-gray-600 pl-4 hidden">
                             <span class="text-sm text-gray-600 dark:text-gray-400">🐱</span>
                             <label class="relative inline-flex items-center cursor-pointer">
                                 <input type="checkbox" id="combined-animal-toggle" class="sr-only peer">
@@ -666,6 +666,7 @@
     <script src="js/symbolSearch.js?v=3.0.5"></script>
     <script src="js/api.js?v=3.0.5"></script>
     <script src="js/charts.js?v=3.0.5"></script>
+    <script src="js/dragMeasure.js?v=3.0.5"></script>
     <script src="js/watchlist.js?v=3.0.5"></script>
     <script src="js/app.js?v=3.0.5"></script>
 </body>

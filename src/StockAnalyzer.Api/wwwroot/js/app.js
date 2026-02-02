@@ -677,10 +677,11 @@ const App = {
             } else if (e.key === 'Enter') {
                 e.preventDefault();
                 if (isOpen && this.searchSelectedIndex >= 0) {
-                    // Select highlighted item, stay on field
+                    // Select highlighted item and analyze
                     const symbol = items[this.searchSelectedIndex].dataset.symbol;
                     tickerInput.value = symbol;
                     this.hideSearchResults();
+                    this.analyzeStock();
                 } else {
                     // No dropdown selection — trigger analysis
                     this.hideSearchResults();
@@ -789,8 +790,12 @@ const App = {
             }
         });
 
-        // Show markers toggle
-        document.getElementById('show-markers').addEventListener('change', () => this.updateChart());
+        // Show markers toggle — also controls cat/dog toggle visibility
+        document.getElementById('show-markers').addEventListener('change', (e) => {
+            const animalContainer = document.getElementById('animal-toggle-container');
+            if (animalContainer) animalContainer.classList.toggle('hidden', !e.target.checked);
+            this.updateChart();
+        });
 
         // Animal type toggle (cats vs dogs)
         document.querySelectorAll('input[name="animal-type"]').forEach(radio => {
@@ -1220,6 +1225,7 @@ const App = {
             // Re-render chart with comparison
             this.renderChart();
             this.attachChartHoverListeners();
+            this.attachDragMeasure();
         } catch (error) {
             console.error('Failed to fetch comparison data:', error);
             alert(`Failed to load comparison data for ${ticker}`);
@@ -1243,6 +1249,7 @@ const App = {
         if (this.historyData) {
             this.renderChart();
             this.attachChartHoverListeners();
+            this.attachDragMeasure();
         }
     },
 
@@ -1291,7 +1298,9 @@ const App = {
         document.getElementById('show-macd').checked = false;
         document.getElementById('show-bollinger').checked = false;
         document.getElementById('show-stochastic').checked = false;
-        document.getElementById('show-markers').checked = true;
+        document.getElementById('show-markers').checked = false;
+        const animalContainer = document.getElementById('animal-toggle-container');
+        if (animalContainer) animalContainer.classList.add('hidden');
 
         // Re-enable indicators (in case they were disabled by comparison mode)
         this.disableIndicators(false);
@@ -1433,6 +1442,7 @@ const App = {
                 this.renderChart();
                 // Attach listeners AFTER chart is rendered (Plotly replaces the DOM element)
                 this.attachChartHoverListeners();
+                this.attachDragMeasure();
                 // Pre-fetch news for moves AFTER chart is fully rendered
                 this.scheduleNewsPrefetch();
             }).catch(e => console.warn('Failed to load significant moves:', e));
@@ -1657,6 +1667,7 @@ const App = {
         if (this.historyData) {
             this.renderChart();
             this.attachChartHoverListeners();
+            this.attachDragMeasure();
         }
     },
 
@@ -1677,6 +1688,7 @@ const App = {
             );
             this.renderChart();
             this.attachChartHoverListeners();
+            this.attachDragMeasure();
             this.renderSignificantMoves(this.significantMovesData);
 
             // Pre-fetch news for the new set of moves (deferred)
@@ -1738,6 +1750,91 @@ const App = {
                 this.isHoverCardHovered = false;
                 this.scheduleHideHoverCard();
             });
+        }
+    },
+
+    /**
+     * Attach drag-measure interaction to the stock chart.
+     * Left-click drag: performance measurement; Right-click drag: zoom; Scroll: zoom; DblClick: reset.
+     */
+    attachDragMeasure() {
+        if (typeof DragMeasure === 'undefined') return;
+
+        DragMeasure.attach('stock-chart', {
+            dataSource: () => this.historyData?.data || [],
+            isComparisonMode: () => !!this.comparisonTicker,
+            getComparisonData: () => this.comparisonHistoryData ? { data: this.comparisonHistoryData.data } : null,
+            getPrimarySymbol: () => this.currentTicker || '',
+            getComparisonSymbol: () => this.comparisonTicker || '',
+            onRangeExtend: (fromDate, toDate) => this.extendChartRange(fromDate, toDate)
+        });
+    },
+
+    /**
+     * Fetch extended data when scroll zoom exceeds current data bounds.
+     * Merges new data with existing, preserving the current zoom position.
+     */
+    async extendChartRange(fromDate, toDate) {
+        if (!this.currentTicker || this._extendingRange) return;
+        this._extendingRange = true;
+
+        try {
+            const chartData = await API.getChartData(this.currentTicker, null, fromDate, toDate);
+            if (!chartData?.data || chartData.data.length === 0) return;
+
+            // Save current zoom range before re-render
+            const chartEl = document.getElementById('stock-chart');
+            const currentRange = chartEl?._fullLayout?.xaxis?.range;
+
+            // Replace history data with the extended set
+            this.historyData = {
+                symbol: chartData.symbol,
+                period: chartData.period,
+                startDate: chartData.startDate,
+                endDate: chartData.endDate,
+                data: chartData.data,
+                minClose: chartData.minClose,
+                maxClose: chartData.maxClose,
+                averageClose: chartData.averageClose,
+                averageVolume: chartData.averageVolume
+            };
+            this.analysisData = {
+                symbol: chartData.symbol,
+                period: chartData.period,
+                performance: chartData.performance,
+                movingAverages: chartData.movingAverages,
+                rsi: chartData.rsi,
+                macd: chartData.macd,
+                bollingerBands: chartData.bollingerBands,
+                stochastic: chartData.stochastic
+            };
+
+            // Also fetch comparison data for the extended range if comparing
+            if (this.comparisonTicker) {
+                try {
+                    const compData = await API.getChartData(this.comparisonTicker, null, fromDate, toDate);
+                    if (compData?.data) {
+                        this.comparisonHistoryData = {
+                            symbol: compData.symbol,
+                            data: compData.data
+                        };
+                    }
+                } catch { /* comparison extension is best-effort */ }
+            }
+
+            // Re-render chart with the full extended dataset
+            this.renderChart();
+            this.attachChartHoverListeners();
+            this.attachDragMeasure();
+
+            // Restore the zoom position the user was viewing
+            if (currentRange && chartEl) {
+                Plotly.relayout(chartEl, { 'xaxis.range': currentRange });
+            }
+        } catch (error) {
+            console.warn('Failed to extend chart range:', error);
+        } finally {
+            this._extendingRange = false;
         }
     },
 
