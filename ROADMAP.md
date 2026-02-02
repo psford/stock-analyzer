@@ -73,6 +73,15 @@ Planned features and improvements for the Stock Analyzer .NET application.
 | Market news hover | Wikipedia-style cards with market news | 01/17/2026 |
 | Cat/dog toggle | Animal images in combined view hover cards | 01/17/2026 |
 
+### Chart Interaction & UI
+
+| Feature | Description | Date |
+|---------|-------------|------|
+| Click-and-drag measurement | Left-drag shows floating bubble with % return, $ change, date range; right-drag zooms; scroll wheel zooms; double-click resets | 02/02/2026 |
+| Scroll-out data extension | Scrolling past loaded data bounds fetches additional history (right edge clamped to present) | 02/02/2026 |
+| Date range UI with flatpickr | End/start date presets, flatpickr calendar pickers, flexible US date parsing | 02/01/2026 |
+| Stock split adjustment | Charts adjusted for stock splits using AdjustedClose ratio | 01/31/2026 |
+
 ### Infrastructure
 
 | Feature | Description | Date |

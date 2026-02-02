@@ -1,7 +1,7 @@
 # Stock Analyzer: Application Explanation
 
-**Version:** 1.0
-**Last Updated:** 2026-01-18
+**Version:** 1.1
+**Last Updated:** 2026-02-02
 **Author:** Claude (AI Assistant) with Patrick Ford
 
 ---
@@ -41,7 +41,10 @@ The charting system uses Plotly.js to render candlestick and line charts with sm
 - **MACD** (Moving Average Convergence Divergence) for trend signals
 - **Bollinger Bands** for volatility assessment
 
-Each chart period is configurable: 1 month, 3 months, 6 months, 1 year, 2 years, 5 years, or 10 years of historical data.
+Date ranges are fully configurable with end date presets (Prior Business Day, Last Month/Quarter/Year End) and start date presets (1D through 30Y, MTD, YTD, Since Inception), plus custom calendar pickers powered by flatpickr.
+
+#### Click-and-Drag Performance Measurement
+Charts include a built-in performance calculator. Left-click and drag across any date range to see a floating bubble with the percentage return, dollar change, and date range—updating in real time as you drag. Release to pin the bubble; click elsewhere or press Escape to dismiss. Right-click drag zooms to a specific date range. Scroll wheel zooms in and out centered on your cursor position, and scrolling past the loaded data automatically fetches additional history. Double-click resets to the full range. In comparison mode, the bubble shows returns for both stocks side by side.
 
 #### Significant Move Detection
 The application scans historical price data for days where the closing price changed by a configurable threshold (default 3%) from the opening price. These days are marked on the chart with triangle markers.
@@ -162,9 +165,12 @@ JavaScript is organized into focused modules:
 - `app.js` - Main application orchestration
 - `api.js` - HTTP client for backend communication
 - `charts.js` - Plotly.js chart configuration and rendering
+- `dragMeasure.js` - Click-and-drag performance measurement overlay
+- `symbolSearch.js` - Client-side symbol search with weighted relevance scoring
+- `storage.js` - LocalStorage persistence for watchlists
 - `watchlist.js` - Watchlist UI and state management
 
-All styling uses Tailwind CSS loaded from a CDN. Dark mode is supported via a class toggle on the root element, with user preference persisted to localStorage.
+All styling uses Tailwind CSS compiled locally (not CDN) for offline capability and CSP compliance. Dark mode is supported via a class toggle on the root element, with user preference persisted to localStorage.
 
 ### Database Strategy
 
