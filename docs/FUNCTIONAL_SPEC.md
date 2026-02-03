@@ -267,6 +267,8 @@ Page Load                    User Types Query
 | FR-006.5 | The system must display a company description/bio when available |
 | FR-006.6 | The system must truncate long descriptions at sentence boundaries |
 | FR-006.7 | The system must display the current price with day change |
+| FR-006.8 | The system must fall back to Wikipedia when financial APIs return no description or a description shorter than 150 characters |
+| FR-006.9 | The system must cache company descriptions in the database (`data.CompanyBio`) after first fetch, serving subsequent lookups from Azure SQL without external API calls |
 
 ### 3.7 Key Metrics (FR-007)
 

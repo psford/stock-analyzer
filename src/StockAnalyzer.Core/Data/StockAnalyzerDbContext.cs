@@ -28,6 +28,7 @@ public class StockAnalyzerDbContext : DbContext
     public DbSet<SourceEntity> Sources => Set<SourceEntity>();
     public DbSet<BusinessCalendarEntity> BusinessCalendar => Set<BusinessCalendarEntity>();
     public DbSet<TrackedSecurityEntity> TrackedSecurities => Set<TrackedSecurityEntity>();
+    public DbSet<CompanyBioEntity> CompanyBios => Set<CompanyBioEntity>();
 
     // Aggregation tables (data schema)
     public DbSet<CoverageSummaryEntity> CoverageSummary => Set<CoverageSummaryEntity>();
@@ -288,6 +289,27 @@ public class StockAnalyzerDbContext : DbContext
             entity.HasOne(e => e.Security)
                 .WithOne()
                 .HasForeignKey<TrackedSecurityEntity>(e => e.SecurityAlias)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // CompanyBio configuration (cached company descriptions)
+        modelBuilder.Entity<CompanyBioEntity>(entity =>
+        {
+            entity.ToTable("CompanyBio", "data");
+
+            // PK is SecurityAlias (1:1 with SecurityMaster, not auto-increment)
+            entity.HasKey(e => e.SecurityAlias);
+            entity.Property(e => e.SecurityAlias).ValueGeneratedNever();
+
+            entity.Property(e => e.Description).IsRequired();
+            entity.Property(e => e.Source).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.FetchedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+            // FK to SecurityMaster
+            entity.HasOne(e => e.Security)
+                .WithOne()
+                .HasForeignKey<CompanyBioEntity>(e => e.SecurityAlias)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

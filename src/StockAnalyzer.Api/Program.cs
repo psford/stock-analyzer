@@ -93,6 +93,11 @@ builder.Services.AddSingleton<AggregatedStockDataService>(sp =>
 // Keep StockDataService for backward compatibility (deprecated, use AggregatedStockDataService)
 builder.Services.AddSingleton<StockDataService>();
 
+// Wikipedia fallback for company descriptions
+builder.Services.AddSingleton(sp =>
+    new WikipediaService(new HttpClient(), sp.GetRequiredService<IMemoryCache>(),
+        sp.GetRequiredService<ILogger<WikipediaService>>()));
+
 // Register news services
 builder.Services.AddSingleton(sp =>
 {
@@ -390,7 +395,7 @@ static IResult InvalidTickerResult() =>
     Results.BadRequest(new { error = "Invalid ticker symbol. Use 1-10 alphanumeric characters, dots, dashes, or carets." });
 
 // GET /api/stock/{ticker} - Get stock information with company profile and identifiers
-app.MapGet("/api/stock/{ticker}", async (string ticker, AggregatedStockDataService stockService, NewsService newsService, IServiceProvider serviceProvider) =>
+app.MapGet("/api/stock/{ticker}", async (string ticker, AggregatedStockDataService stockService, NewsService newsService, WikipediaService wikipediaService, IServiceProvider serviceProvider) =>
 {
     if (!IsValidTicker(ticker))
         return InvalidTickerResult();
@@ -469,6 +474,92 @@ app.MapGet("/api/stock/{ticker}", async (string ticker, AggregatedStockDataServi
         Cusip = profile?.Cusip,
         Sedol = sedol
     };
+
+    // Company bio: check DB cache first, then fall back to Wikipedia
+    {
+        using var bioScope = serviceProvider.CreateScope();
+        var bioCtx = bioScope.ServiceProvider.GetRequiredService<StockAnalyzerDbContext>();
+
+        var security = await bioCtx.SecurityMaster
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.TickerSymbol == ticker && s.IsActive);
+
+        if (security != null)
+        {
+            // Check CompanyBio cache
+            var cachedBio = await bioCtx.CompanyBios
+                .AsNoTracking()
+                .FirstOrDefaultAsync(b => b.SecurityAlias == security.SecurityAlias);
+
+            if (cachedBio != null)
+            {
+                // Serve from DB — no external calls needed
+                enrichedInfo = enrichedInfo with { Description = cachedBio.Description };
+            }
+            else
+            {
+                // No cached bio — determine best description and store it
+                var description = enrichedInfo.Description;
+                var source = "provider";
+
+                if (string.IsNullOrWhiteSpace(description) ||
+                    description.Length < WikipediaService.MinDescriptionLength)
+                {
+                    var companyName = enrichedInfo.LongName ?? enrichedInfo.ShortName ?? ticker;
+                    var wikiDesc = await wikipediaService.GetCompanyDescriptionAsync(companyName);
+                    if (wikiDesc != null)
+                    {
+                        description = wikiDesc;
+                        source = "wikipedia";
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(description))
+                {
+                    enrichedInfo = enrichedInfo with { Description = description };
+
+                    // Fire-and-forget: persist to CompanyBio table
+                    var alias = security.SecurityAlias;
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            using var storeScope = serviceProvider.CreateScope();
+                            var storeCtx = storeScope.ServiceProvider.GetRequiredService<StockAnalyzerDbContext>();
+                            storeCtx.CompanyBios.Add(new CompanyBioEntity
+                            {
+                                SecurityAlias = alias,
+                                Description = description,
+                                Source = source,
+                                FetchedAt = DateTime.UtcNow,
+                                UpdatedAt = DateTime.UtcNow
+                            });
+                            await storeCtx.SaveChangesAsync();
+                            Log.Information("Cached company bio for {Ticker} (source: {Source})", ticker, source);
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Warning(ex, "Failed to cache company bio for {Ticker}", ticker);
+                        }
+                    });
+                }
+            }
+        }
+        else
+        {
+            // Ticker not in SecurityMaster — fetch from Wikipedia without caching
+            if (string.IsNullOrWhiteSpace(enrichedInfo.Description) ||
+                enrichedInfo.Description.Length < WikipediaService.MinDescriptionLength)
+            {
+                var companyName = enrichedInfo.LongName ?? enrichedInfo.ShortName ?? ticker;
+                var wikiDesc = await wikipediaService.GetCompanyDescriptionAsync(companyName);
+                if (wikiDesc != null)
+                {
+                    enrichedInfo = enrichedInfo with { Description = wikiDesc };
+                }
+            }
+        }
+    }
 
     return Results.Ok(enrichedInfo);
 })
