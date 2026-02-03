@@ -257,7 +257,6 @@ const Watchlist = {
         const loadingEl = document.getElementById('watchlist-loading');
         const emptyEl = document.getElementById('watchlist-empty');
         const containerEl = document.getElementById('watchlist-container');
-        const sidebarEl = document.getElementById('watchlist-sidebar');
 
         if (loadingEl) loadingEl.classList.remove('hidden');
         if (emptyEl) emptyEl.classList.add('hidden');
@@ -273,9 +272,6 @@ const Watchlist = {
             } else {
                 this.renderWatchlists();
             }
-
-            // Show sidebar
-            if (sidebarEl) sidebarEl.classList.remove('hidden');
 
             // Update storage info
             this.updateStorageInfo();

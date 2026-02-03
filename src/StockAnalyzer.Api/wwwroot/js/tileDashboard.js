@@ -14,12 +14,13 @@ const TileDashboard = (() => {
     // ========== CONSTANTS ==========
 
     const TILE_IDS = [
-        'tile-chart', 'tile-info', 'tile-metrics',
+        'tile-chart', 'tile-watchlist', 'tile-info', 'tile-metrics',
         'tile-performance', 'tile-moves', 'tile-news'
     ];
 
     const TILE_NAMES = {
         'tile-chart': 'Stock Chart',
+        'tile-watchlist': 'My Watchlists',
         'tile-info': 'Company Info',
         'tile-metrics': 'Key Metrics',
         'tile-performance': 'Performance',
@@ -28,7 +29,7 @@ const TileDashboard = (() => {
     };
 
     const STORAGE_KEY = 'stockanalyzer_tile_layout';
-    const LAYOUT_VERSION = 6;
+    const LAYOUT_VERSION = 7; // Bumped: watchlist tile added, chart shrunk to 8w
 
     // ========== STATE ==========
 
@@ -38,6 +39,7 @@ const TileDashboard = (() => {
     let chartResizeObserver = null;
     const tileContentCache = {};
     const tileGridOpts = {};
+    const tileExpansions = {}; // tracks which neighbor expanded when a tile was closed
 
     // ========== INITIALIZATION ==========
 
@@ -133,6 +135,7 @@ const TileDashboard = (() => {
         setupPanelDropdown();
         updatePanelDropdown();
         initChartResize();
+        setupWatchlistToggle();
     }
 
     // ========== CHART RESIZE ==========
@@ -251,6 +254,13 @@ const TileDashboard = (() => {
     function closeTile(tileId) {
         const el = document.querySelector(`[gs-id="${tileId}"]`);
         if (!el || !grid) return;
+
+        // Before removing: expand row neighbor(s) to fill the gap horizontally
+        const node = el.gridstackNode;
+        if (node) {
+            expandRowNeighbor(tileId, node);
+        }
+
         if (tileId === 'tile-chart' && chartResizeObserver) {
             chartResizeObserver.disconnect();
             chartResizeObserver = null;
@@ -259,12 +269,60 @@ const TileDashboard = (() => {
         tileVisibility[tileId] = false;
         updatePanelDropdown();
         saveLayout();
+
+        // Sync watchlist toggle button
+        if (tileId === 'tile-watchlist') {
+            const toggleBtn = document.getElementById('watchlist-toggle-btn');
+            if (toggleBtn) toggleBtn.classList.remove('watchlist-toggle-active');
+        }
+    }
+
+    /**
+     * When a tile is closed, find its left or right neighbor on the same row
+     * and expand it to fill the gap. Stores the expansion so reopenTile can reverse it.
+     */
+    function expandRowNeighbor(closingId, closingNode) {
+        const items = grid.getGridItems();
+        let expanded = false;
+
+        for (const item of items) {
+            const n = item.gridstackNode;
+            if (!n || n.id === closingId) continue;
+            // Must share at least one row
+            if (n.y >= closingNode.y + closingNode.h || n.y + n.h <= closingNode.y) continue;
+
+            // Left neighbor: ends where closing tile starts
+            if (n.x + n.w === closingNode.x) {
+                tileExpansions[closingId] = { neighborId: n.id, origW: n.w, origX: n.x };
+                grid.update(item, { w: n.w + closingNode.w });
+                expanded = true;
+                break;
+            }
+            // Right neighbor: starts where closing tile ends
+            if (n.x === closingNode.x + closingNode.w) {
+                tileExpansions[closingId] = { neighborId: n.id, origW: n.w, origX: n.x };
+                grid.update(item, { x: closingNode.x, w: n.w + closingNode.w });
+                expanded = true;
+                break;
+            }
+        }
+        if (!expanded) delete tileExpansions[closingId];
     }
 
     function reopenTile(tileId) {
         const content = tileContentCache[tileId];
         const opts = tileGridOpts[tileId];
         if (content === undefined || !opts || !grid) return;
+
+        // Shrink the neighbor that was expanded when this tile was closed
+        const expansion = tileExpansions[tileId];
+        if (expansion) {
+            const neighborEl = document.querySelector(`[gs-id="${expansion.neighborId}"]`);
+            if (neighborEl) {
+                grid.update(neighborEl, { x: expansion.origX, w: expansion.origW });
+            }
+            delete tileExpansions[tileId];
+        }
 
         // Build a fresh grid-stack-item element
         const wrapper = document.createElement('div');
@@ -278,8 +336,11 @@ const TileDashboard = (() => {
         contentDiv.innerHTML = content;
         wrapper.appendChild(contentDiv);
 
-        // Let GridStack place it (auto-position)
-        grid.addWidget(wrapper, { w: opts.w, h: opts.h, autoPosition: true });
+        // Place at original position if we just freed space, else auto-position
+        const addOpts = expansion
+            ? { x: opts.x, y: opts.y, w: opts.w, h: opts.h }
+            : { w: opts.w, h: opts.h, autoPosition: true };
+        grid.addWidget(wrapper, addOpts);
         tileVisibility[tileId] = true;
         updatePanelDropdown();
         saveLayout();
@@ -287,6 +348,37 @@ const TileDashboard = (() => {
         // Re-init chart ResizeObserver if needed
         if (tileId === 'tile-chart') {
             setTimeout(initChartResize, 200);
+        }
+
+        // Re-init watchlist content and sync toggle button
+        if (tileId === 'tile-watchlist') {
+            const toggleBtn = document.getElementById('watchlist-toggle-btn');
+            if (toggleBtn) toggleBtn.classList.add('watchlist-toggle-active');
+            setTimeout(() => {
+                if (typeof Watchlist !== 'undefined') {
+                    Watchlist.loadWatchlists();
+                }
+            }, 200);
+        }
+    }
+
+    // ========== WATCHLIST TOGGLE ==========
+
+    function setupWatchlistToggle() {
+        const btn = document.getElementById('watchlist-toggle-btn');
+        if (!btn) return;
+
+        btn.addEventListener('click', () => {
+            if (tileVisibility['tile-watchlist']) {
+                closeTile('tile-watchlist');
+            } else {
+                reopenTile('tile-watchlist');
+            }
+        });
+
+        // Set initial state
+        if (tileVisibility['tile-watchlist']) {
+            btn.classList.add('watchlist-toggle-active');
         }
     }
 

@@ -531,7 +531,7 @@ Page Load                    User Types Query
 | FR-014.3 | The system must allow users to delete watchlists |
 | FR-014.4 | The system must allow users to add tickers to a watchlist |
 | FR-014.5 | The system must allow users to remove tickers from a watchlist |
-| FR-014.6 | The system must display all watchlists in a collapsible sidebar |
+| FR-014.6 | The system must display all watchlists in a draggable/resizable GridStack tile (default 4w×5h, right of chart) |
 | FR-014.7 | The system must display current price and daily change for each ticker in a watchlist |
 | FR-014.8 | The system must allow clicking a ticker in a watchlist to analyze that stock |
 | FR-014.9 | The system must provide an "Add to Watchlist" button when a stock is loaded |
@@ -556,27 +556,22 @@ Page Load                    User Types Query
 | User control | Export/import allows backup and cross-device transfer |
 | Transparency | Storage usage displayed to user |
 
-**Sidebar Layout:**
+**Watchlist Tile Layout:**
 
 ```
-┌─────────────────┐
-│  MY WATCHLISTS  │
-│  ─────────────  │
-│  [+ New List]   │
-│  [↓ Export] [↑] │
-│                 │
-│  ▼ Tech Stocks  │
-│    AAPL  $150 ↑ │
-│    MSFT  $380 ↑ │
-│    GOOGL $140 ↓ │
-│                 │
-│  ▶ Energy       │
-│                 │
-│  ▶ Financials   │
-│─────────────────│
-│  Storage: 0.2%  │
-└─────────────────┘
+┌────────────────────────────┬──────────────┐
+│    Stock Chart (8w × 5h)   │ ★ My         │
+│                            │ Watchlists   │
+│                            │ (4w × 5h)    │
+│                            │ [+ New List] │
+│                            │ [↓ Export][↑]│
+│                            │ ▼ Tech Stocks│
+│                            │  AAPL $150 ↑ │
+│                            │  MSFT $380 ↑ │
+└────────────────────────────┴──────────────┘
 ```
+
+Star toggle in page header controls tile visibility. When closed, horizontal neighbor expands to fill the gap.
 
 **Watchlist Data Model (localStorage):**
 
@@ -730,13 +725,13 @@ Page Load                    User Types Query
 
 ### 3.17 Draggable Tile Dashboard (FR-017)
 
-The results section displays stock data in 6 draggable, resizable tiles powered by GridStack.js. Users can rearrange tiles to customize their workspace, and layouts persist across sessions.
+The results section displays stock data in 7 draggable, resizable tiles powered by GridStack.js. Users can rearrange tiles to customize their workspace, and layouts persist across sessions.
 
 **Functional Requirements:**
 
 | ID | Requirement |
 |----|-------------|
-| FR-017.1 | Results must display in 6 tiles: Stock Chart, Company Info, Key Metrics, Performance, Significant Moves, News |
+| FR-017.1 | Results must display in 7 tiles: Stock Chart (8w), My Watchlists (4w), Company Info (8w), Key Metrics (4w), Performance (6w), Significant Moves (6w), News (12w) |
 | FR-017.2 | Tiles must be draggable by their header bar |
 | FR-017.3 | Tiles must be resizable via drag handles on edges |
 | FR-017.4 | Tile layout must persist in localStorage and restore on next visit |
@@ -754,6 +749,10 @@ The results section displays stock data in 6 draggable, resizable tiles powered 
 | FR-017.16 | The "Add to Watchlist" dropdown in the Company Info tile must not be clipped by tile boundaries |
 | FR-017.17 | When a tile is resized horizontally, adjacent tiles on the same row must shrink/grow inversely (not be pushed to a new row) |
 | FR-017.18 | Coupled resize must respect each tile's minimum width — a tile cannot be shrunk below its defined minimum |
+| FR-017.19 | A star toggle button in the page header must show/hide the Watchlist tile |
+| FR-017.20 | The star toggle must highlight yellow when the Watchlist tile is visible |
+| FR-017.21 | When a tile is closed, its horizontal neighbor on the same row must expand to fill the vacated space |
+| FR-017.22 | When a closed tile is reopened, the expanded neighbor must shrink back to its original width |
 
 **User Story:** *As a power user, I want to rearrange my stock analysis dashboard tiles to prioritize the information most important to me, and have that layout remembered automatically.*
 
@@ -1037,6 +1036,7 @@ The dashboard is fully responsive and adapts to mobile devices.
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
+| 3.1 | 2026-02-03 | **Watchlist Tile + Horizontal Expansion (FR-014, FR-017):** Watchlist converted from fixed sidebar to 7th GridStack tile (4w×5h). Chart narrowed from 12w to 8w. FR-014.6 updated (sidebar → tile). FR-017.1 updated (6 tiles → 7). Added FR-017.19-22: star toggle in header, yellow active state, horizontal neighbor expansion on tile close, and reverse on reopen. Mobile sidebar code removed (no functional regression — tile stacks in single-column on mobile). | Claude |
 | 3.0 | 2026-02-02 | **Draggable Tile Dashboard (FR-017):** New section 3.17 with 16 functional requirements covering tile drag/resize, layout persistence, close/reopen via panel dropdown, lock button, physics animations (lift effect, spring settle, neighbor FLIP), snap audio toggle, mobile single-column stacking, chart auto-resize, and preservation of all existing functionality. | Claude |
 | 2.9 | 2026-02-01 | **Date Range UI Redesign (FR-003):** Replaced single Time Period dropdown + hidden From/To inputs with two-field date range panel. End Date (PBD/LME/LQE/LYE/Custom) + Start Date (1D–30Y/MTD/YTD/Max/Custom), each with resolved date display. Start Date resolves relative to End Date (not today). Periods are inclusive. Custom mode makes date input editable. Changes trigger immediate reanalysis. | Claude |
 | 2.8 | 2026-01-23 | Enhanced sentiment analysis: 3-tier ensemble (keyword 60% + VADER 40%), word-boundary matching to prevent false positives, optional FinBERT ML tier | Claude |

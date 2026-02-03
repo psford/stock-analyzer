@@ -1480,7 +1480,7 @@ app.dateRange = {
 
 ### 6.8 Tile Dashboard Architecture
 
-The results section uses GridStack.js v12 to render 6 draggable/resizable tiles with a physics-based animation engine. All existing JS (app.js, charts.js, etc.) remains completely unmodified — the tile system is a cosmetic overlay.
+The results section uses GridStack.js v12 to render 7 draggable/resizable tiles with a physics-based animation engine. All existing JS (app.js, charts.js, etc.) remains completely unmodified — the tile system is a cosmetic overlay.
 
 **Library:** GridStack.js 12.4.2 (downloaded locally to `wwwroot/lib/gridstack/`)
 
@@ -1489,14 +1489,15 @@ The results section uses GridStack.js v12 to render 6 draggable/resizable tiles 
 |------|---------|
 | `lib/gridstack/gridstack-all.min.js` | GridStack v12 library (83KB) |
 | `lib/gridstack/gridstack.min.css` | GridStack base styles (4KB) |
-| `js/tileDashboard.js` | Tile management + physics engine (~520 lines) |
+| `js/tileDashboard.js` | Tile management + physics engine (~620 lines) |
 | `src/input.css` | Tile CSS (~280 lines added to Tailwind source) |
 
 **Tile Layout (12-column grid):**
 
 | Tile ID | Content | gs-w | gs-h | min-w | min-h |
 |---------|---------|------|------|-------|-------|
-| `tile-chart` | `#stock-chart` (Plotly) | 12 | 5 | 4 | 3 |
+| `tile-chart` | `#stock-chart` (Plotly) | 8 | 5 | 4 | 3 |
+| `tile-watchlist` | Watchlist management (create, export, import, watchlist-container) | 4 | 5 | 3 | 3 |
 | `tile-info` | `#stock-info` + watchlist dropdown | 8 | 5 | 3 | 3 |
 | `tile-metrics` | `#key-metrics` | 4 | 4 | 2 | 2 |
 | `tile-performance` | `#performance-metrics` | 6 | 3 | 3 | 2 |
@@ -1533,7 +1534,8 @@ Guard: if (initialized) return; — prevents re-init on subsequent searches
 **Layout Persistence:**
 ```javascript
 // localStorage key: 'stockanalyzer_tile_layout'
-// Format: { version: 1, tiles: [{ id, x, y, w, h, visible }] }
+// LAYOUT_VERSION: 7 (bumped on layout changes; clears saved layouts)
+// Format: { version: 7, tiles: [{ id, x, y, w, h, visible }] }
 // Saves on: GridStack 'change' event (move/resize)
 // Restores on: initGridStack() via grid.batchUpdate()
 ```
@@ -1556,7 +1558,20 @@ Guard: if (initialized) return; — prevents re-init on subsequent searches
 **Tile Header Controls:**
 - Lock button: Toggles `noMove`/`noResize`/`locked` via GridStack API + `tile-locked` class (dashed border, diagonal hatch)
 - Close button: Removes widget via `grid.removeWidget()`, content cached for reopen
-- Panel dropdown: 6 checkboxes (one per tile) + Reset Layout button
+- Panel dropdown: 7 checkboxes (one per tile) + Reset Layout button
+
+**Watchlist Toggle (Header Star Button):**
+- `#watchlist-toggle-btn` in the page header (star SVG, visible at all screen sizes)
+- Click toggles `tile-watchlist` via `closeTile()`/`reopenTile()`
+- `.watchlist-toggle-active` class applied when tile is visible (yellow star highlight)
+- On reopen: `setTimeout(() => Watchlist.loadWatchlists(), 200)` re-binds events
+
+**Horizontal Expansion on Tile Close:**
+- When a tile is closed, its horizontal neighbor on the same row expands to fill the gap
+- `expandRowNeighbor(closingId, closingNode)` finds left/right adjacent tile (sharing row overlap) and increases its width by the closed tile's width
+- State tracked in `tileExpansions[tileId] = { neighborId, origW, origX }`
+- On reopen: expanded neighbor shrinks back to original width before the tile is re-added at its original position
+- General-purpose: works for any adjacent tile pair (chart/watchlist, info/metrics, etc.)
 
 **Watchlist Dropdown Fix:**
 - `.grid-stack-item[gs-id="tile-info"] .tile-card` and `.tile-body` have `overflow: visible` to prevent clipping
@@ -2934,6 +2949,7 @@ const newsPromise = API.getAggregatedNews(ticker, 30, 10);
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.46 | 2026-02-03 | **Watchlist as GridStack Tile:** Converted fixed-position `<aside id="watchlist-sidebar">` into 7th GridStack tile (`tile-watchlist`, 4w×5h, min-w 3, min-h 3). Chart tile narrowed from 12w to 8w; watchlist fills right side of top row. LAYOUT_VERSION bumped from 6 to 7 (clears saved layouts). **Watchlist toggle:** Star button (`#watchlist-toggle-btn`) in page header toggles tile visibility with `.watchlist-toggle-active` yellow highlight state. On reopen, calls `Watchlist.loadWatchlists()` to re-bind events. **Horizontal expansion on tile close:** New `expandRowNeighbor()` function — when any tile is closed, its horizontal neighbor on the same row expands to fill the gap. State tracked in `tileExpansions` object (`{ neighborId, origW, origX }`). On reopen, neighbor shrinks back and tile restores to original position. General-purpose: works for any adjacent tile pair. **Dead code removed:** `initMobileSidebar()` (~37 lines), `bindMobileWatchlistEvents()` (~57 lines), mobile-watchlist-drawer handlers (~50 lines) from app.js. Sidebar DOM references removed from watchlist.js (2 lines). `<aside>`, `<div id="sidebar-overlay">`, and `mobile-watchlist-toggle` button removed from index.html. **CSS:** `#tile-watchlist-body` flex column layout with internal scroll; `.watchlist-toggle-active` yellow star styles (light + dark mode). All watchlist element IDs preserved — no changes to watchlist.js business logic. |
 | 2.45 | 2026-02-03 | **Wikipedia Company Bio with DB Caching (`data.CompanyBio`):** New `CompanyBioEntity` with 1:1 FK to SecurityMaster via SecurityAlias. EF Core migration `AddCompanyBio` creates `data.CompanyBio` table (PK: SecurityAlias, nvarchar(max) Description, nvarchar(50) Source, FetchedAt/UpdatedAt with GETUTCDATE defaults). New `WikipediaService` fetches descriptions from Wikipedia REST API — two-step lookup: (1) direct page summary via `en.wikipedia.org/api/rest_v1/page/summary/{name}`, (2) search fallback via `en.wikipedia.org/w/api.php?action=query&list=search` for abbreviated names. Filters disambiguation pages (`type == "standard"`), 5s timeout, 24h IMemoryCache, no API key. **Rate limiting:** `SemaphoreSlim(1,1)` single-concurrency + 2-second minimum gap between every HTTP request to Wikipedia — treats Wikipedia as a shared public resource, never exceeds casual browsing pace. Combined with permanent DB caching, each company is fetched at most once. **Endpoint integration (`GET /api/stock/{ticker}`):** checks CompanyBio by SecurityAlias first (DB cache hit = no external calls); on cache miss, determines best description (provider if ≥150 chars, else Wikipedia fallback) and fire-and-forget stores in CompanyBio. Tickers not in SecurityMaster get Wikipedia lookup without caching. FR-006.8, FR-006.9. |
 | 2.44 | 2026-02-02 | **Technical Indicator Tooltips:** Added native HTML `title` attributes to all 7 indicator/MA checkboxes (SMA 20, SMA 50, SMA 200, RSI, MACD, Bollinger Bands, Stochastic). Each tooltip explains the indicator's purpose, key thresholds (e.g., RSI 70/30, Stochastic 80/20), and interpretation. Uses existing native tooltip pattern (consistent with dark mode toggle, audio toggle, etc.). FR-011.24, FR-011.25. |
 | 2.43 | 2026-02-02 | **Tile Dashboard (GridStack.js v12):** Results section wrapped in 6 draggable/resizable tiles using GridStack.js 12.4.2 (downloaded locally). Tiles: Chart (12w), Company Info (8w), Key Metrics (4w), Performance (6w), Significant Moves (6w), News (12w). 12-column grid with `cellHeight: 70`, `margin: 12`, mobile single-column at `<768px`. Physics engine: spring CSS transitions (`cubic-bezier(0.25, 1.1, 0.5, 1)`), lift effect (`scale(1.025)` + shadow), magnetic pull (50px threshold, 0.35 strength), snap settle animation (400ms keyframes with scale overshoot + blue glow), FLIP neighbor animations via MutationObserver + WAAPI, placeholder reveal animation (200ms). Web Audio API snap sound (1200Hz + 300Hz dual-oscillator, 80ms). Tile locking (noMove/noResize + dashed border + diagonal hatch). Close/reopen via panel dropdown with content caching. Layout persistence in localStorage (`stockanalyzer_tile_layout`, version 1). Lazy init via MutationObserver on `#results-section` class changes — zero modifications to app.js/charts.js/symbolSearch.js/api.js/dragMeasure.js/watchlist.js/storage.js. Chart height: CSS `!important` override + ResizeObserver → `Plotly.Plots.resize()`. Watchlist dropdown overflow fix on tile-info. Coupled horizontal resize: adjacent tiles shrink/grow inversely instead of being pushed away (uses `float(true)` during resize, `maxW` constraint, `_findRowNeighbors()` detection). Edge-drag resize on all edges (no corner grip icons). In-place Reset Layout (no page reload). New files: `lib/gridstack/gridstack-all.min.js`, `lib/gridstack/gridstack.min.css`, `js/tileDashboard.js` (~580 lines). New CSS: ~280 lines in `input.css`. New section 6.8 documents architecture. |

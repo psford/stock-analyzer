@@ -856,6 +856,35 @@ span.flatpickr-weekday { color: var(--fp-text-muted) !important; }
     background-color: #1e3a5f !important;
 }
 
+/* Watchlist tile — content fills full tile height, scrolls internally */
+#tile-watchlist-body {
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+#tile-watchlist-body #watchlist-container {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+/* Watchlist toggle button active state (star highlights yellow) */
+.watchlist-toggle-active {
+    color: #eab308 !important;
+    background-color: #fef9c3 !important;
+}
+.watchlist-toggle-active svg {
+    color: #eab308 !important;
+}
+.dark .watchlist-toggle-active {
+    color: #facc15 !important;
+    background-color: rgba(234, 179, 8, 0.15) !important;
+}
+.dark .watchlist-toggle-active svg {
+    color: #facc15 !important;
+}
+
 /* Panel dropdown */
 .panel-dropdown-wrapper { position: relative; }
 .panel-dropdown {
