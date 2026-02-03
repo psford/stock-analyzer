@@ -14,6 +14,12 @@ namespace StockAnalyzer.Core.Services;
 /// 1. Try direct page summary lookup with company name
 /// 2. If 404, search Wikipedia and fetch the top result's summary
 /// 3. Cache results for 24 hours (descriptions rarely change)
+///
+/// Rate limiting: Single-concurrency with a minimum 2-second gap between
+/// every HTTP request. We treat Wikipedia as a shared public resource and
+/// will never hit it harder than a single user casually browsing.
+/// Combined with the CompanyBio DB cache (which means each company is
+/// fetched at most once, ever), actual Wikipedia traffic is negligible.
 /// </summary>
 public class WikipediaService
 {
@@ -24,6 +30,12 @@ public class WikipediaService
     private const string SummaryBaseUrl = "https://en.wikipedia.org/api/rest_v1/page/summary/";
     private const string SearchBaseUrl = "https://en.wikipedia.org/w/api.php";
     private static readonly TimeSpan CacheDuration = TimeSpan.FromHours(24);
+
+    // Rate limiting: one request at a time, minimum 2 seconds between requests.
+    // Wikipedia is a shared public resource — we will never hammer it.
+    private static readonly SemaphoreSlim _rateLimitSemaphore = new(1, 1);
+    private static readonly TimeSpan _minRequestGap = TimeSpan.FromSeconds(2);
+    private static DateTime _lastRequestTimeUtc = DateTime.MinValue;
 
     /// <summary>
     /// Descriptions shorter than this threshold trigger a Wikipedia lookup.
@@ -93,13 +105,41 @@ public class WikipediaService
         return extract;
     }
 
+    /// <summary>
+    /// Rate-limited HTTP GET. Acquires the semaphore, enforces the minimum gap
+    /// between requests, then makes the call. Ensures we never exceed ~30 req/min
+    /// to Wikipedia even under concurrent user load.
+    /// </summary>
+    private async Task<HttpResponseMessage> RateLimitedGetAsync(string url, CancellationToken ct)
+    {
+        await _rateLimitSemaphore.WaitAsync(ct);
+        try
+        {
+            var elapsed = DateTime.UtcNow - _lastRequestTimeUtc;
+            if (elapsed < _minRequestGap)
+            {
+                var delay = _minRequestGap - elapsed;
+                _logger?.LogDebug("Wikipedia rate limit: waiting {Delay}ms", delay.TotalMilliseconds);
+                await Task.Delay(delay, ct);
+            }
+
+            var response = await _httpClient.GetAsync(url, ct);
+            _lastRequestTimeUtc = DateTime.UtcNow;
+            return response;
+        }
+        finally
+        {
+            _rateLimitSemaphore.Release();
+        }
+    }
+
     private async Task<string?> TryGetSummaryAsync(string title, CancellationToken ct)
     {
         var url = SummaryBaseUrl + Uri.EscapeDataString(title);
 
         try
         {
-            var response = await _httpClient.GetAsync(url, ct);
+            var response = await RateLimitedGetAsync(url, ct);
 
             if (response.StatusCode == HttpStatusCode.NotFound)
                 return null;
@@ -130,7 +170,7 @@ public class WikipediaService
 
         try
         {
-            var response = await _httpClient.GetAsync(url, ct);
+            var response = await RateLimitedGetAsync(url, ct);
             response.EnsureSuccessStatusCode();
 
             var result = await response.Content.ReadFromJsonAsync<WikiSearchResponse>(cancellationToken: ct);
