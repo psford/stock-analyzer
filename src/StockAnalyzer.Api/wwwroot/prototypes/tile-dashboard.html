@@ -414,7 +414,7 @@
             <div class="search-row">
                 <div class="search-field search-field-wide">
                     <div class="mock-label">Search by Ticker or Company Name</div>
-                    <input type="text" value="AAPL" readonly style="width:100%;">
+                    <input type="text" id="ticker-input" placeholder="e.g. AAPL, MSFT, TSLA" style="width:100%;">
                 </div>
                 <div class="search-field search-field-wide">
                     <div class="mock-label">Compare to (Optional)</div>
@@ -422,15 +422,15 @@
                 </div>
                 <div class="search-field">
                     <div class="mock-label">Chart Type</div>
-                    <select style="min-width:120px;">
-                        <option>Line</option>
-                        <option>Candlestick</option>
-                        <option>OHLC</option>
-                        <option>Area</option>
+                    <select id="chart-type" style="min-width:120px;">
+                        <option value="line">Line</option>
+                        <option value="candlestick">Candlestick</option>
+                        <option value="ohlc">OHLC</option>
+                        <option value="area">Area</option>
                     </select>
                 </div>
-                <button class="mock-btn mock-btn-primary">Analyze</button>
-                <button class="mock-btn mock-btn-secondary">Clear</button>
+                <button id="search-btn" class="mock-btn mock-btn-primary">Analyze</button>
+                <button id="clear-btn" class="mock-btn mock-btn-secondary">Clear</button>
             </div>
 
             <!-- Row 2: Date ranges -->
@@ -438,45 +438,45 @@
                 <div class="search-field">
                     <div class="mock-label">End Date</div>
                     <div style="display:flex; gap:0.375rem;">
-                        <select style="min-width:140px;">
-                            <option>Prior Business Day</option>
-                            <option>Today</option>
-                            <option>Custom</option>
+                        <select id="end-date-preset" style="min-width:140px;">
+                            <option value="PBD">Prior Business Day</option>
+                            <option value="today">Today</option>
+                            <option value="custom">Custom</option>
                         </select>
-                        <input type="text" value="01 / 30 / 2026" readonly style="width:120px;">
+                        <input type="text" id="end-date-resolved" readonly style="width:120px;">
                     </div>
                 </div>
                 <div class="search-field">
                     <div class="mock-label">Start Date</div>
                     <div style="display:flex; gap:0.375rem;">
-                        <select style="min-width:100px;">
-                            <option>1 Year</option>
-                            <option>6 Months</option>
-                            <option>3 Months</option>
-                            <option>1 Month</option>
-                            <option>YTD</option>
-                            <option>5 Years</option>
-                            <option>Custom</option>
+                        <select id="start-date-preset" style="min-width:100px;">
+                            <option value="1y">1 Year</option>
+                            <option value="6mo">6 Months</option>
+                            <option value="3mo">3 Months</option>
+                            <option value="1mo">1 Month</option>
+                            <option value="ytd">YTD</option>
+                            <option value="5y">5 Years</option>
+                            <option value="custom">Custom</option>
                         </select>
-                        <input type="text" value="01 / 31 / 2025" readonly style="width:120px;">
+                        <input type="text" id="start-date-resolved" readonly style="width:120px;">
                     </div>
                 </div>
             </div>
 
             <!-- Row 3: SMA checkboxes -->
             <div class="search-checks">
-                <label><input type="checkbox" checked> SMA 20</label>
-                <label><input type="checkbox" checked> SMA 50</label>
-                <label><input type="checkbox"> SMA 200</label>
+                <label><input type="checkbox" id="ma-20" checked> SMA 20</label>
+                <label><input type="checkbox" id="ma-50" checked> SMA 50</label>
+                <label><input type="checkbox" id="ma-200"> SMA 200</label>
             </div>
 
             <!-- Row 4: Technical Indicators -->
             <div class="search-checks">
                 <span class="search-indicator-label">Technical Indicators:</span>
-                <label><input type="checkbox"> RSI (14)</label>
-                <label><input type="checkbox"> MACD</label>
-                <label><input type="checkbox"> Bollinger</label>
-                <label><input type="checkbox"> Stochastic</label>
+                <label><input type="checkbox" id="show-rsi"> RSI (14)</label>
+                <label><input type="checkbox" id="show-macd"> MACD</label>
+                <label><input type="checkbox" id="show-bollinger"> Bollinger</label>
+                <label><input type="checkbox" id="show-stochastic"> Stochastic</label>
             </div>
 
             <!-- Row 5: Quick Compare -->
@@ -493,9 +493,9 @@
             <div class="search-checks">
                 <span class="search-indicator-label">Significant Move Threshold:</span>
                 <div class="threshold-row">
-                    <input type="range" min="1" max="20" value="5">
-                    <span class="threshold-value">5%</span>
-                    <label style="margin-left:0.5rem;"><input type="checkbox"> Show markers on chart</label>
+                    <input type="range" id="threshold-slider" min="1" max="20" value="5">
+                    <span class="threshold-value" id="threshold-value">5%</span>
+                    <label style="margin-left:0.5rem;"><input type="checkbox" id="show-markers"> Show markers on chart</label>
                 </div>
             </div>
         </div>
@@ -741,8 +741,13 @@
 
             setupPanelDropdown();
             updatePanelDropdown();
-            initMockChart();
             initDarkMode();
+            initDateRange();
+            initSearchControls();
+            initMockChart();
+
+            // Start with results hidden — show on Analyze (like production)
+            document.querySelector('.grid-wrapper').style.display = 'none';
         }
 
         // ========== LAYOUT PERSISTENCE ==========
@@ -883,50 +888,496 @@
                 : { plotBg: '#fff', paperBg: '#fff', gridColor: '#e5e7eb', textColor: '#374151' };
         }
 
-        function initMockChart() {
-            const chartEl = document.getElementById('mock-chart');
-            if (!chartEl) return;
+        // ========== DATE RESOLUTION (from production app.js) ==========
 
-            const isDark = document.documentElement.classList.contains('dark');
-            const colors = getChartTheme(isDark);
+        let resolvedEndDate = '';
+        let resolvedStartDate = '';
+        let mockData = null;
 
-            // Generate mock price data
-            const dates = [], prices = [];
+        function formatDateYMD(d) {
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function formatDateDisplay(ymd) {
+            if (!ymd) return '';
+            const [y, m, d] = ymd.split('-');
+            return `${m} / ${d} / ${y}`;
+        }
+
+        function priorBusinessDay(date) {
+            const d = new Date(date);
+            d.setDate(d.getDate() - 1);
+            while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
+            return formatDateYMD(d);
+        }
+
+        function resolveEndDate(preset) {
+            const today = new Date();
+            switch (preset) {
+                case 'PBD': return priorBusinessDay(today);
+                case 'today': return formatDateYMD(today);
+                default: return priorBusinessDay(today);
+            }
+        }
+
+        function resolveStartDate(preset, endDateStr) {
+            const end = new Date(endDateStr + 'T00:00:00');
+            const yearPeriods = { '1y': 1, '5y': 5 };
+            if (yearPeriods[preset]) {
+                const d = new Date(end);
+                d.setFullYear(d.getFullYear() - yearPeriods[preset]);
+                d.setDate(d.getDate() + 1);
+                return formatDateYMD(d);
+            }
+            const monthPeriods = { '1mo': 1, '3mo': 3, '6mo': 6 };
+            if (monthPeriods[preset]) {
+                const d = new Date(end);
+                d.setMonth(d.getMonth() - monthPeriods[preset]);
+                d.setDate(d.getDate() + 1);
+                return formatDateYMD(d);
+            }
+            if (preset === 'ytd') return formatDateYMD(new Date(end.getFullYear(), 0, 1));
+            return endDateStr;
+        }
+
+        function recalculateStartDate() {
+            if (!resolvedEndDate) return;
+            const startPreset = document.getElementById('start-date-preset').value;
+            const startInput = document.getElementById('start-date-resolved');
+            if (startPreset === 'custom') {
+                if (resolvedStartDate > resolvedEndDate) {
+                    resolvedStartDate = resolvedEndDate;
+                    startInput.value = formatDateDisplay(resolvedStartDate);
+                }
+                return;
+            }
+            resolvedStartDate = resolveStartDate(startPreset, resolvedEndDate);
+            startInput.value = formatDateDisplay(resolvedStartDate);
+        }
+
+        // ========== MOCK DATA GENERATION ==========
+
+        function generateMockData(startDateStr, endDateStr) {
+            const dates = [], opens = [], highs = [], lows = [], closes = [], volumes = [];
             let price = 170;
-            const start = new Date('2025-06-01');
-            for (let i = 0; i < 180; i++) {
-                const d = new Date(start); d.setDate(d.getDate() + i);
+            const start = new Date(startDateStr + 'T00:00:00');
+            const end = new Date(endDateStr + 'T00:00:00');
+            for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
                 if (d.getDay() === 0 || d.getDay() === 6) continue;
-                dates.push(d.toISOString().split('T')[0]);
-                price += (Math.random() - 0.48) * 3;
-                prices.push(Math.round(price * 100) / 100);
+                dates.push(formatDateYMD(d));
+                const open = Math.round(price * 100) / 100;
+                const change = (Math.random() - 0.48) * 3;
+                const close = Math.round((open + change) * 100) / 100;
+                const high = Math.round(Math.max(open, close) * (1 + Math.random() * 0.02) * 100) / 100;
+                const low = Math.round(Math.min(open, close) * (1 - Math.random() * 0.02) * 100) / 100;
+                opens.push(open); highs.push(high); lows.push(low); closes.push(close);
+                volumes.push(Math.floor(50000000 + Math.random() * 100000000));
+                price = close;
             }
 
-            Plotly.newPlot(chartEl, [{
-                x: dates, y: prices, type: 'scatter', mode: 'lines',
-                line: { color: '#3b82f6', width: 1.5 },
-                fill: 'tonexty',
-                fillcolor: isDark ? 'rgba(59,130,246,0.08)' : 'rgba(59,130,246,0.05)',
-                name: 'AAPL'
-            }], {
-                autosize: true,
-                margin: { t: 30, r: 15, b: 30, l: 50 },
-                title: { text: 'AAPL \u2014 Jun 2025 \u2013 Feb 2026', font: { size: 13 } },
-                xaxis: { gridcolor: colors.gridColor, linecolor: colors.gridColor, tickfont: { color: colors.textColor, size: 10 } },
-                yaxis: { gridcolor: colors.gridColor, linecolor: colors.gridColor, tickfont: { color: colors.textColor, size: 10 }, tickprefix: '$' },
-                plot_bgcolor: colors.plotBg, paper_bgcolor: colors.paperBg,
-                font: { color: colors.textColor }, showlegend: false
-            }, { responsive: true, displayModeBar: false });
+            // SMA calculations
+            const sma = (arr, period) => arr.map((_, i) =>
+                i < period - 1 ? null : arr.slice(i - period + 1, i + 1).reduce((a, b) => a + b) / period);
 
-            // ResizeObserver for chart tile
+            // RSI (14)
+            const rsi = new Array(closes.length).fill(null);
+            if (closes.length > 14) {
+                let gains = 0, losses = 0;
+                for (let i = 1; i <= 14; i++) {
+                    const diff = closes[i] - closes[i - 1];
+                    if (diff > 0) gains += diff; else losses -= diff;
+                }
+                let avgGain = gains / 14, avgLoss = losses / 14;
+                rsi[14] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+                for (let i = 15; i < closes.length; i++) {
+                    const diff = closes[i] - closes[i - 1];
+                    avgGain = (avgGain * 13 + (diff > 0 ? diff : 0)) / 14;
+                    avgLoss = (avgLoss * 13 + (diff < 0 ? -diff : 0)) / 14;
+                    rsi[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+                }
+            }
+
+            // MACD (12, 26, 9)
+            const ema = (arr, period) => {
+                const k = 2 / (period + 1), result = [arr[0]];
+                for (let i = 1; i < arr.length; i++) result.push(arr[i] * k + result[i - 1] * (1 - k));
+                return result;
+            };
+            const ema12 = ema(closes, 12), ema26 = ema(closes, 26);
+            const macdLine = ema12.map((v, i) => i < 25 ? null : v - ema26[i]);
+            const validMacd = macdLine.filter(v => v !== null);
+            const signalRaw = validMacd.length > 0 ? ema(validMacd, 9) : [];
+            const signal = new Array(macdLine.length).fill(null);
+            let si = 0;
+            for (let i = 0; i < macdLine.length; i++) {
+                if (macdLine[i] !== null) signal[i] = signalRaw[si++];
+            }
+            const histogram = macdLine.map((v, i) => v !== null && signal[i] !== null ? v - signal[i] : null);
+
+            // Bollinger Bands (20, 2)
+            const bbUpper = [], bbMiddle = [], bbLower = [];
+            for (let i = 0; i < closes.length; i++) {
+                if (i < 19) { bbUpper.push(null); bbMiddle.push(null); bbLower.push(null); continue; }
+                const slice = closes.slice(i - 19, i + 1);
+                const mean = slice.reduce((a, b) => a + b) / 20;
+                const stdDev = Math.sqrt(slice.reduce((sum, v) => sum + (v - mean) ** 2, 0) / 20);
+                bbMiddle.push(mean); bbUpper.push(mean + 2 * stdDev); bbLower.push(mean - 2 * stdDev);
+            }
+
+            // Stochastic (14, 3)
+            const stochK = new Array(closes.length).fill(null);
+            for (let i = 13; i < closes.length; i++) {
+                const hSlice = highs.slice(i - 13, i + 1), lSlice = lows.slice(i - 13, i + 1);
+                const hMax = Math.max(...hSlice), lMin = Math.min(...lSlice);
+                stochK[i] = hMax === lMin ? 50 : ((closes[i] - lMin) / (hMax - lMin)) * 100;
+            }
+            const stochD = new Array(closes.length).fill(null);
+            for (let i = 15; i < closes.length; i++) {
+                const kSlice = stochK.slice(i - 2, i + 1).filter(v => v !== null);
+                if (kSlice.length === 3) stochD[i] = kSlice.reduce((a, b) => a + b) / 3;
+            }
+
+            return {
+                dates, opens, highs, lows, closes, volumes,
+                sma20: sma(closes, 20), sma50: sma(closes, 50), sma200: sma(closes, 200),
+                rsi, macd: { macdLine, signal, histogram },
+                bollinger: { upper: bbUpper, middle: bbMiddle, lower: bbLower },
+                stochastic: { k: stochK, d: stochD }
+            };
+        }
+
+        // ========== CHART RENDERING (from production charts.js) ==========
+
+        function calculateSubplotDomains(showRsi, showMacd, showStochastic) {
+            const count = [showRsi, showMacd, showStochastic].filter(Boolean).length;
+            if (count === 0) return { priceDomain: [0, 1], rsiDomain: null, macdDomain: null, stochasticDomain: null };
+            if (count === 1) {
+                const d = [0, 0.28];
+                return { priceDomain: [0.32, 1], rsiDomain: showRsi ? d : null, macdDomain: showMacd ? d : null, stochasticDomain: showStochastic ? d : null };
+            }
+            if (count === 2) {
+                const active = [];
+                if (showRsi) active.push('rsi');
+                if (showMacd) active.push('macd');
+                if (showStochastic) active.push('stochastic');
+                return {
+                    priceDomain: [0.50, 1],
+                    rsiDomain: active[0] === 'rsi' ? [0.25, 0.46] : (active[1] === 'rsi' ? [0, 0.21] : null),
+                    macdDomain: active[0] === 'macd' ? [0.25, 0.46] : (active[1] === 'macd' ? [0, 0.21] : null),
+                    stochasticDomain: active[0] === 'stochastic' ? [0.25, 0.46] : (active[1] === 'stochastic' ? [0, 0.21] : null)
+                };
+            }
+            return { priceDomain: [0.55, 1], rsiDomain: [0.37, 0.52], macdDomain: [0.19, 0.34], stochasticDomain: [0, 0.16] };
+        }
+
+        function renderChart() {
+            const chartEl = document.getElementById('mock-chart');
+            if (!chartEl || !mockData) return;
+
+            const ticker = (document.getElementById('ticker-input').value.trim().toUpperCase()) || 'STOCK';
+            const isDark = document.documentElement.classList.contains('dark');
+            const colors = getChartTheme(isDark);
+            const chartType = document.getElementById('chart-type').value;
+            const showMa20 = document.getElementById('ma-20').checked;
+            const showMa50 = document.getElementById('ma-50').checked;
+            const showMa200 = document.getElementById('ma-200').checked;
+            const showRsi = document.getElementById('show-rsi').checked;
+            const showMacd = document.getElementById('show-macd').checked;
+            const showBollinger = document.getElementById('show-bollinger').checked;
+            const showStochastic = document.getElementById('show-stochastic').checked;
+            const threshold = parseInt(document.getElementById('threshold-slider').value);
+            const showMarkers = document.getElementById('show-markers').checked;
+
+            const { dates, opens, highs, lows, closes } = mockData;
+            const domains = calculateSubplotDomains(showRsi, showMacd, showStochastic);
+            const traces = [];
+
+            // Main price trace (from production charts.js)
+            if (chartType === 'candlestick') {
+                traces.push({
+                    type: 'candlestick', x: dates, open: opens, high: highs, low: lows, close: closes,
+                    name: ticker, increasing: { line: { color: '#10B981' } }, decreasing: { line: { color: '#EF4444' } }, yaxis: 'y'
+                });
+            } else if (chartType === 'ohlc') {
+                traces.push({
+                    type: 'ohlc', x: dates, open: opens, high: highs, low: lows, close: closes,
+                    name: ticker, increasing: { line: { color: '#10B981' } }, decreasing: { line: { color: '#EF4444' } }, yaxis: 'y'
+                });
+            } else if (chartType === 'area') {
+                traces.push({
+                    type: 'scatter', mode: 'lines', x: dates, y: closes, name: ticker,
+                    line: { color: '#3B82F6', width: 2 }, fill: 'tozeroy',
+                    fillcolor: isDark ? 'rgba(59,130,246,0.08)' : 'rgba(59,130,246,0.05)', yaxis: 'y'
+                });
+            } else {
+                traces.push({
+                    type: 'scatter', mode: 'lines', x: dates, y: closes, name: ticker,
+                    line: { color: '#3B82F6', width: 2 }, yaxis: 'y'
+                });
+            }
+
+            // SMA overlays (from production charts.js)
+            const addSma = (arr, name, color) => {
+                const valid = arr.map((v, i) => v !== null ? { d: dates[i], v } : null).filter(Boolean);
+                if (valid.length) traces.push({
+                    type: 'scatter', mode: 'lines', x: valid.map(d => d.d), y: valid.map(d => d.v),
+                    name, line: { color, width: 1, dash: 'dot' }, yaxis: 'y'
+                });
+            };
+            if (showMa20) addSma(mockData.sma20, 'SMA 20', '#F59E0B');
+            if (showMa50) addSma(mockData.sma50, 'SMA 50', '#8B5CF6');
+            if (showMa200) addSma(mockData.sma200, 'SMA 200', '#EC4899');
+
+            // Bollinger Bands (from production charts.js)
+            if (showBollinger && mockData.bollinger) {
+                const bb = mockData.bollinger;
+                const bbIdx = dates.map((_, i) => bb.upper[i] !== null ? i : null).filter(v => v !== null);
+                const bbDates = bbIdx.map(i => dates[i]);
+                traces.push({ type: 'scatter', mode: 'lines', x: bbDates, y: bbIdx.map(i => bb.upper[i]),
+                    name: 'BB Upper', line: { color: '#6366F1', width: 1 }, yaxis: 'y' });
+                traces.push({ type: 'scatter', mode: 'lines', x: bbDates, y: bbIdx.map(i => bb.middle[i]),
+                    name: 'BB Middle', line: { color: '#6366F1', width: 1, dash: 'dash' }, yaxis: 'y' });
+                traces.push({ type: 'scatter', mode: 'lines', x: bbDates, y: bbIdx.map(i => bb.lower[i]),
+                    name: 'BB Lower', line: { color: '#6366F1', width: 1 }, fill: 'tonexty',
+                    fillcolor: 'rgba(99, 102, 241, 0.1)', yaxis: 'y' });
+            }
+
+            // Significant move markers (from production charts.js)
+            if (showMarkers) {
+                const upIdx = [], downIdx = [];
+                for (let i = 1; i < closes.length; i++) {
+                    const pct = ((closes[i] - closes[i - 1]) / closes[i - 1]) * 100;
+                    if (pct >= threshold) upIdx.push(i);
+                    else if (pct <= -threshold) downIdx.push(i);
+                }
+                if (upIdx.length) traces.push({
+                    type: 'scatter', mode: 'markers', x: upIdx.map(i => dates[i]),
+                    y: upIdx.map(i => highs[i] * 1.02), name: `+${threshold}% Move`,
+                    marker: { color: '#10B981', size: 22, symbol: 'triangle-up', line: { color: '#065F46', width: 2 } },
+                    hovertext: upIdx.map(i => `+${(((closes[i] - closes[i-1]) / closes[i-1]) * 100).toFixed(1)}%`),
+                    hoverinfo: 'text', yaxis: 'y'
+                });
+                if (downIdx.length) traces.push({
+                    type: 'scatter', mode: 'markers', x: downIdx.map(i => dates[i]),
+                    y: downIdx.map(i => lows[i] * 0.98), name: `-${threshold}% Move`,
+                    marker: { color: '#EF4444', size: 22, symbol: 'triangle-down', line: { color: '#991B1B', width: 2 } },
+                    hovertext: downIdx.map(i => `${(((closes[i] - closes[i-1]) / closes[i-1]) * 100).toFixed(1)}%`),
+                    hoverinfo: 'text', yaxis: 'y'
+                });
+            }
+
+            // RSI indicator (from production charts.js)
+            if (showRsi && mockData.rsi) {
+                const valid = mockData.rsi.map((v, i) => v !== null ? i : null).filter(v => v !== null);
+                const rDates = valid.map(i => dates[i]);
+                traces.push({ type: 'scatter', mode: 'lines', x: rDates, y: valid.map(i => mockData.rsi[i]),
+                    name: 'RSI (14)', line: { color: '#8B5CF6', width: 1.5 }, yaxis: 'y2' });
+                traces.push({ type: 'scatter', mode: 'lines', x: [rDates[0], rDates[rDates.length - 1]], y: [70, 70],
+                    name: 'Overbought', line: { color: '#EF4444', width: 1, dash: 'dot' }, yaxis: 'y2', showlegend: false, hoverinfo: 'skip' });
+                traces.push({ type: 'scatter', mode: 'lines', x: [rDates[0], rDates[rDates.length - 1]], y: [30, 30],
+                    name: 'Oversold', line: { color: '#10B981', width: 1, dash: 'dot' }, yaxis: 'y2', showlegend: false, hoverinfo: 'skip' });
+            }
+
+            // MACD indicator (from production charts.js)
+            if (showMacd && mockData.macd) {
+                const valid = mockData.macd.macdLine.map((v, i) => v !== null ? i : null).filter(v => v !== null);
+                const mDates = valid.map(i => dates[i]);
+                traces.push({ type: 'scatter', mode: 'lines', x: mDates, y: valid.map(i => mockData.macd.macdLine[i]),
+                    name: 'MACD', line: { color: '#3B82F6', width: 1.5 }, yaxis: 'y3' });
+                traces.push({ type: 'scatter', mode: 'lines', x: mDates, y: valid.map(i => mockData.macd.signal[i]),
+                    name: 'Signal', line: { color: '#F59E0B', width: 1.5 }, yaxis: 'y3' });
+                const histColors = valid.map(i => (mockData.macd.histogram[i] || 0) >= 0 ? 'rgba(16, 185, 129, 0.7)' : 'rgba(239, 68, 68, 0.7)');
+                traces.push({ type: 'bar', x: mDates, y: valid.map(i => mockData.macd.histogram[i]),
+                    name: 'Histogram', marker: { color: histColors }, yaxis: 'y3', showlegend: false });
+            }
+
+            // Stochastic indicator (from production charts.js)
+            if (showStochastic && mockData.stochastic) {
+                const valid = mockData.stochastic.k.map((v, i) => v !== null ? i : null).filter(v => v !== null);
+                const sDates = valid.map(i => dates[i]);
+                traces.push({ type: 'scatter', mode: 'lines', x: sDates, y: valid.map(i => mockData.stochastic.k[i]),
+                    name: '%K', line: { color: '#14B8A6', width: 1.5 }, yaxis: 'y4' });
+                traces.push({ type: 'scatter', mode: 'lines', x: sDates, y: valid.map(i => mockData.stochastic.d[i]),
+                    name: '%D', line: { color: '#F59E0B', width: 1.5, dash: 'dash' }, yaxis: 'y4' });
+                traces.push({ type: 'scatter', mode: 'lines', x: [sDates[0], sDates[sDates.length - 1]], y: [80, 80],
+                    name: 'Overbought', line: { color: '#EF4444', width: 1, dash: 'dot' }, yaxis: 'y4', showlegend: false, hoverinfo: 'skip' });
+                traces.push({ type: 'scatter', mode: 'lines', x: [sDates[0], sDates[sDates.length - 1]], y: [20, 20],
+                    name: 'Oversold', line: { color: '#10B981', width: 1, dash: 'dot' }, yaxis: 'y4', showlegend: false, hoverinfo: 'skip' });
+            }
+
+            // Layout (from production charts.js)
+            const layout = {
+                autosize: true,
+                margin: { t: 50, r: 30, b: 60, l: 60, autoexpand: true },
+                title: { text: `${ticker} \u2014 ${resolvedStartDate} to ${resolvedEndDate}`, font: { size: 13, color: colors.textColor } },
+                xaxis: { rangeslider: { visible: false }, gridcolor: colors.gridColor, linecolor: colors.gridColor,
+                    tickfont: { color: colors.textColor, size: 10 } },
+                yaxis: { title: { text: 'Price ($)', font: { color: colors.textColor, size: 11 } },
+                    gridcolor: colors.gridColor, linecolor: colors.gridColor,
+                    tickfont: { color: colors.textColor, size: 10 }, domain: domains.priceDomain },
+                plot_bgcolor: colors.plotBg, paper_bgcolor: colors.paperBg,
+                font: { color: colors.textColor },
+                showlegend: true,
+                legend: { orientation: 'h', yanchor: 'top', y: -0.08, xanchor: 'center', x: 0.5,
+                    font: { color: colors.textColor, size: 10 } },
+                hovermode: 'closest', hoverdistance: 20, dragmode: false
+            };
+
+            if (showRsi && domains.rsiDomain) {
+                layout.yaxis2 = { title: { text: 'RSI', font: { color: colors.textColor, size: 10 } },
+                    gridcolor: colors.gridColor, tickfont: { color: colors.textColor, size: 9 }, linecolor: colors.gridColor,
+                    domain: domains.rsiDomain, range: [0, 100], dtick: 20, anchor: 'x' };
+            }
+            if (showMacd && domains.macdDomain) {
+                layout.yaxis3 = { title: { text: 'MACD', font: { color: colors.textColor, size: 10 } },
+                    gridcolor: colors.gridColor, tickfont: { color: colors.textColor, size: 9 }, linecolor: colors.gridColor,
+                    domain: domains.macdDomain, anchor: 'x' };
+            }
+            if (showStochastic && domains.stochasticDomain) {
+                layout.yaxis4 = { title: { text: 'Stoch', font: { color: colors.textColor, size: 10 } },
+                    gridcolor: colors.gridColor, tickfont: { color: colors.textColor, size: 9 }, linecolor: colors.gridColor,
+                    domain: domains.stochasticDomain, range: [0, 100], dtick: 20, anchor: 'x' };
+            }
+
+            Plotly.react(chartEl, traces, layout, { responsive: true, displayModeBar: true,
+                modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'] });
+        }
+
+        function initDateRange() {
+            // Resolve initial dates (from production app.js initDateRangePanel)
+            const endPreset = document.getElementById('end-date-preset');
+            const startPreset = document.getElementById('start-date-preset');
+            const endInput = document.getElementById('end-date-resolved');
+            const startInput = document.getElementById('start-date-resolved');
+
+            resolvedEndDate = resolveEndDate(endPreset.value);
+            endInput.value = formatDateDisplay(resolvedEndDate);
+            resolvedStartDate = resolveStartDate(startPreset.value, resolvedEndDate);
+            startInput.value = formatDateDisplay(resolvedStartDate);
+        }
+
+        function initMockChart() {
+            // Set up ResizeObserver for chart tile (needed after tile reopen)
             if (chartResizeObserver) chartResizeObserver.disconnect();
+            const chartEl = document.getElementById('mock-chart');
             const tileBody = document.getElementById('tile-chart-body');
-            if (tileBody) {
+            if (tileBody && chartEl) {
                 chartResizeObserver = new ResizeObserver(() => {
-                    if (chartEl && chartEl.data) Plotly.Plots.resize(chartEl);
+                    if (chartEl.data) Plotly.Plots.resize(chartEl);
                 });
                 chartResizeObserver.observe(tileBody);
             }
+            // If data already loaded, re-render (e.g. after tile reopen)
+            if (mockData) renderChart();
+        }
+
+        function showResults() {
+            document.querySelector('.grid-wrapper').style.display = '';
+        }
+
+        function hideResults() {
+            document.querySelector('.grid-wrapper').style.display = 'none';
+            mockData = null;
+            const chartEl = document.getElementById('mock-chart');
+            if (chartEl && chartEl.data) Plotly.purge(chartEl);
+        }
+
+        function reanalyze() {
+            mockData = generateMockData(resolvedStartDate, resolvedEndDate);
+            showResults();
+            renderChart();
+        }
+
+        // ========== SEARCH CONTROLS (from production app.js event wiring) ==========
+
+        function initSearchControls() {
+            // End Date preset change (from production app.js line 714)
+            document.getElementById('end-date-preset').addEventListener('change', (e) => {
+                const endInput = document.getElementById('end-date-resolved');
+                if (e.target.value === 'custom') {
+                    endInput.removeAttribute('readonly');
+                } else {
+                    endInput.setAttribute('readonly', true);
+                    resolvedEndDate = resolveEndDate(e.target.value);
+                    endInput.value = formatDateDisplay(resolvedEndDate);
+                }
+                recalculateStartDate();
+                reanalyze();
+            });
+
+            // Start Date preset change (from production app.js line 742)
+            document.getElementById('start-date-preset').addEventListener('change', (e) => {
+                const startInput = document.getElementById('start-date-resolved');
+                if (e.target.value === 'custom') {
+                    startInput.removeAttribute('readonly');
+                } else {
+                    startInput.setAttribute('readonly', true);
+                    resolvedStartDate = resolveStartDate(e.target.value, resolvedEndDate);
+                    startInput.value = formatDateDisplay(resolvedStartDate);
+                }
+                reanalyze();
+            });
+
+            // Chart type change (from production app.js line 768)
+            document.getElementById('chart-type').addEventListener('change', () => renderChart());
+
+            // Moving average toggles (from production app.js line 771)
+            ['ma-20', 'ma-50', 'ma-200'].forEach(id => {
+                document.getElementById(id).addEventListener('change', () => renderChart());
+            });
+
+            // Technical indicator toggles (from production app.js line 776)
+            ['show-rsi', 'show-macd', 'show-bollinger', 'show-stochastic'].forEach(id => {
+                document.getElementById(id).addEventListener('change', () => renderChart());
+            });
+
+            // Threshold slider (from production app.js line 781)
+            const thresholdSlider = document.getElementById('threshold-slider');
+            const thresholdValue = document.getElementById('threshold-value');
+            thresholdSlider.addEventListener('input', (e) => {
+                thresholdValue.textContent = `${e.target.value}%`;
+            });
+            thresholdSlider.addEventListener('change', () => renderChart());
+
+            // Show markers toggle (from production app.js line 794)
+            document.getElementById('show-markers').addEventListener('change', () => renderChart());
+
+            // Analyze button (from production app.js line 643)
+            document.getElementById('search-btn').addEventListener('click', () => {
+                const ticker = document.getElementById('ticker-input').value.trim();
+                if (!ticker) return; // Don't analyze without a ticker
+                reanalyze();
+            });
+
+            // Clear button (from production app.js clearAll)
+            document.getElementById('clear-btn').addEventListener('click', () => {
+                document.getElementById('ticker-input').value = '';
+                document.getElementById('end-date-preset').value = 'PBD';
+                document.getElementById('start-date-preset').value = '1y';
+                document.getElementById('chart-type').value = 'line';
+                document.getElementById('ma-20').checked = true;
+                document.getElementById('ma-50').checked = true;
+                document.getElementById('ma-200').checked = false;
+                document.getElementById('show-rsi').checked = false;
+                document.getElementById('show-macd').checked = false;
+                document.getElementById('show-bollinger').checked = false;
+                document.getElementById('show-stochastic').checked = false;
+                document.getElementById('threshold-slider').value = 5;
+                document.getElementById('threshold-value').textContent = '5%';
+                document.getElementById('show-markers').checked = false;
+                const endInput = document.getElementById('end-date-resolved');
+                const startInput = document.getElementById('start-date-resolved');
+                endInput.setAttribute('readonly', true);
+                startInput.setAttribute('readonly', true);
+                resolvedEndDate = resolveEndDate('PBD');
+                endInput.value = formatDateDisplay(resolvedEndDate);
+                resolvedStartDate = resolveStartDate('1y', resolvedEndDate);
+                startInput.value = formatDateDisplay(resolvedStartDate);
+                hideResults();
+            });
         }
 
         // ========== DARK MODE ==========
@@ -946,20 +1397,7 @@
                 sunIcon.style.display = isDark ? 'block' : 'none';
                 moonIcon.style.display = isDark ? 'none' : 'block';
                 localStorage.setItem('stockanalyzer_dark_mode_proto', isDark ? 'dark' : 'light');
-
-                const chartEl = document.getElementById('mock-chart');
-                if (chartEl && chartEl.data) {
-                    const c = getChartTheme(isDark);
-                    Plotly.relayout(chartEl, {
-                        'plot_bgcolor': c.plotBg, 'paper_bgcolor': c.paperBg,
-                        'xaxis.gridcolor': c.gridColor, 'xaxis.linecolor': c.gridColor,
-                        'xaxis.tickfont.color': c.textColor,
-                        'yaxis.gridcolor': c.gridColor, 'yaxis.linecolor': c.gridColor,
-                        'yaxis.tickfont.color': c.textColor,
-                        'font.color': c.textColor
-                    });
-                    Plotly.restyle(chartEl, { fillcolor: isDark ? 'rgba(59,130,246,0.08)' : 'rgba(59,130,246,0.05)' });
-                }
+                renderChart();
             });
         }
 

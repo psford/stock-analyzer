@@ -28,7 +28,7 @@ const TileDashboard = (() => {
     };
 
     const STORAGE_KEY = 'stockanalyzer_tile_layout';
-    const LAYOUT_VERSION = 1;
+    const LAYOUT_VERSION = 6;
 
     // ========== STATE ==========
 
@@ -85,6 +85,8 @@ const TileDashboard = (() => {
                 const contentDiv = el.querySelector('.grid-stack-item-content');
                 tileContentCache[id] = contentDiv ? contentDiv.innerHTML : '';
                 tileGridOpts[id] = {
+                    x: parseInt(el.getAttribute('gs-x')) || 0,
+                    y: parseInt(el.getAttribute('gs-y')) || 0,
                     w: parseInt(el.getAttribute('gs-w')) || 6,
                     h: parseInt(el.getAttribute('gs-h')) || 3,
                     minW: parseInt(el.getAttribute('gs-min-w')) || 2,
@@ -104,7 +106,7 @@ const TileDashboard = (() => {
             animate: true,
             float: false,
             handle: '.tile-header',
-            resizable: { handles: 'e, se, s, w, sw' },
+            resizable: { handles: 'n, e, se, s, sw, w' },
             columnOpts: {
                 breakpointForWindow: true,
                 breakpoints: [{ w: 768, c: 1 }]
@@ -186,13 +188,15 @@ const TileDashboard = (() => {
         const saved = loadSavedLayout();
         if (!saved) return;
 
-        // Apply saved positions
+        // Enable float to apply saved positions without collision resolution
+        grid.float(true);
         grid.batchUpdate();
         saved.tiles.forEach(t => {
             const el = document.querySelector(`[gs-id="${t.id}"]`);
             if (el) grid.update(el, { x: t.x, y: t.y, w: t.w, h: t.h });
         });
         grid.batchUpdate(false);
+        grid.float(false);
 
         // Remove tiles that were hidden
         if (saved.visibility) {
@@ -208,6 +212,37 @@ const TileDashboard = (() => {
 
     function resetLayout() {
         localStorage.removeItem(STORAGE_KEY);
+
+        // Snapshot all search form state so the reload restores data, not just layout
+        const formState = {};
+        const textIds = ['ticker-input', 'compare-input'];
+        const selectIds = ['chart-type', 'end-date-preset', 'start-date-preset'];
+        const checkIds = ['ma-20', 'ma-50', 'ma-200', 'show-rsi', 'show-macd',
+                          'show-bollinger', 'show-stochastic', 'show-markers'];
+        const rangeIds = ['threshold-slider'];
+
+        textIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) formState[id] = el.value;
+        });
+        selectIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) formState[id] = el.value;
+        });
+        checkIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) formState[id] = el.checked;
+        });
+        rangeIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) formState[id] = el.value;
+        });
+
+        // Animal radio
+        const animalRadio = document.querySelector('input[name="animal-type"]:checked');
+        if (animalRadio) formState['animal-type'] = animalRadio.value;
+
+        sessionStorage.setItem('stockanalyzer_reset_form', JSON.stringify(formState));
         location.reload();
     }
 
@@ -304,6 +339,7 @@ const TileDashboard = (() => {
         _lastDragPos: null,
         _lastDragTime: null,
         _velocity: { x: 0, y: 0 },
+        _coupledResize: null,
 
         init(gridInstance) {
             this._grid = gridInstance;
@@ -320,6 +356,7 @@ const TileDashboard = (() => {
             g.on('drag', (event, el) => this._onDrag(el));
             g.on('dragstop', (event, el) => this._onDragStop(el));
             g.on('resizestart', (event, el) => this._onResizeStart(el));
+            g.on('resize', (event, el) => this._onResize(el));
             g.on('resizestop', (event, el) => this._onResizeStop(el));
         },
 
@@ -575,11 +612,151 @@ const TileDashboard = (() => {
                 attributeFilter: ['gs-x'],
                 attributeOldValue: true
             });
+
+            // --- Coupled resize: adjacent tiles shrink/grow instead of being pushed ---
+            // Strategy: temporarily remove the neighbor from GridStack's engine so
+            // the engine sees empty space and allows the resize. We position the
+            // neighbor manually via DOM attributes during resize, then re-add it
+            // to the engine on resizestop.
+            const node = el.gridstackNode;
+            if (node) {
+                const { right, left } = this._findRowNeighbors(node);
+                if (right || left) {
+                    // Compute maxW: tile can grow until the neighbor hits its minW
+                    let maxW = 12;
+                    if (right) maxW = Math.min(maxW, node.w + right.w - (right.minW || 2));
+                    if (left) maxW = Math.min(maxW, node.w + left.w - (left.minW || 2));
+
+                    const buildNeighborState = (n) => ({
+                        node: n,
+                        el: n.el,
+                        initialX: n.x,
+                        initialY: n.y,
+                        initialW: n.w,
+                        initialH: n.h,
+                        minW: n.minW || 2,
+                    });
+
+                    this._coupledResize = {
+                        el,
+                        initialX: node.x,
+                        initialW: node.w,
+                        originalMaxW: node.maxW,
+                        rightNeighbor: right ? buildNeighborState(right) : null,
+                        leftNeighbor: left ? buildNeighborState(left) : null,
+                    };
+
+                    // Enable float to prevent compaction of other tiles when
+                    // the neighbor is removed from the engine
+                    this._grid.float(true);
+
+                    // Remove neighbor(s) from engine so GridStack won't push them
+                    const engine = this._grid.engine;
+                    if (right) {
+                        const idx = engine.nodes.indexOf(right);
+                        if (idx !== -1) engine.nodes.splice(idx, 1);
+                    }
+                    if (left) {
+                        const idx = engine.nodes.indexOf(left);
+                        if (idx !== -1) engine.nodes.splice(idx, 1);
+                    }
+
+                    // Set maxW so tile can't grow past what the neighbor can absorb
+                    this._grid.update(el, { maxW });
+                }
+            }
+        },
+
+        _onResize(el) {
+            const cr = this._coupledResize;
+            if (!cr || cr.el !== el) return;
+            const node = el.gridstackNode;
+            if (!node) return;
+
+            const deltaW = node.w - cr.initialW;
+            const deltaX = node.x - cr.initialX;
+
+            if (deltaW === 0 && deltaX === 0) return;
+
+            // East resize: x unchanged, w changed → right neighbor shrinks
+            if (deltaX === 0 && deltaW !== 0 && cr.rightNeighbor) {
+                const rn = cr.rightNeighbor;
+                const newW = Math.max(rn.minW, rn.initialW - deltaW);
+                const newX = rn.initialX + (rn.initialW - newW);
+                // Update the node object directly
+                rn.node.x = newX;
+                rn.node.w = newW;
+                // Update DOM attributes
+                rn.el.setAttribute('gs-x', newX);
+                rn.el.setAttribute('gs-w', newW);
+                // Update inline styles (GridStack v12 uses calc() with CSS vars)
+                rn.el.style.left = newX === 0 ? '' : `calc(${newX} * var(--gs-column-width))`;
+                rn.el.style.width = `calc(${newW} * var(--gs-column-width))`;
+            }
+
+            // West resize: x changed → left neighbor shrinks
+            if (deltaX !== 0 && cr.leftNeighbor) {
+                const ln = cr.leftNeighbor;
+                const newW = Math.max(ln.minW, ln.initialW + deltaX);
+                ln.node.x = ln.initialX;
+                ln.node.w = newW;
+                ln.el.setAttribute('gs-x', ln.initialX);
+                ln.el.setAttribute('gs-w', newW);
+                // Update inline styles
+                ln.el.style.left = ln.initialX === 0 ? '' : `calc(${ln.initialX} * var(--gs-column-width))`;
+                ln.el.style.width = `calc(${newW} * var(--gs-column-width))`;
+            }
+        },
+
+        /**
+         * Find horizontally adjacent tiles on the same row(s).
+         * Returns { right, left } where each is a gridstackNode or null.
+         */
+        _findRowNeighbors(node) {
+            const nodes = this._grid.engine.nodes;
+            let right = null, left = null;
+            for (const n of nodes) {
+                if (n === node) continue;
+                // Must overlap vertically (share at least one row)
+                if (n.y >= node.y + node.h || n.y + n.h <= node.y) continue;
+                // Right neighbor: starts where this tile ends
+                if (n.x === node.x + node.w) right = n;
+                // Left neighbor: ends where this tile starts
+                if (n.x + n.w === node.x) left = n;
+            }
+            return { right, left };
         },
 
         _onResizeStop(el) {
             el.style.willChange = '';
             this._grid.el.classList.remove('drag-active');
+
+            // Clean up coupled resize: re-add neighbor to engine and restore maxW
+            if (this._coupledResize) {
+                const cr = this._coupledResize;
+                const engine = this._grid.engine;
+
+                // Re-add neighbor node(s) to the engine
+                if (cr.rightNeighbor) engine.nodes.push(cr.rightNeighbor.node);
+                if (cr.leftNeighbor) engine.nodes.push(cr.leftNeighbor.node);
+                engine.sortNodes();
+
+                // Tell GridStack the final position of each neighbor so it
+                // takes ownership of their inline styles again
+                if (cr.rightNeighbor) {
+                    const rn = cr.rightNeighbor;
+                    this._grid.update(rn.el, { x: rn.node.x, w: rn.node.w });
+                }
+                if (cr.leftNeighbor) {
+                    const ln = cr.leftNeighbor;
+                    this._grid.update(ln.el, { x: ln.node.x, w: ln.node.w });
+                }
+
+                // Restore original maxW and disable float mode
+                this._grid.update(el, { maxW: cr.originalMaxW || 12 });
+                this._grid.float(false);
+                this._coupledResize = null;
+            }
 
             // Clean up FLIP MutationObserver
             if (this._flipObserver) {
@@ -700,4 +877,58 @@ const TileDashboard = (() => {
 })();
 
 // Auto-boot on DOMContentLoaded
-document.addEventListener('DOMContentLoaded', () => TileDashboard.boot());
+document.addEventListener('DOMContentLoaded', () => {
+    TileDashboard.boot();
+
+    // After a reset-layout reload, restore all search parameters and re-analyze
+    const savedForm = sessionStorage.getItem('stockanalyzer_reset_form');
+    if (savedForm) {
+        sessionStorage.removeItem('stockanalyzer_reset_form');
+        try {
+            const f = JSON.parse(savedForm);
+            const textIds = ['ticker-input', 'compare-input'];
+            const selectIds = ['chart-type', 'end-date-preset', 'start-date-preset'];
+            const checkIds = ['ma-20', 'ma-50', 'ma-200', 'show-rsi', 'show-macd',
+                              'show-bollinger', 'show-stochastic', 'show-markers'];
+            const rangeIds = ['threshold-slider'];
+
+            textIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el && f[id] !== undefined) el.value = f[id];
+            });
+            selectIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el && f[id] !== undefined) {
+                    el.value = f[id];
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            });
+            checkIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el && f[id] !== undefined) {
+                    el.checked = f[id];
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            });
+            rangeIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el && f[id] !== undefined) {
+                    el.value = f[id];
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+            });
+
+            // Animal radio
+            if (f['animal-type']) {
+                const radio = document.querySelector(`input[name="animal-type"][value="${f['animal-type']}"]`);
+                if (radio) radio.checked = true;
+            }
+
+            // Trigger analysis if we had a ticker
+            if (f['ticker-input']) {
+                const btn = document.getElementById('search-btn');
+                if (btn) btn.click();
+            }
+        } catch (e) { /* ignore parse errors */ }
+    }
+});

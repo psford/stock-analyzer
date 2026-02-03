@@ -349,6 +349,8 @@ app.Use(async (context, next) =>
     if (reqPath == "/" || string.Equals(reqPath, "/index.html", StringComparison.OrdinalIgnoreCase))
     {
         context.Response.ContentType = "text/html; charset=utf-8";
+        context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+        context.Response.Headers.Pragma = "no-cache";
         await context.Response.WriteAsync(versionedIndexHtml);
         return;
     }
