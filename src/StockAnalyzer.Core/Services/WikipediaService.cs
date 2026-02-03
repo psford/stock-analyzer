@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using StockAnalyzer.Core.Helpers;
 
 namespace StockAnalyzer.Core.Services;
 
@@ -75,7 +76,7 @@ public class WikipediaService
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "Wikipedia lookup failed for {Company}", companyName);
+            _logger?.LogWarning(ex, "Wikipedia lookup failed for {Company}", LogSanitizer.Sanitize(companyName));
             return null;
         }
     }
@@ -86,7 +87,7 @@ public class WikipediaService
         var extract = await TryGetSummaryAsync(companyName, ct);
         if (extract != null)
         {
-            _logger?.LogDebug("Wikipedia direct hit for {Company}", companyName);
+            _logger?.LogDebug("Wikipedia direct hit for {Company}", LogSanitizer.Sanitize(companyName));
             return extract;
         }
 
@@ -94,13 +95,13 @@ public class WikipediaService
         var searchTitle = await SearchForArticleAsync(companyName, ct);
         if (searchTitle == null)
         {
-            _logger?.LogDebug("No Wikipedia article found for {Company}", companyName);
+            _logger?.LogDebug("No Wikipedia article found for {Company}", LogSanitizer.Sanitize(companyName));
             return null;
         }
 
         extract = await TryGetSummaryAsync(searchTitle, ct);
         if (extract != null)
-            _logger?.LogDebug("Wikipedia search hit for {Company} -> {Title}", companyName, searchTitle);
+            _logger?.LogDebug("Wikipedia search hit for {Company} -> {Title}", LogSanitizer.Sanitize(companyName), LogSanitizer.Sanitize(searchTitle));
 
         return extract;
     }
