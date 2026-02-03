@@ -355,6 +355,8 @@ Page Load                    User Types Query
 | FR-011.21 | The Stochastic panel must show %K line (fast) and %D line (signal) |
 | FR-011.22 | The Stochastic panel must show overbought (80) and oversold (20) reference lines |
 | FR-011.23 | The system must use standard Stochastic parameters (K=14, D=3) by default |
+| FR-011.24 | Each indicator checkbox must display a hover tooltip explaining the indicator's purpose and key thresholds |
+| FR-011.25 | Moving average checkboxes (SMA 20/50/200) must also display hover tooltips |
 
 **User Story:** *As a technical trader, I want to see RSI, MACD, Bollinger Bands, and Stochastic Oscillator indicators so that I can identify overbought/oversold conditions, momentum trends, and volatility.*
 

@@ -199,15 +199,15 @@
 
                 <!-- Moving Averages Toggle -->
                 <div class="mt-4 flex flex-wrap gap-4">
-                    <label class="inline-flex items-center">
+                    <label class="inline-flex items-center" title="Simple Moving Average (20-day) — short-term trend. Price above SMA = bullish, below = bearish.">
                         <input type="checkbox" id="ma-20" class="rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary" checked>
                         <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">SMA 20</span>
                     </label>
-                    <label class="inline-flex items-center">
+                    <label class="inline-flex items-center" title="Simple Moving Average (50-day) — medium-term trend. Often watched as support/resistance level.">
                         <input type="checkbox" id="ma-50" class="rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary" checked>
                         <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">SMA 50</span>
                     </label>
-                    <label class="inline-flex items-center">
+                    <label class="inline-flex items-center" title="Simple Moving Average (200-day) — long-term trend. Crossing above/below is a major signal (golden cross/death cross).">
                         <input type="checkbox" id="ma-200" class="rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary">
                         <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">SMA 200</span>
                     </label>
@@ -216,19 +216,19 @@
                 <!-- Technical Indicators Toggle -->
                 <div id="technical-indicators-section" class="mt-4 flex flex-wrap gap-4">
                     <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Technical Indicators:</span>
-                    <label id="rsi-label" class="inline-flex items-center">
+                    <label id="rsi-label" class="inline-flex items-center" title="Relative Strength Index (14-day) — momentum oscillator (0-100). Above 70 = overbought, below 30 = oversold.">
                         <input type="checkbox" id="show-rsi" class="rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary">
                         <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">RSI (14)</span>
                     </label>
-                    <label id="macd-label" class="inline-flex items-center">
+                    <label id="macd-label" class="inline-flex items-center" title="Moving Average Convergence Divergence — trend and momentum. Signal line crossovers and histogram direction indicate buy/sell momentum.">
                         <input type="checkbox" id="show-macd" class="rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary">
                         <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">MACD</span>
                     </label>
-                    <label id="bollinger-label" class="inline-flex items-center">
+                    <label id="bollinger-label" class="inline-flex items-center" title="Bollinger Bands (20-day, 2 std dev) — volatility indicator. Price near upper band = potentially overbought, near lower = potentially oversold. Bands widen with volatility.">
                         <input type="checkbox" id="show-bollinger" class="rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary">
                         <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">Bollinger</span>
                     </label>
-                    <label id="stochastic-label" class="inline-flex items-center">
+                    <label id="stochastic-label" class="inline-flex items-center" title="Stochastic Oscillator (%K/%D) — momentum indicator (0-100). Above 80 = overbought, below 20 = oversold. %K crossing %D signals trend changes.">
                         <input type="checkbox" id="show-stochastic" class="rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary">
                         <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">Stochastic</span>
                     </label>
