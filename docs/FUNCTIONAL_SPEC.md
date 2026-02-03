@@ -748,6 +748,8 @@ The results section displays stock data in 6 draggable, resizable tiles powered 
 | FR-017.14 | The Stock Chart tile must resize Plotly to fill the tile when resized |
 | FR-017.15 | All existing functionality (search, charts, news, DragMeasure, watchlists, dark mode) must work identically within tiles |
 | FR-017.16 | The "Add to Watchlist" dropdown in the Company Info tile must not be clipped by tile boundaries |
+| FR-017.17 | When a tile is resized horizontally, adjacent tiles on the same row must shrink/grow inversely (not be pushed to a new row) |
+| FR-017.18 | Coupled resize must respect each tile's minimum width — a tile cannot be shrunk below its defined minimum |
 
 **User Story:** *As a power user, I want to rearrange my stock analysis dashboard tiles to prioritize the information most important to me, and have that layout remembered automatically.*
 

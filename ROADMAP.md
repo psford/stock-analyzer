@@ -144,7 +144,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 |---------|-------------|--------|
 | Unified importance scoring | Unify ImportanceScore (for untracked) and TrackedSecurities.Priority (for tracked) into a single scoring system for consistent gap-filling prioritization | Planned |
 | EODHD Loader calculate-importance client | Add `CalculateImportanceScoresAsync()` to StockAnalyzerApiClient for triggering score calculation from loader UI | Planned |
-| Customizable UI panels | Allow users to choose or rearrange tiled panels | Planned |
+| Customizable UI panels | Draggable/resizable tiled panels; minimum tile size ≈ Key Metrics box (1x1); users drag borders between adjacent tiles to resize (e.g., bio 1x2 + metrics 1x1 ↔ bio 1x1 + metrics 1x2); config saved in localStorage (Slack #169, #179) | Planned |
 | Real-time streaming | WebSocket-based live price updates | Planned |
 | Options chain | Options data retrieval and Greeks calculation | Planned |
 | Backtesting | Simple strategy backtesting capability | Planned |
