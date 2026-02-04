@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "themes": [
+    {
+      "id": "light",
+      "name": "Light",
+      "file": "light.json",
+      "builtin": true
+    },
+    {
+      "id": "dark",
+      "name": "Dark",
+      "file": "dark.json",
+      "builtin": true
+    },
+    {
+      "id": "neon-noir",
+      "name": "Neon Noir",
+      "file": "neon-noir.json",
+      "builtin": true
+    }
+  ],
+  "default": "light"
+}

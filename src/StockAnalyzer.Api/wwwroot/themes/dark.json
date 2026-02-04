@@ -1,0 +1,132 @@
+{
+  "id": "dark",
+  "name": "Dark",
+  "version": "1.0.0",
+  "meta": {
+    "category": "dark",
+    "icon": "moon",
+    "iconColor": "#60a5fa"
+  },
+  "variables": {
+    "bg-primary": "#1f2937",
+    "bg-secondary": "#111827",
+    "bg-tertiary": "#374151",
+    "bg-code": "#1f2937",
+
+    "text-primary": "#f9fafb",
+    "text-secondary": "#d1d5db",
+    "text-muted": "#9ca3af",
+    "text-inverted": "#e5e7eb",
+
+    "border-primary": "#374151",
+    "border-secondary": "#4b5563",
+
+    "accent": "#3b82f6",
+    "accent-hover": "#3b82f6",
+    "accent-light": "#60a5fa",
+    "accent-bg": "rgba(59, 130, 246, 0.15)",
+    "accent-bg-subtle": "rgba(96, 165, 250, 0.1)",
+
+    "success": "#34d399",
+    "error": "#f87171",
+    "warning": "#fbbf24",
+    "warning-light": "#fbbf24",
+
+    "highlight-bg": "#854d0e",
+    "highlight-text": "#fef08a",
+
+    "danger-bg": "rgba(220,38,38,0.2)",
+    "danger-border": "#f87171",
+
+    "star-color": "#facc15",
+    "star-bg": "rgba(234, 179, 8, 0.15)",
+    "star-glow": "none",
+
+    "price-up": "#34d399",
+    "price-up-glow": "none",
+    "price-down": "#f87171",
+    "price-down-glow": "none",
+
+    "audio-active-bg": "#1e3a5f",
+
+    "music-active-color": "#a78bfa",
+    "music-active-bg": "rgba(139, 92, 246, 0.15)",
+    "music-active-glow": "none",
+    "viz-bar-color": "#a78bfa",
+    "viz-bar-glow": "none",
+
+    "btn-primary-bg": "#3b82f6",
+    "btn-primary-bg-hover": "#60a5fa",
+    "btn-primary-text": "#ffffff",
+    "btn-primary-glow": "none",
+    "btn-primary-glow-hover": "none",
+
+    "loader-bg": "#374151",
+    "loader-accent": "#60a5fa",
+
+    "shadow-sm": "0 1px 2px rgba(0,0,0,0.1)",
+    "shadow-md": "0 4px 6px -1px rgba(0,0,0,0.3)",
+    "shadow-lg": "0 10px 15px -3px rgba(0,0,0,0.3)",
+    "shadow-xl": "0 25px 50px -12px rgba(0,0,0,0.5)",
+
+    "radius-sm": "0.25rem",
+    "radius-md": "0.375rem",
+    "radius-lg": "0.5rem",
+
+    "tile-title-color": "#f9fafb",
+    "tile-title-transform": "none",
+    "tile-title-spacing": "normal",
+    "tile-title-weight": "600",
+    "tile-title-glow": "none",
+
+    "chart-bg": "#1f2937",
+    "chart-text": "#f9fafb",
+    "chart-grid": "#374151",
+    "chart-axis": "#9ca3af",
+    "chart-line-primary": "#3b82f6",
+    "chart-line-secondary": "#f59e0b",
+    "chart-line-sma20": "#f59e0b",
+    "chart-line-sma50": "#8b5cf6",
+    "chart-line-sma200": "#ec4899",
+    "chart-candle-up": "#10b981",
+    "chart-candle-down": "#ef4444",
+    "chart-volume-up": "#10b981",
+    "chart-volume-down": "#ef4444",
+    "chart-rsi": "#8b5cf6",
+    "chart-macd": "#3b82f6",
+    "chart-macd-signal": "#f59e0b",
+    "chart-stochastic": "#14b8a6",
+    "chart-stochastic-d": "#f59e0b",
+    "chart-overbought": "#ef4444",
+    "chart-oversold": "#10b981",
+    "chart-bollinger": "#6366f1",
+    "chart-line-glow": "none",
+    "chart-line-glow-color": "transparent",
+    "chart-line-glow-width": "0",
+    "chart-marker-up": "#10b981",
+    "chart-marker-down": "#ef4444",
+    "chart-marker-up-outline": "#065f46",
+    "chart-marker-down-outline": "#991b1b",
+    "chart-marker-symbol": "triangle",
+    "chart-marker-size": "22",
+
+    "grid-dot": "#374151",
+    "grid-dot-active": "rgba(96,165,250,0.25)",
+
+    "zoom-bg": "rgba(245, 158, 11, 0.15)",
+    "zoom-border": "rgba(245, 158, 11, 0.5)",
+
+    "measure-bg": "rgba(59, 130, 246, 0.12)",
+    "measure-line": "rgba(59, 130, 246, 0.8)",
+
+    "placeholder-bg": "rgba(59,130,246,0.1)",
+    "placeholder-border": "rgba(59,130,246,0.3)",
+
+    "locked-pattern": "rgba(255,255,255,0.02)"
+  },
+  "effects": {},
+  "fonts": {
+    "primary": "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+    "mono": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace"
+  }
+}

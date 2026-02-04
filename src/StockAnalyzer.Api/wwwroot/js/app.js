@@ -398,79 +398,65 @@ const App = {
     },
 
     /**
-     * Initialize theme system from localStorage preference
-     * Supports: 'light', 'dark', 'neon-noir'
+     * Initialize theme system using JSON-based ThemeLoader
+     * Supports: 'light', 'dark', 'neon-noir', and any JSON theme
      */
-    initDarkMode() {
+    async initDarkMode() {
         const themeBtn = document.getElementById('theme-toggle-btn');
         const themeDropdown = document.getElementById('theme-dropdown');
         const iconLight = document.getElementById('theme-icon-light');
         const iconDark = document.getElementById('theme-icon-dark');
         const iconNeon = document.getElementById('theme-icon-neon');
 
-        // Get saved theme or detect system preference
-        const savedTheme = localStorage.getItem('theme');
-        const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-
-        // Migrate old darkMode preference
-        const oldDarkMode = localStorage.getItem('darkMode');
-        let initialTheme = 'light';
-        if (savedTheme) {
-            initialTheme = savedTheme;
-        } else if (oldDarkMode === 'true' || (oldDarkMode === null && systemPrefersDark)) {
-            initialTheme = 'dark';
+        // Initialize ThemeLoader (loads manifest, applies saved theme)
+        if (typeof ThemeLoader !== 'undefined') {
+            await ThemeLoader.init();
         }
 
-        // Apply theme
-        const applyTheme = (theme) => {
-            const html = document.documentElement;
-            html.classList.remove('dark', 'neon-noir');
+        // Update icon based on current theme
+        const updateIcon = (themeId) => {
+            iconLight?.classList.add('hidden');
+            iconDark?.classList.add('hidden');
+            iconNeon?.classList.add('hidden');
 
-            // Hide all icons
-            iconLight.classList.add('hidden');
-            iconDark.classList.add('hidden');
-            iconNeon.classList.add('hidden');
-
-            if (theme === 'dark') {
-                html.classList.add('dark');
-                iconDark.classList.remove('hidden');
-            } else if (theme === 'neon-noir') {
-                // neon-noir also needs 'dark' for Tailwind dark: utilities
-                html.classList.add('dark', 'neon-noir');
-                iconNeon.classList.remove('hidden');
+            if (themeId === 'dark') {
+                iconDark?.classList.remove('hidden');
+            } else if (themeId === 'neon-noir') {
+                iconNeon?.classList.remove('hidden');
             } else {
-                iconLight.classList.remove('hidden');
+                iconLight?.classList.remove('hidden');
             }
-
-            localStorage.setItem('theme', theme);
-            // Clean up old preference
-            localStorage.removeItem('darkMode');
-
-            // Update chart colors
-            this.updateChartTheme();
         };
 
-        // Apply initial theme
-        applyTheme(initialTheme);
+        // Set initial icon
+        const currentThemeId = ThemeLoader?.getCurrentThemeId() || 'light';
+        updateIcon(currentThemeId);
+
+        // Listen for theme changes from ThemeLoader
+        window.addEventListener('themechange', (e) => {
+            updateIcon(e.detail.themeId);
+        });
 
         // Toggle dropdown on button click
-        themeBtn.addEventListener('click', (e) => {
+        themeBtn?.addEventListener('click', (e) => {
             e.stopPropagation();
-            themeDropdown.classList.toggle('hidden');
+            themeDropdown?.classList.toggle('hidden');
         });
 
         // Close dropdown on outside click
         document.addEventListener('click', () => {
-            themeDropdown.classList.add('hidden');
+            themeDropdown?.classList.add('hidden');
         });
 
         // Theme option click handlers
-        themeDropdown.querySelectorAll('.theme-option').forEach(btn => {
-            btn.addEventListener('click', (e) => {
+        themeDropdown?.querySelectorAll('.theme-option').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 const theme = btn.dataset.theme;
-                applyTheme(theme);
-                themeDropdown.classList.add('hidden');
+                if (typeof ThemeLoader !== 'undefined') {
+                    await ThemeLoader.applyTheme(theme);
+                }
+                themeDropdown?.classList.add('hidden');
             });
         });
     },

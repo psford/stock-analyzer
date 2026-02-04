@@ -1,0 +1,165 @@
+{
+  "id": "neon-noir",
+  "name": "Neon Noir",
+  "version": "1.0.0",
+  "meta": {
+    "category": "dark",
+    "icon": "bolt",
+    "iconColor": "#ff71ce",
+    "tags": ["cyberpunk", "neon", "retro", "vaporwave"]
+  },
+  "variables": {
+    "nn-bg": "#0a0a0f",
+    "nn-bg-card": "rgba(10, 10, 15, 0.9)",
+    "nn-cyan": "#01cdfe",
+    "nn-pink": "#ff71ce",
+    "nn-purple": "#b967ff",
+    "nn-green": "#05ffa1",
+
+    "bg-primary": "#0a0a0f",
+    "bg-secondary": "#0d0d14",
+    "bg-tertiary": "#1a1a2e",
+    "bg-code": "#0a0a0f",
+
+    "text-primary": "#e0e0ff",
+    "text-secondary": "#a0a0c0",
+    "text-muted": "#6b6b8a",
+    "text-inverted": "#e0e0ff",
+
+    "border-primary": "#01cdfe",
+    "border-secondary": "#2a2a4a",
+
+    "accent": "#ff71ce",
+    "accent-hover": "#ff8ed4",
+    "accent-light": "#ff71ce",
+    "accent-bg": "rgba(255, 113, 206, 0.15)",
+    "accent-bg-subtle": "rgba(255, 113, 206, 0.08)",
+
+    "success": "#05ffa1",
+    "error": "#ff0055",
+    "warning": "#ffaa00",
+    "warning-light": "#ffcc00",
+
+    "highlight-bg": "rgba(1, 205, 254, 0.2)",
+    "highlight-text": "#01cdfe",
+
+    "danger-bg": "rgba(255, 0, 85, 0.15)",
+    "danger-border": "#ff0055",
+
+    "star-color": "#01cdfe",
+    "star-bg": "rgba(1, 205, 254, 0.15)",
+    "star-glow": "0 0 8px #01cdfe, 0 0 16px #01cdfe",
+
+    "price-up": "#00e5c4",
+    "price-up-glow": "0 0 8px #00e5c4",
+    "price-down": "#ff36ab",
+    "price-down-glow": "0 0 8px #ff36ab",
+
+    "audio-active-bg": "rgba(1, 205, 254, 0.15)",
+
+    "music-active-color": "#ff71ce",
+    "music-active-bg": "rgba(255, 113, 206, 0.15)",
+    "music-active-glow": "0 0 10px #ff71ce, 0 0 20px #ff71ce",
+    "viz-bar-color": "#ff71ce",
+    "viz-bar-glow": "0 0 4px #ff71ce",
+
+    "btn-primary-bg": "#ff71ce",
+    "btn-primary-bg-hover": "#ff8ed4",
+    "btn-primary-text": "#0a0a0f",
+    "btn-primary-glow": "0 0 10px #ff71ce, 0 0 20px #ff71ce, 0 0 40px #ff71ce",
+    "btn-primary-glow-hover": "0 0 15px #ff71ce, 0 0 30px #ff71ce, 0 0 60px #ff71ce, 0 0 80px #b967ff",
+
+    "loader-bg": "#1a1a2e",
+    "loader-accent": "#01cdfe",
+
+    "shadow-sm": "0 1px 2px rgba(0,0,0,0.3)",
+    "shadow-md": "0 4px 6px -1px rgba(0,0,0,0.5)",
+    "shadow-lg": "0 10px 15px -3px rgba(0,0,0,0.5)",
+    "shadow-xl": "0 25px 50px -12px rgba(0,0,0,0.7)",
+
+    "radius-sm": "0",
+    "radius-md": "0",
+    "radius-lg": "0",
+
+    "tile-title-color": "#ff71ce",
+    "tile-title-transform": "uppercase",
+    "tile-title-spacing": "0.15em",
+    "tile-title-weight": "700",
+    "tile-title-glow": "0 0 5px #ff71ce, 0 0 10px #ff71ce, 0 0 20px #ff71ce, 0 0 40px #ff71ce, 0 0 80px #b967ff",
+
+    "chart-bg": "#0a0a0f",
+    "chart-text": "#e0e0ff",
+    "chart-grid": "rgba(1, 205, 254, 0.15)",
+    "chart-axis": "#6b6b8a",
+    "chart-line-primary": "#ff71ce",
+    "chart-line-secondary": "#01cdfe",
+    "chart-line-sma20": "#01cdfe",
+    "chart-line-sma50": "#b967ff",
+    "chart-line-sma200": "#05ffa1",
+    "chart-candle-up": "#05ffa1",
+    "chart-candle-down": "#ff0055",
+    "chart-volume-up": "#05ffa1",
+    "chart-volume-down": "#ff0055",
+    "chart-rsi": "#b967ff",
+    "chart-macd": "#ff71ce",
+    "chart-macd-signal": "#01cdfe",
+    "chart-stochastic": "#01cdfe",
+    "chart-stochastic-d": "#b967ff",
+    "chart-overbought": "#ff0055",
+    "chart-oversold": "#05ffa1",
+    "chart-bollinger": "#b967ff",
+    "chart-line-glow": "enabled",
+    "chart-line-glow-color": "rgba(255, 113, 206, 0.4)",
+    "chart-line-glow-width": "8",
+    "chart-marker-up": "#01cdfe",
+    "chart-marker-down": "#ff71ce",
+    "chart-marker-up-outline": "#01cdfe",
+    "chart-marker-down-outline": "#ff71ce",
+    "chart-marker-symbol": "diamond",
+    "chart-marker-size": "14",
+
+    "grid-dot": "#2a2a4a",
+    "grid-dot-active": "rgba(255, 113, 206, 0.5)",
+
+    "zoom-bg": "rgba(255, 113, 206, 0.1)",
+    "zoom-border": "rgba(255, 113, 206, 0.6)",
+
+    "measure-bg": "rgba(1, 205, 254, 0.1)",
+    "measure-line": "rgba(1, 205, 254, 0.8)",
+
+    "placeholder-bg": "rgba(255, 113, 206, 0.08)",
+    "placeholder-border": "rgba(255, 113, 206, 0.3)",
+
+    "locked-pattern": "rgba(255,255,255,0.02)"
+  },
+  "effects": {
+    "scanlines": {
+      "enabled": true,
+      "opacity": 0.25,
+      "spacing": 3
+    },
+    "vignette": {
+      "enabled": true,
+      "strength": 0.5
+    },
+    "crtFlicker": {
+      "enabled": true,
+      "intensity": 0.04
+    },
+    "rain": {
+      "enabled": true,
+      "color": "rgba(1, 205, 254, 0.03)",
+      "speed": 0.5
+    },
+    "bloom": {
+      "enabled": true,
+      "contrast": 1.1,
+      "brightness": 1.05
+    }
+  },
+  "fonts": {
+    "primary": "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+    "mono": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace"
+  },
+  "overrideCSS": ".neon-noir .text-white, .neon-noir h1, .neon-noir h2, .neon-noir h3, .neon-noir .tile-header span, .neon-noir label { text-shadow: 0 0 5px currentColor, 0 0 10px currentColor, 0 0 20px currentColor, 0 0 40px currentColor !important; }"
+}
