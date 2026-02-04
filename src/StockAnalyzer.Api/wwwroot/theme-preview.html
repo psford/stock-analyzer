@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Theme Preview - Stock Analyzer</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: ui-sans-serif, system-ui, sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .page-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .page-header h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, #ff71ce, #01cdfe, #05ffa1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .page-header p {
+            color: #888;
+            font-size: 14px;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .preview-panel {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid #0f3460;
+        }
+        .preview-panel h2 {
+            font-size: 16px;
+            margin-bottom: 15px;
+            color: #ff71ce;
+        }
+
+        #preview-container {
+            width: 100%;
+            height: 500px;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .controls-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .control-section {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 15px;
+            border: 1px solid #0f3460;
+        }
+        .control-section h3 {
+            font-size: 14px;
+            margin-bottom: 12px;
+            color: #01cdfe;
+        }
+
+        .theme-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .theme-btn {
+            padding: 12px 16px;
+            border: 2px solid #0f3460;
+            border-radius: 8px;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .theme-btn:hover {
+            border-color: #ff71ce;
+            background: #1a1a2e;
+        }
+        .theme-btn.active {
+            border-color: #05ffa1;
+            background: rgba(5, 255, 161, 0.1);
+        }
+        .theme-btn-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+        }
+        .theme-btn-icon.light { background: linear-gradient(135deg, #f9fafb, #e5e7eb); }
+        .theme-btn-icon.dark { background: linear-gradient(135deg, #1f2937, #374151); }
+        .theme-btn-icon.neon { background: linear-gradient(135deg, #ff71ce, #01cdfe); }
+
+        .custom-theme-area {
+            margin-top: 15px;
+        }
+        .custom-theme-area textarea {
+            width: 100%;
+            height: 200px;
+            background: #0a0a14;
+            border: 1px solid #0f3460;
+            border-radius: 8px;
+            padding: 12px;
+            color: #05ffa1;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 11px;
+            resize: vertical;
+        }
+        .custom-theme-area textarea:focus {
+            outline: none;
+            border-color: #ff71ce;
+        }
+        .custom-theme-area button {
+            margin-top: 10px;
+            width: 100%;
+            padding: 10px;
+            background: linear-gradient(135deg, #ff71ce, #b967ff);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        .custom-theme-area button:hover {
+            transform: scale(1.02);
+        }
+        .custom-theme-area button:active {
+            transform: scale(0.98);
+        }
+
+        .status-message {
+            margin-top: 10px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            display: none;
+        }
+        .status-message.error {
+            display: block;
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid #ef4444;
+            color: #fca5a5;
+        }
+        .status-message.success {
+            display: block;
+            background: rgba(5, 255, 161, 0.2);
+            border: 1px solid #05ffa1;
+            color: #05ffa1;
+        }
+
+        .info-section {
+            background: #0a0a14;
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 12px;
+            color: #888;
+        }
+        .info-section h4 {
+            color: #e0e0e0;
+            margin-bottom: 8px;
+        }
+        .info-section code {
+            background: #1a1a2e;
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: #01cdfe;
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding: 20px;
+            color: #555;
+            font-size: 12px;
+        }
+        .footer a {
+            color: #ff71ce;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="page-header">
+        <h1>Theme Preview Tool</h1>
+        <p>Preview and test themes for Stock Analyzer</p>
+    </div>
+
+    <div class="layout">
+        <div class="preview-panel">
+            <h2>Live Preview</h2>
+            <div id="preview-container"></div>
+        </div>
+
+        <div class="controls-panel">
+            <div class="control-section">
+                <h3>Built-in Themes</h3>
+                <div class="theme-buttons">
+                    <button class="theme-btn" data-theme="light">
+                        <span class="theme-btn-icon light"></span>
+                        Light
+                    </button>
+                    <button class="theme-btn" data-theme="dark">
+                        <span class="theme-btn-icon dark"></span>
+                        Dark
+                    </button>
+                    <button class="theme-btn active" data-theme="neon-noir">
+                        <span class="theme-btn-icon neon"></span>
+                        Neon Noir
+                    </button>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <h3>Custom Theme JSON</h3>
+                <div class="custom-theme-area">
+                    <textarea id="custom-json" placeholder='Paste theme JSON here...
+
+Example:
+{
+  "id": "my-theme",
+  "name": "My Theme",
+  "variables": {
+    "bg-primary": "#1a1a2e",
+    "text-primary": "#ffffff",
+    "accent": "#ff71ce"
+  }
+}'></textarea>
+                    <button id="apply-custom">Apply Custom Theme</button>
+                    <div id="status-message" class="status-message"></div>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <h3>Theme Schema</h3>
+                <div class="info-section">
+                    <h4>Required Variables</h4>
+                    <p>
+                        <code>bg-primary</code>
+                        <code>bg-secondary</code>
+                        <code>text-primary</code>
+                        <code>text-secondary</code>
+                        <code>accent</code>
+                        <code>border-primary</code>
+                        <code>success</code>
+                        <code>error</code>
+                    </p>
+                    <h4 style="margin-top: 12px;">Optional Effects</h4>
+                    <p>
+                        <code>scanlines</code>
+                        <code>bloom</code>
+                        <code>rain</code>
+                        <code>vignette</code>
+                        <code>crtFlicker</code>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <a href="/">Back to Stock Analyzer</a> | Theme Preview Tool v1.0
+    </div>
+
+    <script src="/js/themePreview.js"></script>
+    <script>
+        // Theme cache
+        const themeCache = {};
+
+        // Initialize preview
+        const container = document.getElementById('preview-container');
+        const preview = ThemePreview.create(container);
+
+        // Load themes from Azure/local
+        const THEMES_BASE = 'https://stockanalyzerblob.z13.web.core.windows.net/themes/';
+        const LOCAL_THEMES = '/themes/';
+
+        async function loadTheme(themeId) {
+            if (themeCache[themeId]) {
+                return themeCache[themeId];
+            }
+
+            const cacheBuster = '?v=' + Date.now();
+
+            try {
+                // Try Azure first
+                const res = await fetch(THEMES_BASE + themeId + '.json' + cacheBuster);
+                if (res.ok) {
+                    const theme = await res.json();
+                    themeCache[themeId] = theme;
+                    return theme;
+                }
+            } catch (e) {
+                console.warn('Azure fetch failed, trying local');
+            }
+
+            // Fallback to local
+            const res = await fetch(LOCAL_THEMES + themeId + '.json' + cacheBuster);
+            if (res.ok) {
+                const theme = await res.json();
+                themeCache[themeId] = theme;
+                return theme;
+            }
+
+            throw new Error('Theme not found: ' + themeId);
+        }
+
+        // Theme button handlers
+        const themeButtons = document.querySelectorAll('.theme-btn');
+        themeButtons.forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const themeId = btn.dataset.theme;
+
+                // Update active state
+                themeButtons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+
+                try {
+                    const theme = await loadTheme(themeId);
+                    preview.applyTheme(theme);
+                    showStatus('success', `Applied theme: ${theme.name}`);
+                } catch (e) {
+                    showStatus('error', `Failed to load theme: ${e.message}`);
+                }
+            });
+        });
+
+        // Custom JSON handler
+        const customJsonInput = document.getElementById('custom-json');
+        const applyCustomBtn = document.getElementById('apply-custom');
+
+        applyCustomBtn.addEventListener('click', () => {
+            const jsonText = customJsonInput.value.trim();
+            if (!jsonText) {
+                showStatus('error', 'Please enter theme JSON');
+                return;
+            }
+
+            try {
+                const theme = JSON.parse(jsonText);
+
+                // Basic validation
+                if (!theme.variables) {
+                    showStatus('error', 'Theme must have a "variables" object');
+                    return;
+                }
+
+                // Deselect built-in themes
+                themeButtons.forEach(b => b.classList.remove('active'));
+
+                preview.applyTheme(theme);
+                showStatus('success', `Applied custom theme: ${theme.name || 'Untitled'}`);
+            } catch (e) {
+                showStatus('error', `Invalid JSON: ${e.message}`);
+            }
+        });
+
+        // Status message helper
+        function showStatus(type, message) {
+            const statusEl = document.getElementById('status-message');
+            statusEl.className = 'status-message ' + type;
+            statusEl.textContent = message;
+
+            // Auto-hide success messages
+            if (type === 'success') {
+                setTimeout(() => {
+                    statusEl.style.display = 'none';
+                }, 3000);
+            }
+        }
+
+        // Load neon-noir by default
+        loadTheme('neon-noir').then(theme => {
+            preview.applyTheme(theme);
+        }).catch(e => {
+            console.error('Failed to load default theme:', e);
+            // Show a basic preview anyway
+            preview.applyTheme({
+                id: 'fallback',
+                variables: {
+                    'bg-primary': '#0a0a0f',
+                    'bg-secondary': '#12121a',
+                    'bg-tertiary': '#1a1a24',
+                    'text-primary': '#e0e0ff',
+                    'text-secondary': '#8888aa',
+                    'accent': '#ff71ce',
+                    'border-primary': '#2a2a3a',
+                    'success': '#05ffa1',
+                    'error': '#ff3366'
+                }
+            });
+        });
+    </script>
+</body>
+</html>

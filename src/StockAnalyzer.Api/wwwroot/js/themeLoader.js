@@ -175,6 +175,41 @@ const ThemeLoader = (() => {
         return getCurrentThemeId() === themeId;
     }
 
+    /**
+     * Apply a theme directly from a JSON object (for theme editor/preview).
+     * This bypasses file loading and applies the theme immediately.
+     * Supports inheritance via "extends" if manifest is loaded.
+     * @param {Object} themeJson - Theme object with id, variables, effects, etc.
+     */
+    async function applyThemeJson(themeJson) {
+        if (!themeJson) return;
+
+        let theme = themeJson;
+
+        // Handle inheritance if extends is specified
+        if (themeJson.extends && manifest) {
+            const baseTheme = await loadTheme(themeJson.extends);
+            if (baseTheme) {
+                theme = mergeThemes(baseTheme, themeJson);
+            }
+        }
+
+        currentTheme = theme;
+
+        // Apply in order: variables -> effects -> fonts -> animations -> overrides
+        applyVariables(theme.variables);
+        applyEffects(theme.effects);
+        applyFonts(theme.fonts);
+        applyAnimations(theme.animations);
+        applyOverrideCSS(theme.overrideCSS);
+        updateHtmlClass(theme);
+
+        // Notify listeners
+        dispatchThemeChangeEvent(theme);
+
+        console.log('Theme applied from JSON: ' + (theme.name || theme.id || 'custom'));
+    }
+
     // ===== PRIVATE METHODS =====
 
     async function fetchManifest() {
@@ -200,7 +235,19 @@ const ThemeLoader = (() => {
         return res.json();
     }
 
-    async function loadTheme(themeId) {
+    /**
+     * Load a theme by ID, resolving inheritance if needed.
+     * Themes can extend other themes via "extends": "baseThemeId"
+     * @param {string} themeId - Theme identifier
+     * @param {Set} _loadingChain - Internal: tracks loading chain to prevent loops
+     */
+    async function loadTheme(themeId, _loadingChain = new Set()) {
+        // Circular inheritance check
+        if (_loadingChain.has(themeId)) {
+            console.error('Circular theme inheritance detected: ' + themeId);
+            return null;
+        }
+
         // Check memory cache
         const cached = themeCache[themeId];
         const now = Date.now();
@@ -221,6 +268,17 @@ const ThemeLoader = (() => {
             // Ensure ID is set
             theme.id = theme.id || themeId;
 
+            // Handle inheritance
+            if (theme.extends) {
+                _loadingChain.add(themeId);
+                const baseTheme = await loadTheme(theme.extends, _loadingChain);
+                if (baseTheme) {
+                    const merged = mergeThemes(baseTheme, theme);
+                    themeCache[themeId] = { data: merged, timestamp: now };
+                    return merged;
+                }
+            }
+
             // Cache it
             themeCache[themeId] = { data: theme, timestamp: now };
             return theme;
@@ -228,6 +286,40 @@ const ThemeLoader = (() => {
             console.error('Failed to load theme "' + themeId + '":', error);
             return null;
         }
+    }
+
+    /**
+     * Deep merge two theme objects. Child values override base values.
+     * @param {Object} base - Base theme object
+     * @param {Object} child - Child theme object (overrides)
+     * @returns {Object} Merged theme
+     */
+    function mergeThemes(base, child) {
+        const result = {};
+
+        // Copy all base properties
+        for (const key of Object.keys(base)) {
+            if (typeof base[key] === 'object' && base[key] !== null && !Array.isArray(base[key])) {
+                result[key] = { ...base[key] };
+            } else {
+                result[key] = base[key];
+            }
+        }
+
+        // Overlay child properties
+        for (const key of Object.keys(child)) {
+            if (key === 'extends') continue; // Don't copy extends reference
+
+            if (typeof child[key] === 'object' && child[key] !== null && !Array.isArray(child[key])) {
+                // Deep merge objects (variables, effects, fonts, etc.)
+                result[key] = { ...(result[key] || {}), ...child[key] };
+            } else {
+                // Direct assignment for primitives and arrays
+                result[key] = child[key];
+            }
+        }
+
+        return result;
     }
 
     function applyVariables(variables) {
@@ -477,6 +569,7 @@ const ThemeLoader = (() => {
     return {
         init: init,
         applyTheme: applyTheme,
+        applyThemeJson: applyThemeJson,
         getCurrentTheme: getCurrentTheme,
         getCurrentThemeId: getCurrentThemeId,
         getThemeColors: getThemeColors,
