@@ -187,6 +187,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 
 | Date | Change |
 |------|--------|
+| 02/04/2026 | **v4.0.0** - Neon Noir theme complete: vaporwave ambient music synthesizer (Web Audio API, Dm7→Am7→Em7→Gmaj7 progression), enhanced CRT bloom effects, themed primary buttons, framework-first CSS variables for all theme elements |
 | 01/26/2026 | **v3.0.4** - ImportanceScore for untracked securities: algorithmic prioritization (1-10 scale) based on security type, exchange, ticker length, and name patterns; `/api/admin/securities/calculate-importance` endpoint; gap query ordering updated |
 | 01/23/2026 | **v3.0** - Data infrastructure: SecurityMaster & Prices tables (3.5M+ rows), EODHD API integration, database-first price lookup with background backfill, sub-second chart loading for pre-cached securities |
 | 01/23/2026 | **v2.17** - Lazy news loading: decoupled news from chart load, new `/api/stock/{ticker}/news/move` endpoint, 162ms vs 22s initial load |

@@ -29,7 +29,7 @@ const TileDashboard = (() => {
     };
 
     const STORAGE_KEY = 'stockanalyzer_tile_layout';
-    const LAYOUT_VERSION = 7; // Bumped: watchlist tile added, chart shrunk to 8w
+    const LAYOUT_VERSION = 8; // Bumped: watchlist tile h=3, metrics repositioned
 
     // ========== STATE ==========
 
