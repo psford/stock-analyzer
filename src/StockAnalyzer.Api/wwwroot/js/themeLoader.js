@@ -16,8 +16,12 @@ const ThemeLoader = (() => {
 
     // ===== CONFIGURATION =====
     const STORAGE_KEY = 'stockanalyzer_theme';
-    const THEMES_PATH = '/themes/';
+    // Use Azure Blob Storage for themes (allows updates without code deploys)
+    // Falls back to local /themes/ if Azure is unreachable
+    const AZURE_THEMES_URL = 'https://stockanalyzerblob.z13.web.core.windows.net/themes/';
+    const LOCAL_THEMES_PATH = '/themes/';
     const CACHE_TTL = 60 * 60 * 1000; // 1 hour
+    let themesPath = AZURE_THEMES_URL; // Start with Azure, fallback to local if needed
 
     // ===== STATE =====
     let currentTheme = null;
@@ -175,8 +179,24 @@ const ThemeLoader = (() => {
 
     async function fetchManifest() {
         const cacheBuster = '?v=' + Date.now();
-        const res = await fetch(THEMES_PATH + 'manifest.json' + cacheBuster);
+
+        // Try Azure first
+        try {
+            const res = await fetch(AZURE_THEMES_URL + 'manifest.json' + cacheBuster);
+            if (res.ok) {
+                themesPath = AZURE_THEMES_URL;
+                console.log('ThemeLoader: Using Azure themes');
+                return res.json();
+            }
+        } catch (e) {
+            console.warn('ThemeLoader: Azure unreachable, trying local');
+        }
+
+        // Fallback to local
+        const res = await fetch(LOCAL_THEMES_PATH + 'manifest.json' + cacheBuster);
         if (!res.ok) throw new Error('Manifest fetch failed: ' + res.status);
+        themesPath = LOCAL_THEMES_PATH;
+        console.log('ThemeLoader: Using local themes');
         return res.json();
     }
 
@@ -194,7 +214,7 @@ const ThemeLoader = (() => {
 
         try {
             const cacheBuster = '?v=' + Date.now();
-            const res = await fetch(THEMES_PATH + fileName + cacheBuster);
+            const res = await fetch(themesPath + fileName + cacheBuster);
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const theme = await res.json();
 

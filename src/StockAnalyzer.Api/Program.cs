@@ -329,7 +329,7 @@ app.Use(async (context, next) =>
         "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; " +
         "img-src 'self' data: blob:; " +
         "font-src 'self' https:; " +
-        "connect-src 'self' https://psford.github.io";
+        "connect-src 'self' https://psford.github.io https://stockanalyzerblob.z13.web.core.windows.net";
 
     await next();
 });
