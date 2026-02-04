@@ -121,6 +121,7 @@ const App = {
      */
     init() {
         this.initDarkMode();
+        this.initMusicToggle();
         this.bindEvents();
         this.checkApiHealth();
         this.trackUserActivity();
@@ -397,45 +398,80 @@ const App = {
     },
 
     /**
-     * Initialize dark mode from localStorage preference
+     * Initialize theme system from localStorage preference
+     * Supports: 'light', 'dark', 'neon-noir'
      */
     initDarkMode() {
-        const darkModeToggle = document.getElementById('dark-mode-toggle');
-        const sunIcon = document.getElementById('sun-icon');
-        const moonIcon = document.getElementById('moon-icon');
+        const themeBtn = document.getElementById('theme-toggle-btn');
+        const themeDropdown = document.getElementById('theme-dropdown');
+        const iconLight = document.getElementById('theme-icon-light');
+        const iconDark = document.getElementById('theme-icon-dark');
+        const iconNeon = document.getElementById('theme-icon-neon');
 
-        // Check for saved preference or system preference
-        const savedPreference = localStorage.getItem('darkMode');
+        // Get saved theme or detect system preference
+        const savedTheme = localStorage.getItem('theme');
         const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
-        const isDark = savedPreference === 'true' || (savedPreference === null && systemPrefersDark);
-
-        // Apply initial state
-        if (isDark) {
-            document.documentElement.classList.add('dark');
-            sunIcon.classList.remove('hidden');
-            moonIcon.classList.add('hidden');
-        } else {
-            document.documentElement.classList.remove('dark');
-            sunIcon.classList.add('hidden');
-            moonIcon.classList.remove('hidden');
+        // Migrate old darkMode preference
+        const oldDarkMode = localStorage.getItem('darkMode');
+        let initialTheme = 'light';
+        if (savedTheme) {
+            initialTheme = savedTheme;
+        } else if (oldDarkMode === 'true' || (oldDarkMode === null && systemPrefersDark)) {
+            initialTheme = 'dark';
         }
 
-        // Toggle handler
-        darkModeToggle.addEventListener('click', () => {
-            const isDarkNow = document.documentElement.classList.toggle('dark');
-            localStorage.setItem('darkMode', isDarkNow);
+        // Apply theme
+        const applyTheme = (theme) => {
+            const html = document.documentElement;
+            html.classList.remove('dark', 'neon-noir');
 
-            if (isDarkNow) {
-                sunIcon.classList.remove('hidden');
-                moonIcon.classList.add('hidden');
+            // Hide all icons
+            iconLight.classList.add('hidden');
+            iconDark.classList.add('hidden');
+            iconNeon.classList.add('hidden');
+
+            if (theme === 'dark') {
+                html.classList.add('dark');
+                iconDark.classList.remove('hidden');
+            } else if (theme === 'neon-noir') {
+                // neon-noir also needs 'dark' for Tailwind dark: utilities
+                html.classList.add('dark', 'neon-noir');
+                iconNeon.classList.remove('hidden');
             } else {
-                sunIcon.classList.add('hidden');
-                moonIcon.classList.remove('hidden');
+                iconLight.classList.remove('hidden');
             }
 
-            // Update Plotly chart colors if chart exists
+            localStorage.setItem('theme', theme);
+            // Clean up old preference
+            localStorage.removeItem('darkMode');
+
+            // Update chart colors
             this.updateChartTheme();
+        };
+
+        // Apply initial theme
+        applyTheme(initialTheme);
+
+        // Toggle dropdown on button click
+        themeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            themeDropdown.classList.toggle('hidden');
+        });
+
+        // Close dropdown on outside click
+        document.addEventListener('click', () => {
+            themeDropdown.classList.add('hidden');
+        });
+
+        // Theme option click handlers
+        themeDropdown.querySelectorAll('.theme-option').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const theme = btn.dataset.theme;
+                applyTheme(theme);
+                themeDropdown.classList.add('hidden');
+            });
         });
     },
 
@@ -447,6 +483,52 @@ const App = {
         if (chartEl && chartEl.data) {
             this.renderChart();
         }
+    },
+
+    /**
+     * Initialize the vaporwave ambient music toggle
+     */
+    initMusicToggle() {
+        const musicBtn = document.getElementById('music-toggle');
+        const visualizer = musicBtn?.querySelector('.music-visualizer');
+
+        if (!musicBtn || typeof VaporwaveAudio === 'undefined') {
+            console.debug('Music toggle not initialized (button or VaporwaveAudio not found)');
+            return;
+        }
+
+        // Restore state from localStorage
+        const savedState = localStorage.getItem('musicEnabled') === 'true';
+
+        const updateUI = (playing) => {
+            if (playing) {
+                musicBtn.classList.add('active');
+                musicBtn.title = 'Toggle ambient music (on)';
+                visualizer?.classList.remove('hidden');
+            } else {
+                musicBtn.classList.remove('active');
+                musicBtn.title = 'Toggle ambient music (off)';
+                visualizer?.classList.add('hidden');
+            }
+        };
+
+        // Auto-start if previously enabled (requires user interaction first due to browser policy)
+        if (savedState) {
+            // We can't auto-start audio, but we can show the button as "ready to resume"
+            musicBtn.title = 'Click to resume ambient music';
+        }
+
+        musicBtn.addEventListener('click', () => {
+            if (VaporwaveAudio.isPlaying()) {
+                VaporwaveAudio.stop();
+                updateUI(false);
+                localStorage.setItem('musicEnabled', 'false');
+            } else {
+                VaporwaveAudio.start();
+                updateUI(true);
+                localStorage.setItem('musicEnabled', 'true');
+            }
+        });
     },
 
     /**

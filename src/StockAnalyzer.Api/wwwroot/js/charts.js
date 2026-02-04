@@ -95,16 +95,55 @@ const Charts = {
     },
 
     /**
-     * Get theme-aware colors
+     * Read a CSS custom property value from :root
+     */
+    getCssVar(name) {
+        return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    },
+
+    /**
+     * Get theme-aware colors from CSS variables
+     * Themes define these in input.css, JS just reads them
      */
     getThemeColors() {
-        const isDark = this.isDarkMode();
         return {
-            background: isDark ? '#1F2937' : '#FFFFFF',
-            paper: isDark ? '#1F2937' : '#FFFFFF',
-            text: isDark ? '#F9FAFB' : '#1F2937',
-            gridColor: isDark ? '#374151' : '#E5E7EB',
-            axisColor: isDark ? '#9CA3AF' : '#6B7280'
+            // Layout colors
+            background: this.getCssVar('--chart-bg') || '#ffffff',
+            paper: this.getCssVar('--chart-bg') || '#ffffff',
+            text: this.getCssVar('--chart-text') || '#1f2937',
+            gridColor: this.getCssVar('--chart-grid') || '#e5e7eb',
+            axisColor: this.getCssVar('--chart-axis') || '#6b7280',
+            // Line colors
+            linePrimary: this.getCssVar('--chart-line-primary') || '#3b82f6',
+            lineSecondary: this.getCssVar('--chart-line-secondary') || '#f59e0b',
+            sma20: this.getCssVar('--chart-line-sma20') || '#f59e0b',
+            sma50: this.getCssVar('--chart-line-sma50') || '#8b5cf6',
+            sma200: this.getCssVar('--chart-line-sma200') || '#ec4899',
+            // Candlestick/volume
+            candleUp: this.getCssVar('--chart-candle-up') || '#10b981',
+            candleDown: this.getCssVar('--chart-candle-down') || '#ef4444',
+            volumeUp: this.getCssVar('--chart-volume-up') || '#065f46',
+            volumeDown: this.getCssVar('--chart-volume-down') || '#991b1b',
+            // Indicators
+            rsi: this.getCssVar('--chart-rsi') || '#8b5cf6',
+            macd: this.getCssVar('--chart-macd') || '#3b82f6',
+            macdSignal: this.getCssVar('--chart-macd-signal') || '#f59e0b',
+            stochastic: this.getCssVar('--chart-stochastic') || '#14b8a6',
+            stochasticD: this.getCssVar('--chart-stochastic-d') || '#f59e0b',
+            overbought: this.getCssVar('--chart-overbought') || '#ef4444',
+            oversold: this.getCssVar('--chart-oversold') || '#10b981',
+            bollinger: this.getCssVar('--chart-bollinger') || '#6366f1',
+            // Glow effect (for neon themes)
+            glowEnabled: this.getCssVar('--chart-line-glow') === 'enabled',
+            glowColor: this.getCssVar('--chart-line-glow-color') || 'transparent',
+            glowWidth: parseInt(this.getCssVar('--chart-line-glow-width')) || 0,
+            // Significant move markers
+            markerUp: this.getCssVar('--chart-marker-up') || '#10b981',
+            markerDown: this.getCssVar('--chart-marker-down') || '#ef4444',
+            markerUpOutline: this.getCssVar('--chart-marker-up-outline') || '#065f46',
+            markerDownOutline: this.getCssVar('--chart-marker-down-outline') || '#991b1b',
+            markerSymbol: this.getCssVar('--chart-marker-symbol') || 'triangle',
+            markerSize: parseInt(this.getCssVar('--chart-marker-size')) || 22
         };
     },
 
@@ -219,7 +258,7 @@ const Charts = {
                 x: primaryNormalized.map(d => d.date),
                 y: primaryNormalized.map(d => d.value),
                 name: historyData.symbol,
-                line: { color: '#3B82F6', width: 2 },
+                line: { color: themeColors.linePrimary, width: 2 },
                 yaxis: 'y'
             });
 
@@ -231,7 +270,7 @@ const Charts = {
                 x: comparisonNormalized.map(d => d.date),
                 y: comparisonNormalized.map(d => d.value),
                 name: comparisonTicker,
-                line: { color: '#F59E0B', width: 2, dash: 'dash' },
+                line: { color: themeColors.lineSecondary, width: 2, dash: 'dash' },
                 yaxis: 'y'
             });
 
@@ -318,18 +357,32 @@ const Charts = {
                 low: lows,
                 close: closes,
                 name: historyData.symbol,
-                increasing: { line: { color: '#10B981' } },
-                decreasing: { line: { color: '#EF4444' } },
+                increasing: { line: { color: themeColors.candleUp } },
+                decreasing: { line: { color: themeColors.candleDown } },
                 yaxis: 'y'
             });
         } else {
+            // Add glow trace behind main line if theme supports it
+            if (themeColors.glowEnabled && themeColors.glowWidth > 0) {
+                traces.push({
+                    type: 'scatter',
+                    mode: 'lines',
+                    x: dates,
+                    y: closes,
+                    name: historyData.symbol + ' (glow)',
+                    line: { color: themeColors.glowColor, width: themeColors.glowWidth },
+                    yaxis: 'y',
+                    showlegend: false,
+                    hoverinfo: 'skip'
+                });
+            }
             traces.push({
                 type: 'scatter',
                 mode: 'lines',
                 x: dates,
                 y: closes,
                 name: historyData.symbol,
-                line: { color: '#3B82F6', width: 2 },
+                line: { color: themeColors.linePrimary, width: 2 },
                 yaxis: 'y'
             });
         }
@@ -348,7 +401,7 @@ const Charts = {
                     x: ma20Dates,
                     y: ma20,
                     name: 'SMA 20',
-                    line: { color: '#F59E0B', width: 1, dash: 'dot' },
+                    line: { color: themeColors.sma20, width: 1, dash: 'dot' },
                     yaxis: 'y'
                 });
             }
@@ -362,7 +415,7 @@ const Charts = {
                     x: ma50Dates,
                     y: ma50,
                     name: 'SMA 50',
-                    line: { color: '#8B5CF6', width: 1, dash: 'dot' },
+                    line: { color: themeColors.sma50, width: 1, dash: 'dot' },
                     yaxis: 'y'
                 });
             }
@@ -376,7 +429,7 @@ const Charts = {
                     x: ma200Dates,
                     y: ma200,
                     name: 'SMA 200',
-                    line: { color: '#EC4899', width: 1, dash: 'dot' },
+                    line: { color: themeColors.sma200, width: 1, dash: 'dot' },
                     yaxis: 'y'
                 });
             }
@@ -397,7 +450,7 @@ const Charts = {
                 x: bbDates,
                 y: upperBand,
                 name: 'BB Upper',
-                line: { color: '#6366F1', width: 1 },
+                line: { color: themeColors.bollinger, width: 1 },
                 yaxis: 'y'
             });
 
@@ -408,7 +461,7 @@ const Charts = {
                 x: bbDates,
                 y: middleBand,
                 name: 'BB Middle',
-                line: { color: '#6366F1', width: 1, dash: 'dash' },
+                line: { color: themeColors.bollinger, width: 1, dash: 'dash' },
                 yaxis: 'y'
             });
 
@@ -419,9 +472,9 @@ const Charts = {
                 x: bbDates,
                 y: lowerBand,
                 name: 'BB Lower',
-                line: { color: '#6366F1', width: 1 },
+                line: { color: themeColors.bollinger, width: 1 },
                 fill: 'tonexty',
-                fillcolor: 'rgba(99, 102, 241, 0.1)',
+                fillcolor: themeColors.bollinger + '1a', // Add transparency
                 yaxis: 'y'
             });
         }
@@ -448,10 +501,10 @@ const Charts = {
                     y: upY,
                     name: `+${threshold}% Move`,
                     marker: {
-                        color: '#10B981',
-                        size: 22,
-                        symbol: 'triangle-up',
-                        line: { color: '#065F46', width: 2 }
+                        color: themeColors.markerUp,
+                        size: themeColors.markerSize,
+                        symbol: themeColors.markerSymbol + '-up',
+                        line: { color: themeColors.markerUpOutline, width: 2 }
                     },
                     customdata: upMoves,
                     hoverinfo: 'text',
@@ -475,10 +528,10 @@ const Charts = {
                     y: downY,
                     name: `-${threshold}% Move`,
                     marker: {
-                        color: '#EF4444',
-                        size: 22,
-                        symbol: 'triangle-down',
-                        line: { color: '#991B1B', width: 2 }
+                        color: themeColors.markerDown,
+                        size: themeColors.markerSize,
+                        symbol: themeColors.markerSymbol + '-down',
+                        line: { color: themeColors.markerDownOutline, width: 2 }
                     },
                     customdata: downMoves,
                     hoverinfo: 'text',
@@ -502,7 +555,7 @@ const Charts = {
                 x: rsiDates,
                 y: rsiValues,
                 name: 'RSI (14)',
-                line: { color: '#8B5CF6', width: 1.5 },
+                line: { color: themeColors.rsi, width: 1.5 },
                 yaxis: 'y2'
             });
 
@@ -513,7 +566,7 @@ const Charts = {
                 x: [rsiDates[0], rsiDates[rsiDates.length - 1]],
                 y: [70, 70],
                 name: 'Overbought',
-                line: { color: '#EF4444', width: 1, dash: 'dot' },
+                line: { color: themeColors.overbought, width: 1, dash: 'dot' },
                 yaxis: 'y2',
                 showlegend: false,
                 hoverinfo: 'skip'
@@ -526,7 +579,7 @@ const Charts = {
                 x: [rsiDates[0], rsiDates[rsiDates.length - 1]],
                 y: [30, 30],
                 name: 'Oversold',
-                line: { color: '#10B981', width: 1, dash: 'dot' },
+                line: { color: themeColors.oversold, width: 1, dash: 'dot' },
                 yaxis: 'y2',
                 showlegend: false,
                 hoverinfo: 'skip'
@@ -545,7 +598,7 @@ const Charts = {
                 x: macdDates,
                 y: macdData.map(d => d.macdLine),
                 name: 'MACD',
-                line: { color: '#3B82F6', width: 1.5 },
+                line: { color: themeColors.macd, width: 1.5 },
                 yaxis: 'y3'
             });
 
@@ -556,13 +609,13 @@ const Charts = {
                 x: macdDates,
                 y: macdData.map(d => d.signalLine),
                 name: 'Signal',
-                line: { color: '#F59E0B', width: 1.5 },
+                line: { color: themeColors.macdSignal, width: 1.5 },
                 yaxis: 'y3'
             });
 
-            // Histogram (bar chart)
+            // Histogram (bar chart) - use theme colors with transparency
             const histogramColors = macdData.map(d =>
-                (d.histogram || 0) >= 0 ? 'rgba(16, 185, 129, 0.7)' : 'rgba(239, 68, 68, 0.7)'
+                (d.histogram || 0) >= 0 ? themeColors.candleUp + 'b3' : themeColors.candleDown + 'b3'
             );
             traces.push({
                 type: 'bar',
@@ -580,25 +633,25 @@ const Charts = {
             const stochData = analysisData.stochastic;
             const stochDates = stochData.map(d => d.date);
 
-            // %K Line (fast stochastic) - teal
+            // %K Line (fast stochastic)
             traces.push({
                 type: 'scatter',
                 mode: 'lines',
                 x: stochDates,
                 y: stochData.map(d => d.k),
                 name: '%K',
-                line: { color: '#14B8A6', width: 1.5 },
+                line: { color: themeColors.stochastic, width: 1.5 },
                 yaxis: 'y4'
             });
 
-            // %D Line (signal line) - orange dashed
+            // %D Line (signal line)
             traces.push({
                 type: 'scatter',
                 mode: 'lines',
                 x: stochDates,
                 y: stochData.map(d => d.d),
                 name: '%D',
-                line: { color: '#F59E0B', width: 1.5, dash: 'dash' },
+                line: { color: themeColors.stochasticD, width: 1.5, dash: 'dash' },
                 yaxis: 'y4'
             });
 
@@ -609,7 +662,7 @@ const Charts = {
                 x: [stochDates[0], stochDates[stochDates.length - 1]],
                 y: [80, 80],
                 name: 'Overbought',
-                line: { color: '#EF4444', width: 1, dash: 'dot' },
+                line: { color: themeColors.overbought, width: 1, dash: 'dot' },
                 yaxis: 'y4',
                 showlegend: false,
                 hoverinfo: 'skip'
@@ -622,7 +675,7 @@ const Charts = {
                 x: [stochDates[0], stochDates[stochDates.length - 1]],
                 y: [20, 20],
                 name: 'Oversold',
-                line: { color: '#10B981', width: 1, dash: 'dot' },
+                line: { color: themeColors.oversold, width: 1, dash: 'dot' },
                 yaxis: 'y4',
                 showlegend: false,
                 hoverinfo: 'skip'
