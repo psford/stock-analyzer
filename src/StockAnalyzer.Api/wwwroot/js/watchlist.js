@@ -815,13 +815,21 @@ const Watchlist = {
         const chartEl = document.getElementById('portfolio-chart');
         if (!chartEl) return;
 
-        const isDark = document.documentElement.classList.contains('dark');
+        // Use CSS variables for theme colors (same pattern as charts.js)
+        const getCssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
         const themeColors = {
-            background: isDark ? '#1F2937' : '#FFFFFF',
-            paper: isDark ? '#1F2937' : '#FFFFFF',
-            text: isDark ? '#FFFFFF' : '#111827',
-            gridColor: isDark ? '#374151' : '#E5E7EB',
-            axisColor: isDark ? '#9CA3AF' : '#6B7280'
+            background: getCssVar('--chart-bg') || '#ffffff',
+            paper: getCssVar('--chart-bg') || '#ffffff',
+            text: getCssVar('--chart-text') || '#1f2937',
+            gridColor: getCssVar('--chart-grid') || '#e5e7eb',
+            axisColor: getCssVar('--chart-axis') || '#6b7280',
+            linePrimary: getCssVar('--chart-line-primary') || '#3b82f6',
+            lineSecondary: getCssVar('--chart-line-secondary') || '#f59e0b',
+            markerUp: getCssVar('--chart-marker-up') || '#10b981',
+            markerDown: getCssVar('--chart-marker-down') || '#ef4444',
+            markerUpOutline: getCssVar('--chart-marker-up-outline') || '#065f46',
+            markerDownOutline: getCssVar('--chart-marker-down-outline') || '#991b1b',
+            accentBg: getCssVar('--accent-bg') || 'rgba(59, 130, 246, 0.1)'
         };
 
         const traces = [];
@@ -833,9 +841,9 @@ const Watchlist = {
             x: data.data.map(d => d.date),
             y: data.data.map(d => d.percentChange),
             name: data.watchlistName,
-            line: { color: '#3B82F6', width: 2.5 },
+            line: { color: themeColors.linePrimary, width: 2.5 },
             fill: 'tozeroy',
-            fillcolor: 'rgba(59, 130, 246, 0.1)'
+            fillcolor: themeColors.accentBg
         });
 
         // Benchmark if available
@@ -846,7 +854,7 @@ const Watchlist = {
                 x: data.benchmarkData.map(d => d.date),
                 y: data.benchmarkData.map(d => d.percentChange),
                 name: data.benchmarkSymbol,
-                line: { color: '#F59E0B', width: 2, dash: 'dash' }
+                line: { color: themeColors.lineSecondary, width: 2, dash: 'dash' }
             });
         }
 
@@ -881,13 +889,13 @@ const Watchlist = {
                     y: positiveMoves.map(m => dataByDate[m.date] || 0),
                     text: positiveMoves.map(m => `+${m.percentChange.toFixed(1)}%`),
                     textposition: 'top center',
-                    textfont: { size: 10, color: '#10B981' },
+                    textfont: { size: 10, color: themeColors.markerUp },
                     name: 'Gains ≥5%',
                     marker: {
                         symbol: 'triangle-up',
                         size: 12,
-                        color: '#10B981',
-                        line: { color: '#FFFFFF', width: 1 }
+                        color: themeColors.markerUp,
+                        line: { color: themeColors.markerUpOutline, width: 1 }
                     },
                     hovertemplate: '%{x}<br>+%{customdata:.1f}%<extra>Significant Gain</extra>',
                     customdata: positiveMoves.map(m => m.percentChange)
@@ -904,13 +912,13 @@ const Watchlist = {
                     y: negativeMoves.map(m => dataByDate[m.date] || 0),
                     text: negativeMoves.map(m => `${m.percentChange.toFixed(1)}%`),
                     textposition: 'bottom center',
-                    textfont: { size: 10, color: '#EF4444' },
+                    textfont: { size: 10, color: themeColors.markerDown },
                     name: 'Losses ≥5%',
                     marker: {
                         symbol: 'triangle-down',
                         size: 12,
-                        color: '#EF4444',
-                        line: { color: '#FFFFFF', width: 1 }
+                        color: themeColors.markerDown,
+                        line: { color: themeColors.markerDownOutline, width: 1 }
                     },
                     hovertemplate: '%{x}<br>%{customdata:.1f}%<extra>Significant Loss</extra>',
                     customdata: negativeMoves.map(m => m.percentChange)
