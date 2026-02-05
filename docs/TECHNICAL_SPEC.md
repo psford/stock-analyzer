@@ -1,7 +1,7 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.38
-**Last Updated:** 2026-02-01
+**Version:** 2.47
+**Last Updated:** 2026-02-05
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
 
@@ -1243,53 +1243,92 @@ Results sorted by score descending, then alphabetically for ties.
 - Physics engine: spring transitions, lift effect, magnetic pull, FLIP animations, snap settle
 - Web Audio API snap sound (1200Hz + 300Hz dual-oscillator)
 
-### 6.3 Dark Mode Implementation
+### 6.3 JSON Theme System
 
-The application supports light and dark color themes via Tailwind CSS class-based dark mode.
+The application uses a JSON-based theme system with 94+ CSS custom properties, visual effects, and optional background images and audio parameters.
 
-**Configuration:**
-```javascript
-// tailwind.config in index.html
-tailwind.config = {
-    darkMode: 'class',  // Enable class-based dark mode
-    ...
+**Theme Architecture:**
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| Theme Files | `wwwroot/themes/*.json` | Theme definitions with variables, effects, fonts |
+| Azure Themes | `stockanalyzerblob.z13.web.core.windows.net/themes/` | Production theme hosting |
+| ThemeLoader | `wwwroot/js/themeLoader.js` | Loads, applies, and switches themes |
+| ThemePreview | `wwwroot/js/themePreview.js` | Mini-app preview for theme editor |
+| ThemeEditor | `wwwroot/js/themeEditor.js` | AI-powered theme generation UI |
+| ThemeAudio | `wwwroot/js/themeAudio.js` | Procedural audio from theme params |
+| Theme Generator | `helpers/theme_generator.py` | FastAPI service for AI theme generation |
+
+**Theme JSON Structure:**
+```json
+{
+  "id": "theme-id",
+  "name": "Theme Name",
+  "version": "1.0.0",
+  "extends": "dark",
+  "meta": { "category": "dark", "icon": "moon", "iconColor": "#fff" },
+  "background": {
+    "image": "/images/backgrounds/bg.jpg",
+    "overlay": "linear-gradient(...)",
+    "blur": 0
+  },
+  "variables": {
+    "bg-primary": "#0a0a0f",
+    "text-primary": "#e0e0ff",
+    "accent": "#ff71ce"
+  },
+  "effects": {
+    "scanlines": { "enabled": true, "opacity": 0.08 },
+    "vignette": { "enabled": true, "strength": 0.4 },
+    "bloom": { "enabled": true, "contrast": 1.05 },
+    "rain": { "enabled": false },
+    "crtFlicker": { "enabled": false }
+  },
+  "fonts": { "primary": "...", "mono": "..." },
+  "audio": {
+    "key": "A", "mode": "minor",
+    "chordProgression": ["i", "iv", "V", "i"],
+    "texture": "pad", "tempo": 60
+  }
 }
 ```
 
-**Implementation Details:**
+**Theme Inheritance:**
+Themes can extend base themes via `"extends": "dark"`. ThemeLoader deep-merges child variables over base, with circular inheritance detection.
 
-| Component | Implementation |
-|-----------|---------------|
-| Toggle Button | Sun/moon icons in header, click handler toggles `dark` class on `<html>` |
-| Persistence | localStorage key `darkMode` stores `'true'` or `'false'` |
-| System Preference | `window.matchMedia('(prefers-color-scheme: dark)')` for initial state |
-| Static Elements | Tailwind `dark:` prefix classes (e.g., `dark:bg-gray-800 dark:text-white`) |
-| Dynamic Elements | JavaScript renders `dark:` classes in template strings |
-| Plotly Charts | `Charts.getThemeColors()` returns colors based on `document.documentElement.classList.contains('dark')` |
+**Loading Priority:**
+1. Localhost: Local themes first (`/themes/`) for dev workflow
+2. Production: Azure Blob Storage first, local fallback
 
-**Initialization Flow:**
-```
-Page Load → initDarkMode()
-                ↓
-    Check localStorage('darkMode')
-                ↓
-    If null → Check system preference
-                ↓
-    Apply 'dark' class to <html> if needed
-                ↓
-    Update icon visibility (sun/moon)
-```
+**Visual Effects:**
+- `scanlines`: CRT horizontal line overlay
+- `vignette`: Darkened edges (radial gradient)
+- `bloom`: Contrast/brightness boost for glow effect
+- `rain`: Animated rain drops (CSS animation)
+- `crtFlicker`: Subtle screen flicker animation
 
-**Theme Toggle Flow:**
-```
-User clicks toggle → Toggle 'dark' class on <html>
-                          ↓
-                   Save to localStorage
-                          ↓
-                   Update icons
-                          ↓
-                   If chart exists → Re-render with new theme colors
-```
+**Theme Audio Parameters:**
+Music-theory driven procedural audio synthesis:
+- `key`: Root note (C, D, E, etc.)
+- `mode`: Scale (major, minor, dorian, harmonic_minor, etc.)
+- `chordProgression`: Roman numeral array (i, iv, V)
+- `texture`: drone, pad, arpeggiated, pulsing
+- `tempo`: BPM (0 = free time/ambient)
+
+**Theme Generator Service:**
+Python FastAPI sidecar (`helpers/theme_generator.py`):
+- Mock mode (default): Keyword-matched pre-built themes, no API cost
+- Live mode (`THEME_GENERATOR_LIVE=true`): Claude API for custom themes
+- Endpoints: `/generate`, `/refine`, `/health`
+- Port: 8001
+
+**Available Themes:**
+| ID | Name | Category |
+|----|------|----------|
+| light | Light | light |
+| dark | Dark | dark |
+| neon-noir | Neon Noir | dark |
+| grimdark-space-opera | Grimdark Space Opera | dark |
 
 ### 6.4 Autocomplete Flow
 
@@ -2949,6 +2988,7 @@ const newsPromise = API.getAggregatedNews(ticker, 30, 10);
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.47 | 2026-02-05 | **JSON Theme System with AI Generation:** Complete theme system overhaul. New `ThemeLoader.js` with 94+ CSS custom properties, theme inheritance (`extends` property), deep merge with circular detection. Background image support with overlay and blur. Theme audio parameters (key, mode, chordProgression, texture, tempo) for procedural music synthesis. Visual effects: scanlines, vignette, bloom, rain, CRT flicker. New `ThemePreview.js` mini-app component for live preview. New `ThemeEditor.js` with AI-powered generation via Python FastAPI service. New `ThemeAudio.js` for theme-driven audio. Theme Generator (`helpers/theme_generator.py`): mock mode (keyword-matched themes, no API cost) and live mode (Claude API). New Grimdark Space Opera theme (Warhammer 40K inspired, blood red + imperial gold). Hotdog Stand mock theme. Theme manifest with icons. ThemeLoader localhost priority for dev workflow. Watchlist.js refactored to use semantic CSS classes (Tailwind removal). Section 6.3 rewritten to document JSON theme architecture. |
 | 2.46 | 2026-02-03 | **Watchlist as GridStack Tile:** Converted fixed-position `<aside id="watchlist-sidebar">` into 7th GridStack tile (`tile-watchlist`, 4w×5h, min-w 3, min-h 3). Chart tile narrowed from 12w to 8w; watchlist fills right side of top row. LAYOUT_VERSION bumped from 6 to 7 (clears saved layouts). **Watchlist toggle:** Star button (`#watchlist-toggle-btn`) in page header toggles tile visibility with `.watchlist-toggle-active` yellow highlight state. On reopen, calls `Watchlist.loadWatchlists()` to re-bind events. **Horizontal expansion on tile close:** New `expandRowNeighbor()` function — when any tile is closed, its horizontal neighbor on the same row expands to fill the gap. State tracked in `tileExpansions` object (`{ neighborId, origW, origX }`). On reopen, neighbor shrinks back and tile restores to original position. General-purpose: works for any adjacent tile pair. **Dead code removed:** `initMobileSidebar()` (~37 lines), `bindMobileWatchlistEvents()` (~57 lines), mobile-watchlist-drawer handlers (~50 lines) from app.js. Sidebar DOM references removed from watchlist.js (2 lines). `<aside>`, `<div id="sidebar-overlay">`, and `mobile-watchlist-toggle` button removed from index.html. **CSS:** `#tile-watchlist-body` flex column layout with internal scroll; `.watchlist-toggle-active` yellow star styles (light + dark mode). All watchlist element IDs preserved — no changes to watchlist.js business logic. |
 | 2.45 | 2026-02-03 | **Wikipedia Company Bio with DB Caching (`data.CompanyBio`):** New `CompanyBioEntity` with 1:1 FK to SecurityMaster via SecurityAlias. EF Core migration `AddCompanyBio` creates `data.CompanyBio` table (PK: SecurityAlias, nvarchar(max) Description, nvarchar(50) Source, FetchedAt/UpdatedAt with GETUTCDATE defaults). New `WikipediaService` fetches descriptions from Wikipedia REST API — two-step lookup: (1) direct page summary via `en.wikipedia.org/api/rest_v1/page/summary/{name}`, (2) search fallback via `en.wikipedia.org/w/api.php?action=query&list=search` for abbreviated names. Filters disambiguation pages (`type == "standard"`), 5s timeout, 24h IMemoryCache, no API key. **Rate limiting:** `SemaphoreSlim(1,1)` single-concurrency + 2-second minimum gap between every HTTP request to Wikipedia — treats Wikipedia as a shared public resource, never exceeds casual browsing pace. Combined with permanent DB caching, each company is fetched at most once. **Endpoint integration (`GET /api/stock/{ticker}`):** checks CompanyBio by SecurityAlias first (DB cache hit = no external calls); on cache miss, determines best description (provider if ≥150 chars, else Wikipedia fallback) and fire-and-forget stores in CompanyBio. Tickers not in SecurityMaster get Wikipedia lookup without caching. FR-006.8, FR-006.9. |
 | 2.44 | 2026-02-02 | **Technical Indicator Tooltips:** Added native HTML `title` attributes to all 7 indicator/MA checkboxes (SMA 20, SMA 50, SMA 200, RSI, MACD, Bollinger Bands, Stochastic). Each tooltip explains the indicator's purpose, key thresholds (e.g., RSI 70/30, Stochastic 80/20), and interpretation. Uses existing native tooltip pattern (consistent with dark mode toggle, audio toggle, etc.). FR-011.24, FR-011.25. |
