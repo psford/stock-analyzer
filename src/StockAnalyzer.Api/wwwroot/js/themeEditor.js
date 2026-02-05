@@ -235,12 +235,20 @@ const ThemeEditor = (function() {
     function handleSave() {
         if (!currentTheme) return;
 
+        // Use the name from the input field, falling back to theme's internal name
+        const themeName = elements.themeName.value.trim() || currentTheme.name || 'Custom Theme';
+        const themeId = themeName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+        // Update the theme object with the user's chosen name
+        currentTheme.name = themeName;
+        currentTheme.id = themeId;
+
         const saved = getSavedThemes();
-        const existingIndex = saved.findIndex(t => t.theme.id === currentTheme.id);
+        const existingIndex = saved.findIndex(t => t.theme.id === themeId);
 
         const entry = {
-            id: currentTheme.id,
-            name: currentTheme.name,
+            id: themeId,
+            name: themeName,
             savedAt: Date.now(),
             theme: currentTheme
         };
