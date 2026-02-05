@@ -203,8 +203,8 @@ const ThemePreview = (function() {
                 font-size: 11px;
                 background: var(--bg-primary, #ffffff);
                 color: var(--text-primary, #1f2937);
-                border: 1px solid var(--border-primary, #e5e7eb);
                 border-radius: var(--radius-lg, 8px);
+                box-shadow: inset 0 0 0 1px var(--border-primary, #e5e7eb);
             }
 
             /* Effects overlay */
@@ -220,6 +220,7 @@ const ThemePreview = (function() {
                 background: var(--bg-secondary, #f9fafb);
                 border-bottom: 1px solid var(--border-primary, #e5e7eb);
                 padding: 8px 12px;
+                border-radius: var(--radius-lg, 8px) var(--radius-lg, 8px) 0 0;
             }
             .preview-header-content {
                 display: flex;
@@ -305,7 +306,7 @@ const ThemePreview = (function() {
             .preview-btn-primary {
                 padding: 4px 10px;
                 background: var(--accent, #3b82f6);
-                color: var(--accent-foreground, #ffffff);
+                color: var(--btn-primary-text, #ffffff);
                 border: none;
                 border-radius: var(--radius-sm, 4px);
                 font-size: 10px;
@@ -498,6 +499,7 @@ const ThemePreview = (function() {
                 border-top: 1px solid var(--border-primary, #e5e7eb);
                 font-size: 9px;
                 color: var(--text-secondary, #6b7280);
+                border-radius: 0 0 var(--radius-lg, 8px) var(--radius-lg, 8px);
             }
             .preview-footer-links a {
                 color: var(--accent, #3b82f6);
