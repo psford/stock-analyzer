@@ -1,7 +1,7 @@
 # Functional Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.7
-**Last Updated:** 2026-01-22
+**Version:** 3.2
+**Last Updated:** 2026-02-05
 **Author:** Claude (AI Assistant)
 **Status:** Production
 **Audience:** Business Users, Product Owners, QA Testers
@@ -303,32 +303,42 @@ Page Load                    User Types Query
 | FR-009.5 | The system must make headlines clickable links to the full article |
 | FR-009.6 | The system must display "No recent news available" when no news exists |
 
-### 3.10 Dark Mode (FR-010)
+### 3.10 Theme System (FR-010)
 
 | ID | Requirement |
 |----|-------------|
-| FR-010.1 | The system must provide a dark mode toggle button in the header |
-| FR-010.2 | The system must display a moon icon when in light mode (click to switch to dark) |
-| FR-010.3 | The system must display a sun icon when in dark mode (click to switch to light) |
-| FR-010.4 | The system must persist the user's dark mode preference across page reloads |
-| FR-010.5 | The system must respect the user's system preference (prefers-color-scheme) on first visit |
-| FR-010.6 | The system must apply dark mode styling to all UI elements (backgrounds, text, borders) |
-| FR-010.7 | The system must apply dark mode styling to the Plotly chart (background, gridlines, text) |
-| FR-010.8 | The system must provide smooth color transitions when toggling between modes |
+| FR-010.1 | The system must provide a theme selector dropdown in the header |
+| FR-010.2 | The system must include Light, Dark, Neon Noir, and Grimdark Space Opera themes |
+| FR-010.3 | The system must persist the user's theme preference across page reloads |
+| FR-010.4 | The system must apply theme styling to all UI elements (backgrounds, text, borders, buttons) |
+| FR-010.5 | The system must apply theme styling to Plotly charts (background, gridlines, text, lines) |
+| FR-010.6 | The system must support theme visual effects (scanlines, vignette, bloom, rain, CRT flicker) |
+| FR-010.7 | The system must support theme background images with overlay and blur options |
+| FR-010.8 | The system must load themes from Azure Blob Storage in production |
+| FR-010.9 | The system must fall back to local themes if Azure is unavailable |
+| FR-010.10 | Themes must support inheritance via "extends" property |
+| FR-010.11 | The system must display theme icons in the selector dropdown |
 
-**User Story:** *As a user who works at night, I want a dark mode so that the bright interface doesn't strain my eyes.*
+**User Story:** *As a user, I want to customize the app's appearance with different themes so I can personalize my experience.*
 
-**Color Scheme:**
+**Available Themes:**
 
-| Element | Light Mode | Dark Mode |
-|---------|------------|-----------|
-| Background | Gray-50 (#F9FAFB) | Gray-900 (#111827) |
-| Card Background | White (#FFFFFF) | Gray-800 (#1F2937) |
-| Primary Text | Gray-900 (#111827) | White (#FFFFFF) |
-| Secondary Text | Gray-600 (#4B5563) | Gray-300 (#D1D5DB) |
-| Borders | Gray-200 (#E5E7EB) | Gray-700 (#374151) |
-| Chart Background | White (#FFFFFF) | Gray-800 (#1F2937) |
-| Chart Gridlines | Gray-200 (#E5E7EB) | Gray-700 (#374151) |
+| Theme | Category | Description |
+|-------|----------|-------------|
+| Light | Light | Clean, bright interface for daytime use |
+| Dark | Dark | Standard dark mode for reduced eye strain |
+| Neon Noir | Dark | Cyberpunk-inspired with magenta/cyan accents, scanlines, rain effect |
+| Grimdark Space Opera | Dark | Warhammer 40K inspired, blood red + imperial gold, heavy vignette |
+
+**Visual Effects:**
+
+| Effect | Description |
+|--------|-------------|
+| Scanlines | Horizontal CRT-style lines overlay |
+| Vignette | Darkened edges for cinematic feel |
+| Bloom | Contrast/brightness boost for glow effect |
+| Rain | Animated rain drops |
+| CRT Flicker | Subtle screen flicker animation |
 
 ### 3.11 Technical Indicators (FR-011)
 
@@ -1036,6 +1046,7 @@ The dashboard is fully responsive and adapts to mobile devices.
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
+| 3.2 | 2026-02-05 | **JSON Theme System (FR-010):** Rewrote section 3.10 from "Dark Mode" to "Theme System". Added 4 themes (Light, Dark, Neon Noir, Grimdark Space Opera). Visual effects (scanlines, vignette, bloom, rain, CRT flicker). Background image support with overlay/blur. Theme inheritance via "extends" property. Theme icons in selector dropdown. Azure Blob Storage hosting with local fallback. | Claude |
 | 3.1 | 2026-02-03 | **Watchlist Tile + Horizontal Expansion (FR-014, FR-017):** Watchlist converted from fixed sidebar to 7th GridStack tile (4w×5h). Chart narrowed from 12w to 8w. FR-014.6 updated (sidebar → tile). FR-017.1 updated (6 tiles → 7). Added FR-017.19-22: star toggle in header, yellow active state, horizontal neighbor expansion on tile close, and reverse on reopen. Mobile sidebar code removed (no functional regression — tile stacks in single-column on mobile). | Claude |
 | 3.0 | 2026-02-02 | **Draggable Tile Dashboard (FR-017):** New section 3.17 with 16 functional requirements covering tile drag/resize, layout persistence, close/reopen via panel dropdown, lock button, physics animations (lift effect, spring settle, neighbor FLIP), snap audio toggle, mobile single-column stacking, chart auto-resize, and preservation of all existing functionality. | Claude |
 | 2.9 | 2026-02-01 | **Date Range UI Redesign (FR-003):** Replaced single Time Period dropdown + hidden From/To inputs with two-field date range panel. End Date (PBD/LME/LQE/LYE/Custom) + Start Date (1D–30Y/MTD/YTD/Max/Custom), each with resolved date display. Start Date resolves relative to End Date (not today). Periods are inclusive. Custom mode makes date input editable. Changes trigger immediate reanalysis. | Claude |
