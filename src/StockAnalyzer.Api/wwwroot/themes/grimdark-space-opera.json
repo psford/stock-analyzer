@@ -1,0 +1,186 @@
+{
+  "id": "grimdark-space-opera",
+  "name": "Grimdark Space Opera",
+  "version": "2.0.0",
+  "meta": {
+    "category": "dark",
+    "icon": "skull",
+    "iconColor": "#c00000",
+    "tags": ["gothic", "warhammer", "space", "dark", "imperial", "epic"],
+    "description": "In the grim darkness of the far future, there is only profit. Blood red and imperial gold on the void of space."
+  },
+  "background": {
+    "image": "/images/backgrounds/grimdark-void.jpg",
+    "overlay": "linear-gradient(180deg, rgba(0,0,0,0.85) 0%, rgba(20,5,5,0.9) 50%, rgba(0,0,0,0.95) 100%)",
+    "position": "center",
+    "size": "cover",
+    "attachment": "fixed"
+  },
+  "variables": {
+    "bg-primary": "rgba(5, 2, 8, 0.95)",
+    "bg-secondary": "rgba(15, 8, 12, 0.9)",
+    "bg-tertiary": "rgba(25, 12, 18, 0.85)",
+    "bg-code": "rgba(10, 5, 8, 0.95)",
+
+    "text-primary": "#e8d5c4",
+    "text-secondary": "#b8a090",
+    "text-muted": "#6a5a4a",
+    "text-inverted": "#0a0408",
+
+    "border-primary": "#4a2020",
+    "border-secondary": "#2a1010",
+
+    "accent": "#c00000",
+    "accent-hover": "#e01010",
+    "accent-light": "#ff2020",
+    "accent-bg": "rgba(192, 0, 0, 0.25)",
+    "accent-bg-subtle": "rgba(192, 0, 0, 0.12)",
+
+    "success": "#2d6a2d",
+    "error": "#c00000",
+    "warning": "#b8860b",
+    "warning-light": "#d4a020",
+
+    "highlight-bg": "rgba(212, 175, 55, 0.25)",
+    "highlight-text": "#d4af37",
+
+    "danger-bg": "rgba(192, 0, 0, 0.15)",
+    "danger-border": "#800000",
+
+    "star-color": "#d4af37",
+    "star-bg": "rgba(212, 175, 55, 0.15)",
+    "star-glow": "0 0 12px rgba(212, 175, 55, 0.6)",
+
+    "price-up": "#3d8a3d",
+    "price-up-glow": "0 0 8px rgba(61, 138, 61, 0.5)",
+    "price-down": "#c00000",
+    "price-down-glow": "0 0 8px rgba(192, 0, 0, 0.5)",
+
+    "audio-active-bg": "rgba(192, 0, 0, 0.3)",
+
+    "music-active-color": "#d4af37",
+    "music-active-bg": "rgba(212, 175, 55, 0.2)",
+    "music-active-glow": "0 0 15px rgba(212, 175, 55, 0.5)",
+    "viz-bar-color": "#c00000",
+    "viz-bar-glow": "0 0 6px rgba(192, 0, 0, 0.7)",
+
+    "btn-primary-bg": "linear-gradient(180deg, #c00000 0%, #800000 100%)",
+    "btn-primary-bg-hover": "linear-gradient(180deg, #e01010 0%, #a00000 100%)",
+    "btn-primary-text": "#e8d5c4",
+    "btn-primary-glow": "0 0 20px rgba(192, 0, 0, 0.6), inset 0 1px 0 rgba(255,255,255,0.1)",
+    "btn-primary-glow-hover": "0 0 30px rgba(224, 16, 16, 0.8), inset 0 1px 0 rgba(255,255,255,0.2)",
+
+    "loader-bg": "rgba(5, 2, 8, 0.95)",
+    "loader-accent": "#c00000",
+
+    "shadow-sm": "0 1px 3px rgba(0, 0, 0, 0.8)",
+    "shadow-md": "0 4px 8px rgba(0, 0, 0, 0.9)",
+    "shadow-lg": "0 10px 20px rgba(0, 0, 0, 0.95)",
+    "shadow-xl": "0 20px 40px rgba(0, 0, 0, 1)",
+
+    "radius-sm": "2px",
+    "radius-md": "3px",
+    "radius-lg": "4px",
+
+    "tile-title-color": "#d4af37",
+    "tile-title-transform": "uppercase",
+    "tile-title-spacing": "0.2em",
+    "tile-title-weight": "700",
+    "tile-title-glow": "0 0 10px rgba(212, 175, 55, 0.5), 0 0 20px rgba(212, 175, 55, 0.3)",
+
+    "chart-bg": "rgba(8, 4, 6, 0.9)",
+    "chart-text": "#b8a090",
+    "chart-grid": "rgba(74, 32, 32, 0.5)",
+    "chart-axis": "#4a2020",
+    "chart-line-primary": "#c00000",
+    "chart-line-secondary": "#d4af37",
+
+    "chart-line-sma20": "#c00000",
+    "chart-line-sma50": "#d4af37",
+    "chart-line-sma200": "#6a5a4a",
+
+    "chart-candle-up": "#3d8a3d",
+    "chart-candle-down": "#c00000",
+
+    "chart-volume-up": "rgba(61, 138, 61, 0.6)",
+    "chart-volume-down": "rgba(192, 0, 0, 0.6)",
+
+    "chart-rsi": "#d4af37",
+    "chart-macd": "#c00000",
+    "chart-macd-signal": "#6a5a4a",
+    "chart-stochastic": "#d4af37",
+    "chart-stochastic-d": "#b8860b",
+
+    "chart-overbought": "rgba(192, 0, 0, 0.3)",
+    "chart-oversold": "rgba(61, 138, 61, 0.3)",
+    "chart-bollinger": "rgba(212, 175, 55, 0.4)",
+
+    "chart-line-glow": "drop-shadow(0 0 4px rgba(192, 0, 0, 0.6))",
+    "chart-line-glow-color": "#c00000",
+    "chart-line-glow-width": "4px",
+
+    "chart-marker-up": "#3d8a3d",
+    "chart-marker-down": "#c00000",
+    "chart-marker-up-outline": "#5daa5d",
+    "chart-marker-down-outline": "#e02020",
+    "chart-marker-symbol": "diamond",
+    "chart-marker-size": "10",
+
+    "grid-dot": "#2a1010",
+    "grid-dot-active": "#d4af37",
+
+    "zoom-bg": "rgba(192, 0, 0, 0.2)",
+    "zoom-border": "#800000",
+
+    "measure-bg": "rgba(212, 175, 55, 0.15)",
+    "measure-line": "#d4af37",
+
+    "placeholder-bg": "rgba(15, 8, 12, 0.8)",
+    "placeholder-border": "#4a2020",
+
+    "locked-pattern": "repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(192, 0, 0, 0.05) 10px, rgba(192, 0, 0, 0.05) 20px)"
+  },
+  "effects": {
+    "vignette": {
+      "enabled": true,
+      "strength": 0.7
+    },
+    "scanlines": {
+      "enabled": true,
+      "opacity": 0.06,
+      "spacing": 3
+    },
+    "bloom": {
+      "enabled": true,
+      "contrast": 1.1,
+      "brightness": 1.02
+    }
+  },
+  "fonts": {
+    "primary": "'Cinzel', 'Trajan Pro', 'Times New Roman', serif",
+    "mono": "'Fira Code', 'Consolas', monospace"
+  },
+  "audio": {
+    "key": "A",
+    "mode": "harmonic_minor",
+    "chordProgression": ["i", "bVI", "bVII", "V"],
+    "chordVoicing": "power",
+    "tempo": 0,
+    "chordDuration": 16,
+    "octave": 2,
+    "texture": "drone",
+    "oscillator": "sawtooth",
+    "detune": 1.008,
+    "filterCutoff": {
+      "min": 200,
+      "max": 600
+    },
+    "reverb": {
+      "duration": 8,
+      "decay": 4,
+      "wetDry": 0.8
+    },
+    "pitchShift": 0.6,
+    "style": "industrial"
+  }
+}

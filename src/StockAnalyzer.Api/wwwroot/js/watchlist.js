@@ -312,12 +312,12 @@ const Watchlist = {
     renderWatchlistItem(watchlist) {
         const isExpanded = this.expandedWatchlists.has(watchlist.id);
         const tickerList = watchlist.tickers.map(ticker => `
-            <div class="flex items-center justify-between py-1.5 px-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded group">
-                <button class="text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-primary dark:hover:text-primary watchlist-ticker-btn" data-ticker="${ticker}">
+            <div class="watchlist-ticker-row">
+                <button class="watchlist-ticker-btn" data-ticker="${ticker}">
                     ${ticker}
                 </button>
-                <button class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-opacity remove-ticker-btn" data-watchlist-id="${watchlist.id}" data-ticker="${ticker}" title="Remove ${ticker}">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <button class="watchlist-remove-ticker remove-ticker-btn" data-watchlist-id="${watchlist.id}" data-ticker="${ticker}" title="Remove ${ticker}">
+                    <svg class="icon-md" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                     </svg>
                 </button>
@@ -325,35 +325,35 @@ const Watchlist = {
         `).join('');
 
         return `
-            <div class="border-b border-gray-200 dark:border-gray-700 last:border-b-0" data-watchlist-id="${watchlist.id}">
-                <div class="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 watchlist-header" data-watchlist-id="${watchlist.id}">
-                    <div class="flex items-center gap-2 flex-1 min-w-0">
-                        <svg class="w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''} expand-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div class="watchlist-item" data-watchlist-id="${watchlist.id}">
+                <div class="watchlist-header-row watchlist-header" data-watchlist-id="${watchlist.id}">
+                    <div class="watchlist-name-group">
+                        <svg class="watchlist-expand-icon ${isExpanded ? 'rotated' : ''} expand-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
                         </svg>
-                        <span class="font-medium text-gray-900 dark:text-white truncate">${this.escapeHtml(watchlist.name)}</span>
-                        <span class="text-xs text-gray-500 dark:text-gray-400">(${watchlist.tickers.length})</span>
+                        <span class="watchlist-name">${this.escapeHtml(watchlist.name)}</span>
+                        <span class="watchlist-count">(${watchlist.tickers.length})</span>
                     </div>
-                    <div class="flex items-center gap-1">
-                        <button class="p-1 text-gray-400 hover:text-primary combined-view-btn ${watchlist.tickers.length === 0 ? 'opacity-30 cursor-not-allowed' : ''}" data-watchlist-id="${watchlist.id}" title="Combined View" ${watchlist.tickers.length === 0 ? 'disabled' : ''}>
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div class="watchlist-header-actions">
+                        <button class="watchlist-action-btn combined-view-btn ${watchlist.tickers.length === 0 ? 'disabled' : ''}" data-watchlist-id="${watchlist.id}" title="Combined View" ${watchlist.tickers.length === 0 ? 'disabled' : ''}>
+                            <svg class="icon-md" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path>
                             </svg>
                         </button>
-                        <button class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rename-watchlist-btn" data-watchlist-id="${watchlist.id}" title="Rename">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <button class="watchlist-action-btn rename-watchlist-btn" data-watchlist-id="${watchlist.id}" title="Rename">
+                            <svg class="icon-md" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
                             </svg>
                         </button>
-                        <button class="p-1 text-gray-400 hover:text-red-500 delete-watchlist-btn" data-watchlist-id="${watchlist.id}" title="Delete">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <button class="watchlist-action-btn danger delete-watchlist-btn" data-watchlist-id="${watchlist.id}" title="Delete">
+                            <svg class="icon-md" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                             </svg>
                         </button>
                     </div>
                 </div>
-                <div class="watchlist-tickers ${isExpanded ? '' : 'hidden'} px-3 pb-2">
-                    ${watchlist.tickers.length > 0 ? tickerList : '<p class="text-sm text-gray-500 dark:text-gray-400 italic py-2">No tickers yet</p>'}
+                <div class="watchlist-tickers ${isExpanded ? '' : 'collapsed'}">
+                    ${watchlist.tickers.length > 0 ? tickerList : '<p class="watchlist-empty-msg">No tickers yet</p>'}
                 </div>
             </div>
         `;
@@ -442,12 +442,12 @@ const Watchlist = {
 
         if (this.expandedWatchlists.has(watchlistId)) {
             this.expandedWatchlists.delete(watchlistId);
-            tickersEl?.classList.add('hidden');
-            iconEl?.classList.remove('rotate-90');
+            tickersEl?.classList.add('collapsed');
+            iconEl?.classList.remove('rotated');
         } else {
             this.expandedWatchlists.add(watchlistId);
-            tickersEl?.classList.remove('hidden');
-            iconEl?.classList.add('rotate-90');
+            tickersEl?.classList.remove('collapsed');
+            iconEl?.classList.add('rotated');
         }
     },
 
@@ -633,18 +633,18 @@ const Watchlist = {
 
         // Populate dropdown with watchlists
         if (this.watchlists.length === 0) {
-            itemsContainer.innerHTML = '<p class="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">No watchlists yet</p>';
+            itemsContainer.innerHTML = '<p class="result-empty">No watchlists yet</p>';
         } else {
             const currentTicker = window.App?.currentTicker?.toUpperCase();
 
             itemsContainer.innerHTML = this.watchlists.map(watchlist => {
                 const hasTicker = watchlist.tickers.some(t => t.toUpperCase() === currentTicker);
                 return `
-                    <button class="w-full flex items-center justify-between px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 ${hasTicker ? 'opacity-50 cursor-not-allowed' : ''}"
+                    <button class="watchlist-dropdown-item ${hasTicker ? 'disabled' : ''}"
                             data-watchlist-id="${watchlist.id}"
                             ${hasTicker ? 'disabled' : ''}>
                         <span>${this.escapeHtml(watchlist.name)}</span>
-                        ${hasTicker ? '<span class="text-green-500 text-xs">Added</span>' : ''}
+                        ${hasTicker ? '<span class="text-success text-xs">Added</span>' : ''}
                     </button>
                 `;
             }).join('');
@@ -767,7 +767,7 @@ const Watchlist = {
             console.error('Failed to load combined portfolio:', error);
             const chartEl = document.getElementById('portfolio-chart');
             if (chartEl) {
-                chartEl.innerHTML = '<div class="flex items-center justify-center h-full text-gray-500">Failed to load portfolio data</div>';
+                chartEl.innerHTML = '<div class="status-message">Failed to load portfolio data</div>';
             }
         }
     },
@@ -781,7 +781,7 @@ const Watchlist = {
         if (returnEl) {
             const isPositive = data.totalReturn >= 0;
             returnEl.textContent = `${isPositive ? '+' : ''}${data.totalReturn.toFixed(2)}%`;
-            returnEl.className = `text-xl font-bold ${isPositive ? 'text-green-500' : 'text-red-500'}`;
+            returnEl.className = `combined-return ${isPositive ? 'text-success' : 'text-danger'}`;
         }
 
         // Render weights
@@ -801,9 +801,9 @@ const Watchlist = {
         container.innerHTML = Object.entries(weights)
             .sort((a, b) => b[1] - a[1])
             .map(([ticker, weight]) => `
-                <span class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm">
-                    <span class="font-medium">${ticker}</span>
-                    <span class="text-gray-500 dark:text-gray-400">${weight.toFixed(1)}%</span>
+                <span class="weight-chip">
+                    <span class="weight-ticker">${ticker}</span>
+                    <span class="weight-value">${weight.toFixed(1)}%</span>
                 </span>
             `).join('');
     },
@@ -1227,9 +1227,9 @@ const Watchlist = {
         document.querySelectorAll('#combined-period-buttons button').forEach(btn => {
             const period = btn.dataset.period;
             if (period === activePeriod) {
-                btn.className = 'px-3 py-1 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-primary text-white';
+                btn.className = 'btn period-btn active';
             } else {
-                btn.className = 'px-3 py-1 text-sm rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors';
+                btn.className = 'btn period-btn';
             }
         });
     },
@@ -1243,9 +1243,9 @@ const Watchlist = {
         document.querySelectorAll('#combined-benchmark-buttons button[data-benchmark]').forEach(btn => {
             const benchmark = btn.dataset.benchmark;
             if (benchmark === activeBenchmark) {
-                btn.className = 'px-3 py-1 text-sm rounded-lg border border-orange-400 bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400';
+                btn.className = 'btn benchmark-btn active';
             } else {
-                btn.className = 'px-3 py-1 text-sm rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors';
+                btn.className = 'btn benchmark-btn';
             }
         });
 
@@ -1261,7 +1261,7 @@ const Watchlist = {
         const container = document.getElementById('market-news-list');
         if (!container) return;
 
-        container.innerHTML = '<div class="text-center text-gray-500">Loading market news...</div>';
+        container.innerHTML = '<div class="status-message">Loading market news...</div>';
 
         try {
             const result = await API.getMarketNews('general');
@@ -1270,26 +1270,25 @@ const Watchlist = {
 
             if (result.articles && result.articles.length > 0) {
                 container.innerHTML = result.articles.slice(0, 5).map(article => `
-                    <div class="border-b border-gray-200 dark:border-gray-700 last:border-b-0 pb-4 last:pb-0">
-                        <a href="${article.url}" target="_blank" rel="noopener noreferrer"
-                           class="text-sm font-medium text-gray-900 dark:text-white hover:text-primary line-clamp-2">
+                    <div class="news-article">
+                        <a href="${article.url}" target="_blank" rel="noopener noreferrer" class="news-headline line-clamp-2">
                             ${this.escapeHtml(article.headline)}
                         </a>
-                        <div class="flex items-center gap-2 mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        <div class="news-meta">
                             <span>${article.source}</span>
                             <span>&bull;</span>
                             <span>${this.formatRelativeTime(article.publishedAt)}</span>
                         </div>
-                        ${article.summary ? `<p class="text-sm text-gray-600 dark:text-gray-300 mt-1 line-clamp-2">${this.escapeHtml(article.summary)}</p>` : ''}
+                        ${article.summary ? `<p class="news-summary line-clamp-2">${this.escapeHtml(article.summary)}</p>` : ''}
                     </div>
                 `).join('');
             } else {
-                container.innerHTML = '<div class="text-center text-gray-500">No market news available</div>';
+                container.innerHTML = '<div class="status-message">No market news available</div>';
             }
         } catch (error) {
             console.error('Failed to load market news:', error);
             this.combinedView.marketNews = [];
-            container.innerHTML = '<div class="text-center text-gray-500">Failed to load market news</div>';
+            container.innerHTML = '<div class="status-message">Failed to load market news</div>';
         }
     },
 
@@ -1382,7 +1381,7 @@ const Watchlist = {
         const tickers = this.holdingsEditor.localTickers;
 
         if (tickers.length === 0) {
-            container.innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400 italic py-4 text-center">No tickers. Use the search above to add some.</p>';
+            container.innerHTML = '<p class="watchlist-empty-msg text-center">No tickers. Use the search above to add some.</p>';
             return;
         }
 
@@ -1396,29 +1395,29 @@ const Watchlist = {
             if (mode === 'shares') {
                 const shares = holding?.shares ?? '';
                 inputHtml = `
-                    <input type="number" class="holding-input w-20 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-700 rounded"
+                    <input type="number" class="holding-input"
                            data-ticker="${ticker}" data-type="shares" value="${shares}" min="0" step="any" placeholder="Shares">
                 `;
             } else if (mode === 'dollars') {
                 const dollars = holding?.dollarValue ?? '';
                 inputHtml = `
-                    <input type="number" class="holding-input w-20 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-700 rounded"
+                    <input type="number" class="holding-input"
                            data-ticker="${ticker}" data-type="dollars" value="${dollars}" min="0" step="any" placeholder="$">
                 `;
             } else {
-                inputHtml = `<span class="text-sm text-gray-500">Equal</span>`;
+                inputHtml = `<span class="holding-equal">Equal</span>`;
             }
 
             return `
-                <div class="flex items-center justify-between py-2 px-2 border-b border-gray-100 dark:border-gray-700 last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded">
-                    <div class="flex items-center gap-2">
-                        <button class="holdings-remove-ticker text-gray-400 hover:text-red-500 transition-colors" data-ticker="${ticker}" title="Remove ${ticker}">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div class="holding-row">
+                    <div class="holding-info">
+                        <button class="holding-remove-btn holdings-remove-ticker" data-ticker="${ticker}" title="Remove ${ticker}">
+                            <svg class="icon-md" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                             </svg>
                         </button>
-                        <span class="font-medium text-gray-900 dark:text-white">${ticker}</span>
-                        <span class="text-sm text-gray-500 dark:text-gray-400">${priceStr}</span>
+                        <span class="holding-ticker">${ticker}</span>
+                        <span class="holding-price">${priceStr}</span>
                     </div>
                     ${inputHtml}
                 </div>
@@ -1561,7 +1560,7 @@ const Watchlist = {
         if (!container) return;
 
         if (!results || results.length === 0) {
-            container.innerHTML = '<div class="px-3 py-2 text-sm text-gray-500">No results found</div>';
+            container.innerHTML = '<div class="result-empty">No results found</div>';
             container.classList.remove('hidden');
             return;
         }
@@ -1571,16 +1570,15 @@ const Watchlist = {
         const filteredResults = results.filter(r => !existingTickers.has(r.symbol.toUpperCase()));
 
         if (filteredResults.length === 0) {
-            container.innerHTML = '<div class="px-3 py-2 text-sm text-gray-500">All matching tickers already added</div>';
+            container.innerHTML = '<div class="result-empty">All matching tickers already added</div>';
             container.classList.remove('hidden');
             return;
         }
 
         container.innerHTML = filteredResults.slice(0, 5).map(result => `
-            <button class="holdings-search-result w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-600 flex justify-between items-center"
-                    data-symbol="${result.symbol}">
-                <span class="font-medium text-gray-900 dark:text-white">${result.symbol}</span>
-                <span class="text-sm text-gray-500 dark:text-gray-400 truncate ml-2">${result.name || ''}</span>
+            <button class="holdings-search-result" data-symbol="${result.symbol}">
+                <span class="result-symbol">${result.symbol}</span>
+                <span class="result-name">${result.name || ''}</span>
             </button>
         `).join('');
 

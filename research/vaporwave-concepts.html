@@ -1,0 +1,1373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VAPORWAVE UI CONCEPTS // 蒸気波</title>
+    <style>
+        /* ========== BASE RESET & FONTS ========== */
+        @import url('https://fonts.googleapis.com/css2?family=VT323&family=Press+Start+2P&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            /* Core Vaporwave Palette */
+            --vapor-pink: #ff71ce;
+            --vapor-cyan: #01cdfe;
+            --vapor-purple: #b967ff;
+            --vapor-blue: #05ffa1;
+            --vapor-yellow: #fffb96;
+            --vapor-orange: #ff9f43;
+            --vapor-deep-purple: #1a1a2e;
+            --vapor-sunset-pink: #ff6b9d;
+            --vapor-sunset-orange: #ffa06d;
+            --vapor-grid-pink: #ff00ff;
+            --vapor-grid-cyan: #00ffff;
+
+            /* Gradients */
+            --sunset-gradient: linear-gradient(180deg, #ff6b9d 0%, #ffa06d 25%, #b967ff 50%, #1a1a2e 100%);
+            --neon-gradient: linear-gradient(135deg, #ff71ce 0%, #01cdfe 50%, #b967ff 100%);
+            --grid-gradient: linear-gradient(180deg, transparent 0%, rgba(255,0,255,0.3) 100%);
+        }
+
+        body {
+            font-family: 'VT323', monospace;
+            background: var(--vapor-deep-purple);
+            color: #fff;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* ========== NAVIGATION ========== */
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            background: rgba(26, 26, 46, 0.95);
+            backdrop-filter: blur(10px);
+            border-bottom: 2px solid var(--vapor-pink);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        nav h1 {
+            font-family: 'Press Start 2P', cursive;
+            font-size: 0.8rem;
+            background: var(--neon-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: none;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .nav-links a {
+            color: var(--vapor-cyan);
+            text-decoration: none;
+            font-size: 1.1rem;
+            padding: 0.5rem 1rem;
+            border: 1px solid var(--vapor-cyan);
+            transition: all 0.3s;
+        }
+
+        .nav-links a:hover {
+            background: var(--vapor-cyan);
+            color: var(--vapor-deep-purple);
+            box-shadow: 0 0 20px var(--vapor-cyan);
+        }
+
+        /* Audio Toggle */
+        #audio-toggle {
+            background: transparent;
+            border: 2px solid var(--vapor-pink);
+            color: var(--vapor-pink);
+            padding: 0.5rem 1rem;
+            font-family: 'VT323', monospace;
+            font-size: 1.2rem;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        #audio-toggle:hover {
+            background: var(--vapor-pink);
+            color: var(--vapor-deep-purple);
+            box-shadow: 0 0 30px var(--vapor-pink);
+        }
+
+        #audio-toggle.active {
+            background: var(--vapor-pink);
+            color: var(--vapor-deep-purple);
+            animation: pulse-glow 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 20px var(--vapor-pink); }
+            50% { box-shadow: 0 0 40px var(--vapor-pink), 0 0 60px var(--vapor-purple); }
+        }
+
+        /* ========== CONCEPT SECTIONS ========== */
+        section {
+            min-height: 100vh;
+            padding: 6rem 2rem 4rem;
+            position: relative;
+        }
+
+        .concept-header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        .concept-number {
+            font-family: 'Press Start 2P', cursive;
+            font-size: 0.7rem;
+            color: var(--vapor-cyan);
+            letter-spacing: 0.5em;
+            margin-bottom: 1rem;
+        }
+
+        .concept-title {
+            font-size: 3rem;
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            margin-bottom: 0.5rem;
+        }
+
+        .concept-subtitle {
+            font-size: 1.5rem;
+            color: var(--vapor-pink);
+            opacity: 0.8;
+        }
+
+        .concept-description {
+            max-width: 800px;
+            margin: 2rem auto;
+            font-size: 1.3rem;
+            line-height: 1.8;
+            text-align: center;
+            color: rgba(255,255,255,0.8);
+        }
+
+        /* ========== CONCEPT 1: SUNSET GRID ========== */
+        #concept-1 {
+            background: var(--sunset-gradient);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .sunset-sun {
+            position: absolute;
+            bottom: 40%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 300px;
+            height: 300px;
+            background: linear-gradient(180deg, #ffeb3b 0%, #ff9800 30%, #ff5722 60%, #e91e63 100%);
+            border-radius: 50%;
+            box-shadow:
+                0 0 60px rgba(255, 152, 0, 0.8),
+                0 0 120px rgba(255, 87, 34, 0.6),
+                0 0 180px rgba(233, 30, 99, 0.4);
+        }
+
+        /* Horizontal lines through sun */
+        .sunset-sun::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 10px,
+                var(--vapor-deep-purple) 10px,
+                var(--vapor-deep-purple) 12px
+            );
+            clip-path: polygon(0 50%, 100% 50%, 100% 100%, 0 100%);
+        }
+
+        .grid-floor {
+            position: absolute;
+            bottom: 0;
+            left: -50%;
+            right: -50%;
+            height: 40%;
+            background:
+                linear-gradient(90deg, transparent 49.5%, var(--vapor-grid-pink) 49.5%, var(--vapor-grid-pink) 50.5%, transparent 50.5%),
+                linear-gradient(0deg, var(--vapor-grid-cyan) 0%, transparent 100%);
+            background-size: 80px 100%, 100% 100%;
+            transform: perspective(500px) rotateX(60deg);
+            transform-origin: center top;
+            animation: grid-scroll 20s linear infinite;
+        }
+
+        @keyframes grid-scroll {
+            0% { background-position: 0 0, 0 0; }
+            100% { background-position: 0 1000px, 0 0; }
+        }
+
+        /* Perspective grid lines */
+        .grid-floor::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 38px,
+                var(--vapor-grid-pink) 38px,
+                var(--vapor-grid-pink) 40px
+            );
+            animation: grid-scroll 10s linear infinite;
+        }
+
+        .concept-1-demo {
+            position: relative;
+            z-index: 10;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .demo-tile {
+            background: rgba(26, 26, 46, 0.8);
+            border: 2px solid var(--vapor-pink);
+            padding: 2rem;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s;
+        }
+
+        .demo-tile:hover {
+            transform: translateY(-10px);
+            box-shadow:
+                0 20px 40px rgba(255, 113, 206, 0.3),
+                0 0 30px rgba(255, 113, 206, 0.2);
+            border-color: var(--vapor-cyan);
+        }
+
+        .demo-tile h3 {
+            color: var(--vapor-cyan);
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            text-transform: uppercase;
+        }
+
+        .demo-tile p {
+            color: rgba(255,255,255,0.7);
+            font-size: 1.2rem;
+        }
+
+        /* ========== CONCEPT 2: WINDOWS 95 RETRO ========== */
+        #concept-2 {
+            background: #008080; /* Classic teal */
+            position: relative;
+        }
+
+        .win95-desktop {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .win95-window {
+            background: #c0c0c0;
+            border: 2px solid;
+            border-color: #ffffff #808080 #808080 #ffffff;
+            box-shadow: 2px 2px 0 #000;
+            margin-bottom: 2rem;
+        }
+
+        .win95-titlebar {
+            background: linear-gradient(90deg, #000080, #1084d0);
+            padding: 3px 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .win95-titlebar span {
+            color: white;
+            font-family: 'VT323', monospace;
+            font-size: 1rem;
+            font-weight: bold;
+        }
+
+        .win95-buttons {
+            display: flex;
+            gap: 2px;
+        }
+
+        .win95-btn {
+            width: 16px;
+            height: 14px;
+            background: #c0c0c0;
+            border: 2px solid;
+            border-color: #ffffff #808080 #808080 #ffffff;
+            font-size: 10px;
+            line-height: 10px;
+            text-align: center;
+            cursor: pointer;
+        }
+
+        .win95-content {
+            padding: 1rem;
+            background: #c0c0c0;
+        }
+
+        .win95-menubar {
+            background: #c0c0c0;
+            padding: 2px;
+            border-bottom: 1px solid #808080;
+            display: flex;
+            gap: 0;
+        }
+
+        .win95-menu-item {
+            padding: 2px 8px;
+            font-size: 0.9rem;
+            color: #000;
+            cursor: pointer;
+        }
+
+        .win95-menu-item:hover {
+            background: #000080;
+            color: white;
+        }
+
+        .win95-inset {
+            border: 2px solid;
+            border-color: #808080 #ffffff #ffffff #808080;
+            background: white;
+            padding: 1rem;
+        }
+
+        .win95-chart {
+            height: 200px;
+            background: linear-gradient(180deg,
+                #000080 0%,
+                #0000ff 20%,
+                #00ff00 40%,
+                #ffff00 60%,
+                #ff0000 80%,
+                #ff00ff 100%
+            );
+            position: relative;
+            overflow: hidden;
+        }
+
+        .win95-chart::after {
+            content: 'STONKS.EXE';
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            color: #00ff00;
+            font-family: 'VT323', monospace;
+            text-shadow: 1px 1px 0 #000;
+        }
+
+        .win95-statusbar {
+            background: #c0c0c0;
+            border-top: 2px solid;
+            border-color: #808080 #ffffff #ffffff #808080;
+            padding: 2px 4px;
+            font-size: 0.8rem;
+            color: #000;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* ========== CONCEPT 3: NEON NOIR ========== */
+        #concept-3 {
+            background: #0a0a0f;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Rain effect */
+        .rain {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: repeating-linear-gradient(
+                180deg,
+                transparent,
+                transparent 2px,
+                rgba(1, 205, 254, 0.03) 2px,
+                rgba(1, 205, 254, 0.03) 4px
+            );
+            animation: rain-fall 0.5s linear infinite;
+            pointer-events: none;
+        }
+
+        @keyframes rain-fall {
+            0% { transform: translateY(-4px); }
+            100% { transform: translateY(0); }
+        }
+
+        /* Scan lines */
+        .scanlines {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 0, 0, 0.15),
+                rgba(0, 0, 0, 0.15) 1px,
+                transparent 1px,
+                transparent 2px
+            );
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        .neon-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 10;
+        }
+
+        .neon-card {
+            background: rgba(10, 10, 15, 0.9);
+            border: 1px solid var(--vapor-cyan);
+            padding: 2rem;
+            margin-bottom: 2rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .neon-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg,
+                transparent,
+                var(--vapor-cyan),
+                var(--vapor-pink),
+                var(--vapor-cyan),
+                transparent
+            );
+            animation: neon-sweep 3s linear infinite;
+        }
+
+        @keyframes neon-sweep {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .neon-text {
+            color: var(--vapor-cyan);
+            text-shadow:
+                0 0 10px var(--vapor-cyan),
+                0 0 20px var(--vapor-cyan),
+                0 0 40px var(--vapor-cyan);
+        }
+
+        .neon-pink {
+            color: var(--vapor-pink);
+            text-shadow:
+                0 0 10px var(--vapor-pink),
+                0 0 20px var(--vapor-pink),
+                0 0 40px var(--vapor-pink);
+        }
+
+        .neon-chart-placeholder {
+            height: 300px;
+            border: 1px solid var(--vapor-cyan);
+            position: relative;
+            background:
+                linear-gradient(90deg, rgba(1,205,254,0.1) 1px, transparent 1px),
+                linear-gradient(0deg, rgba(1,205,254,0.1) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+
+        /* Animated line */
+        .neon-line {
+            position: absolute;
+            bottom: 20%;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--vapor-pink);
+            box-shadow: 0 0 10px var(--vapor-pink);
+            clip-path: polygon(
+                0% 50%, 10% 30%, 20% 60%, 30% 20%, 40% 70%,
+                50% 40%, 60% 80%, 70% 30%, 80% 55%, 90% 25%, 100% 50%
+            );
+            animation: line-glow 2s ease-in-out infinite alternate;
+        }
+
+        @keyframes line-glow {
+            0% { filter: brightness(1); }
+            100% { filter: brightness(1.5); }
+        }
+
+        /* ========== CONCEPT 4: GLITCH AESTHETIC ========== */
+        #concept-4 {
+            background: #0d0d0d;
+            position: relative;
+        }
+
+        .glitch-container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .glitch-title {
+            font-size: 4rem;
+            text-transform: uppercase;
+            position: relative;
+            animation: glitch-skew 4s infinite linear alternate-reverse;
+        }
+
+        .glitch-title::before,
+        .glitch-title::after {
+            content: attr(data-text);
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .glitch-title::before {
+            color: var(--vapor-cyan);
+            animation: glitch-effect 3s infinite linear alternate-reverse;
+            clip-path: polygon(0 0, 100% 0, 100% 45%, 0 45%);
+            transform: translate(-2px, -2px);
+        }
+
+        .glitch-title::after {
+            color: var(--vapor-pink);
+            animation: glitch-effect 2s infinite linear alternate-reverse;
+            clip-path: polygon(0 55%, 100% 55%, 100% 100%, 0 100%);
+            transform: translate(2px, 2px);
+        }
+
+        @keyframes glitch-effect {
+            0% { transform: translate(0); }
+            20% { transform: translate(-3px, 3px); }
+            40% { transform: translate(-3px, -3px); }
+            60% { transform: translate(3px, 3px); }
+            80% { transform: translate(3px, -3px); }
+            100% { transform: translate(0); }
+        }
+
+        @keyframes glitch-skew {
+            0% { transform: skew(0deg); }
+            20% { transform: skew(0deg); }
+            21% { transform: skew(2deg); }
+            22% { transform: skew(0deg); }
+            50% { transform: skew(0deg); }
+            51% { transform: skew(-1deg); }
+            52% { transform: skew(0deg); }
+            100% { transform: skew(0deg); }
+        }
+
+        .glitch-card {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            padding: 2rem;
+            margin: 2rem 0;
+            position: relative;
+        }
+
+        .glitch-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background:
+                linear-gradient(90deg, transparent 0%, rgba(255,113,206,0.03) 50%, transparent 100%);
+            animation: glitch-scan 5s linear infinite;
+        }
+
+        @keyframes glitch-scan {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        /* RGB Split on hover */
+        .rgb-split {
+            transition: all 0.3s;
+        }
+
+        .rgb-split:hover {
+            text-shadow:
+                -2px 0 var(--vapor-cyan),
+                2px 0 var(--vapor-pink);
+        }
+
+        /* VHS tracking effect */
+        .vhs-tracking {
+            position: relative;
+        }
+
+        .vhs-tracking::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(255, 255, 255, 0.03) 2px,
+                rgba(255, 255, 255, 0.03) 4px
+            );
+            pointer-events: none;
+        }
+
+        /* ========== CONCEPT 5: JAPANESE PLAZA ========== */
+        #concept-5 {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Floating Japanese characters */
+        .kanji-float {
+            position: absolute;
+            font-size: 8rem;
+            opacity: 0.05;
+            color: var(--vapor-pink);
+            animation: float-up 20s linear infinite;
+            pointer-events: none;
+        }
+
+        .kanji-float:nth-child(1) { left: 10%; animation-delay: 0s; }
+        .kanji-float:nth-child(2) { left: 30%; animation-delay: 5s; }
+        .kanji-float:nth-child(3) { left: 50%; animation-delay: 10s; }
+        .kanji-float:nth-child(4) { left: 70%; animation-delay: 15s; }
+        .kanji-float:nth-child(5) { left: 90%; animation-delay: 8s; }
+
+        @keyframes float-up {
+            0% { transform: translateY(100vh) rotate(0deg); opacity: 0; }
+            10% { opacity: 0.05; }
+            90% { opacity: 0.05; }
+            100% { transform: translateY(-100vh) rotate(360deg); opacity: 0; }
+        }
+
+        .plaza-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 10;
+        }
+
+        .plaza-header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        .plaza-logo {
+            font-size: 2rem;
+            color: var(--vapor-pink);
+            margin-bottom: 1rem;
+        }
+
+        .plaza-english {
+            font-size: 1rem;
+            color: var(--vapor-cyan);
+            letter-spacing: 0.5em;
+            text-transform: uppercase;
+        }
+
+        .plaza-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+
+        .plaza-tile {
+            background: linear-gradient(135deg,
+                rgba(255, 113, 206, 0.1) 0%,
+                rgba(1, 205, 254, 0.1) 100%
+            );
+            border: 1px solid rgba(255, 113, 206, 0.3);
+            padding: 2rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .plaza-tile::before {
+            content: attr(data-kanji);
+            position: absolute;
+            top: -20px;
+            right: -20px;
+            font-size: 8rem;
+            opacity: 0.1;
+            color: var(--vapor-pink);
+        }
+
+        .plaza-tile h3 {
+            color: var(--vapor-cyan);
+            font-size: 1.8rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .plaza-tile .subtitle {
+            color: var(--vapor-pink);
+            font-size: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .plaza-tile p {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 1.1rem;
+            line-height: 1.6;
+        }
+
+        /* Marble statue decoration */
+        .statue-shadow {
+            position: absolute;
+            bottom: 0;
+            right: 2rem;
+            width: 200px;
+            height: 300px;
+            background: linear-gradient(180deg,
+                rgba(255,255,255,0.1) 0%,
+                transparent 100%
+            );
+            clip-path: polygon(50% 0%, 80% 20%, 80% 100%, 20% 100%, 20% 20%);
+            opacity: 0.3;
+        }
+
+        /* ========== AUDIO VISUALIZER ========== */
+        #audio-visualizer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 60px;
+            background: rgba(26, 26, 46, 0.95);
+            border-top: 2px solid var(--vapor-pink);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            z-index: 1000;
+        }
+
+        #audio-visualizer.active {
+            display: flex;
+        }
+
+        .viz-bar {
+            width: 4px;
+            background: linear-gradient(180deg, var(--vapor-pink), var(--vapor-cyan));
+            animation: viz-bounce 0.5s ease-in-out infinite alternate;
+        }
+
+        @keyframes viz-bounce {
+            0% { height: 10px; }
+            100% { height: 40px; }
+        }
+
+        /* Stagger animation delays */
+        .viz-bar:nth-child(1) { animation-delay: 0.0s; }
+        .viz-bar:nth-child(2) { animation-delay: 0.1s; }
+        .viz-bar:nth-child(3) { animation-delay: 0.2s; }
+        .viz-bar:nth-child(4) { animation-delay: 0.3s; }
+        .viz-bar:nth-child(5) { animation-delay: 0.4s; }
+        .viz-bar:nth-child(6) { animation-delay: 0.5s; }
+        .viz-bar:nth-child(7) { animation-delay: 0.4s; }
+        .viz-bar:nth-child(8) { animation-delay: 0.3s; }
+        .viz-bar:nth-child(9) { animation-delay: 0.2s; }
+        .viz-bar:nth-child(10) { animation-delay: 0.1s; }
+        .viz-bar:nth-child(11) { animation-delay: 0.0s; }
+        .viz-bar:nth-child(12) { animation-delay: 0.1s; }
+        .viz-bar:nth-child(13) { animation-delay: 0.2s; }
+        .viz-bar:nth-child(14) { animation-delay: 0.3s; }
+        .viz-bar:nth-child(15) { animation-delay: 0.4s; }
+
+        /* ========== FOOTER ========== */
+        footer {
+            background: var(--vapor-deep-purple);
+            border-top: 2px solid var(--vapor-pink);
+            padding: 3rem 2rem;
+            text-align: center;
+        }
+
+        footer p {
+            color: var(--vapor-cyan);
+            font-size: 1.2rem;
+            margin-bottom: 1rem;
+        }
+
+        footer .jp {
+            color: var(--vapor-pink);
+            font-size: 1.5rem;
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h1>蒸気波 VAPORWAVE UI</h1>
+        <div class="nav-links">
+            <a href="#concept-1">SUNSET</a>
+            <a href="#concept-2">WIN95</a>
+            <a href="#concept-3">NEON</a>
+            <a href="#concept-4">GLITCH</a>
+            <a href="#concept-5">PLAZA</a>
+        </div>
+        <button id="audio-toggle">♪ AUDIO OFF</button>
+    </nav>
+
+    <!-- CONCEPT 1: SUNSET GRID -->
+    <section id="concept-1">
+        <div class="sunset-sun"></div>
+        <div class="grid-floor"></div>
+
+        <div class="concept-header">
+            <p class="concept-number">CONCEPT 01</p>
+            <h2 class="concept-title neon-pink">Sunset Grid</h2>
+            <p class="concept-subtitle">サンセット・グリッド</p>
+        </div>
+
+        <p class="concept-description">
+            The iconic vaporwave aesthetic: a neon sun setting behind an infinite perspective grid.
+            This theme transforms stock charts into retro-futuristic data landscapes. The perpetual
+            sunset evokes nostalgia for a future that never was — perfect for analyzing markets
+            that feel equally surreal.
+        </p>
+
+        <div class="concept-1-demo">
+            <div class="demo-tile">
+                <h3>Stock Chart</h3>
+                <p>Candlesticks rendered in hot pink and cyan against the infinite grid</p>
+            </div>
+            <div class="demo-tile">
+                <h3>Key Metrics</h3>
+                <p>Numbers glow with neon radiance, pulsing gently like distant stars</p>
+            </div>
+            <div class="demo-tile">
+                <h3>News Feed</h3>
+                <p>Headlines scroll like credits from an 80s sci-fi film</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- CONCEPT 2: WINDOWS 95 -->
+    <section id="concept-2">
+        <div class="concept-header">
+            <p class="concept-number">CONCEPT 02</p>
+            <h2 class="concept-title" style="color: #000080; text-shadow: 2px 2px 0 #fff;">Windows 95</h2>
+            <p class="concept-subtitle" style="color: #c0c0c0;">ウィンドウズ95</p>
+        </div>
+
+        <p class="concept-description" style="color: #fff;">
+            Before flat design, before Material, there was the beveled glory of Windows 95.
+            This theme wraps modern stock data in nostalgic grey plastic, complete with
+            3D borders, system fonts, and that satisfying Start menu energy. Every tile
+            becomes a resizable window. Pure Y2K energy.
+        </p>
+
+        <div class="win95-desktop">
+            <div class="win95-window">
+                <div class="win95-titlebar">
+                    <span>📈 Stock Analyzer Pro - [MSFT]</span>
+                    <div class="win95-buttons">
+                        <div class="win95-btn">_</div>
+                        <div class="win95-btn">□</div>
+                        <div class="win95-btn">×</div>
+                    </div>
+                </div>
+                <div class="win95-menubar">
+                    <span class="win95-menu-item">File</span>
+                    <span class="win95-menu-item">Edit</span>
+                    <span class="win95-menu-item">View</span>
+                    <span class="win95-menu-item">Tools</span>
+                    <span class="win95-menu-item">Help</span>
+                </div>
+                <div class="win95-content">
+                    <div class="win95-inset">
+                        <div class="win95-chart"></div>
+                    </div>
+                </div>
+                <div class="win95-statusbar">
+                    <span>Ready</span>
+                    <span>Connected to NYSE</span>
+                </div>
+            </div>
+
+            <div class="win95-window" style="width: 400px;">
+                <div class="win95-titlebar">
+                    <span>📊 Key Metrics</span>
+                    <div class="win95-buttons">
+                        <div class="win95-btn">_</div>
+                        <div class="win95-btn">□</div>
+                        <div class="win95-btn">×</div>
+                    </div>
+                </div>
+                <div class="win95-content">
+                    <p style="color: #000; font-family: 'VT323', monospace;">
+                        P/E Ratio: <b>32.45</b><br>
+                        Market Cap: <b>$2.89T</b><br>
+                        52W High: <b>$420.69</b><br>
+                        Dividend: <b>0.88%</b>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CONCEPT 3: NEON NOIR -->
+    <section id="concept-3">
+        <div class="rain"></div>
+        <div class="scanlines"></div>
+
+        <div class="concept-header">
+            <p class="concept-number">CONCEPT 03</p>
+            <h2 class="concept-title neon-text">Neon Noir</h2>
+            <p class="concept-subtitle neon-pink">ネオン・ノワール</p>
+        </div>
+
+        <p class="concept-description">
+            Blade Runner meets Bloomberg Terminal. Rain-slicked streets reflect in the
+            data streams. Scan lines flicker across the display. The city never sleeps,
+            and neither does the market. This theme embraces the cyberpunk dystopia
+            aesthetic — because analyzing stocks in the glow of neon signs just hits different.
+        </p>
+
+        <div class="neon-container">
+            <div class="neon-card">
+                <h3 class="neon-text" style="font-size: 2rem; margin-bottom: 1rem;">MSFT // MICROSOFT CORP</h3>
+                <div class="neon-chart-placeholder">
+                    <div class="neon-line"></div>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+                <div class="neon-card">
+                    <h4 class="neon-pink" style="font-size: 1.5rem; margin-bottom: 1rem;">MARKET DATA</h4>
+                    <p style="font-size: 1.3rem; line-height: 2;">
+                        <span class="neon-text">PRICE:</span> $378.91<br>
+                        <span class="neon-text">CHANGE:</span> <span style="color: #05ffa1;">+2.34%</span><br>
+                        <span class="neon-text">VOLUME:</span> 24.5M
+                    </p>
+                </div>
+                <div class="neon-card">
+                    <h4 class="neon-pink" style="font-size: 1.5rem; margin-bottom: 1rem;">ANALYSIS</h4>
+                    <p style="font-size: 1.3rem; line-height: 2;">
+                        <span class="neon-text">RSI:</span> 62.4<br>
+                        <span class="neon-text">MACD:</span> Bullish Cross<br>
+                        <span class="neon-text">TREND:</span> <span style="color: #05ffa1;">STRONG BUY</span>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CONCEPT 4: GLITCH -->
+    <section id="concept-4">
+        <div class="concept-header">
+            <p class="concept-number">CONCEPT 04</p>
+            <h2 class="concept-title glitch-title" data-text="GLITCH">GLITCH</h2>
+            <p class="concept-subtitle" style="color: var(--vapor-pink);">グリッチ・エフェクト</p>
+        </div>
+
+        <p class="concept-description">
+            The signal is breaking up. Data streams corrupt and reform. This theme
+            embraces digital decay — chromatic aberration splits colors, scan lines
+            distort reality, and periodic glitches remind you that we're all just
+            data in the machine. Perfect for when the market is having a meltdown
+            and you want your UI to match.
+        </p>
+
+        <div class="glitch-container">
+            <div class="glitch-card vhs-tracking">
+                <h3 class="rgb-split" style="font-size: 2rem; margin-bottom: 1rem;">STOCK ANALYSIS</h3>
+                <p style="font-size: 1.3rem; color: rgba(255,255,255,0.7);">
+                    Hover over text to see the RGB split effect. The VHS tracking lines
+                    overlay creates that authentic degraded video feel. Periodic glitches
+                    in the title add kinetic energy.
+                </p>
+            </div>
+
+            <div class="glitch-card">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h4 class="rgb-split" style="font-size: 1.8rem; color: var(--vapor-cyan);">ERROR_404</h4>
+                        <p style="color: var(--vapor-pink);">DATA CORRUPTION DETECTED</p>
+                    </div>
+                    <div style="text-align: right; font-size: 1.5rem;">
+                        <span style="color: var(--vapor-cyan);">$̵3̷7̴8̸.̵9̷1̴</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CONCEPT 5: JAPANESE PLAZA -->
+    <section id="concept-5">
+        <div class="kanji-float">株</div>
+        <div class="kanji-float">金</div>
+        <div class="kanji-float">夢</div>
+        <div class="kanji-float">波</div>
+        <div class="kanji-float">光</div>
+
+        <div class="concept-header">
+            <p class="concept-number">CONCEPT 05</p>
+            <h2 class="concept-title" style="color: var(--vapor-pink);">Virtual Plaza</h2>
+            <p class="concept-subtitle">バーチャル・プラザ</p>
+        </div>
+
+        <p class="concept-description">
+            Welcome to the eternal shopping mall of vaporwave — the Virtual Plaza.
+            Japanese characters float like memories of consumption past. Marble
+            columns and palm trees line the infinite corridors. This theme channels
+            the eerily calm, consumerist utopia aesthetic of classic vaporwave albums.
+            Your stock data exists in a liminal space between commerce and art.
+        </p>
+
+        <div class="plaza-container">
+            <div class="plaza-header">
+                <p class="plaza-logo">株式分析プラザ</p>
+                <p class="plaza-english">Stock Analysis Plaza</p>
+            </div>
+
+            <div class="plaza-grid">
+                <div class="plaza-tile" data-kanji="株">
+                    <h3>Stock Chart</h3>
+                    <p class="subtitle">株式チャート</p>
+                    <p>Price movements visualized with ethereal gradients and soft neon accents</p>
+                </div>
+                <div class="plaza-tile" data-kanji="金">
+                    <h3>Key Metrics</h3>
+                    <p class="subtitle">主要指標</p>
+                    <p>Financial data presented with the reverence of a museum exhibit</p>
+                </div>
+                <div class="plaza-tile" data-kanji="報">
+                    <h3>News Feed</h3>
+                    <p class="subtitle">ニュースフィード</p>
+                    <p>Headlines drift past like elevator music in an abandoned mall</p>
+                </div>
+                <div class="plaza-tile" data-kanji="夢">
+                    <h3>Watchlist</h3>
+                    <p class="subtitle">ウォッチリスト</p>
+                    <p>Your curated collection of stocks, floating in digital amber</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- AUDIO VISUALIZER -->
+    <div id="audio-visualizer">
+        <div class="viz-bar"></div>
+        <div class="viz-bar"></div>
+        <div class="viz-bar"></div>
+        <div class="viz-bar"></div>
+        <div class="viz-bar"></div>
+        <div class="viz-bar"></div>
+        <div class="viz-bar"></div>
+        <div class="viz-bar"></div>
+        <div class="viz-bar"></div>
+        <div class="viz-bar"></div>
+        <div class="viz-bar"></div>
+        <div class="viz-bar"></div>
+        <div class="viz-bar"></div>
+        <div class="viz-bar"></div>
+        <div class="viz-bar"></div>
+    </div>
+
+    <footer>
+        <p class="jp">蒸気波 · ストック · アナライザー</p>
+        <p>VAPORWAVE STOCK ANALYZER // 2026</p>
+        <p style="font-size: 1rem; color: rgba(255,255,255,0.5);">
+            "It's all just numbers floating in the digital ether"
+        </p>
+    </footer>
+
+    <script>
+        /**
+         * VAPORWAVE AMBIENT AUDIO GENERATOR
+         *
+         * Generates dreamy, slowed-down ambient soundscapes using only Web Audio API.
+         * No external audio files — everything is synthesized in real-time.
+         *
+         * Features:
+         * - Detuned saw/sine pads with heavy reverb
+         * - Slow filter sweeps
+         * - Generative chord progressions (Dm7, Am7, Em7, Gmaj7)
+         * - Random arpeggios at low velocity
+         */
+
+        const VaporwaveAudio = (() => {
+            let audioCtx = null;
+            let masterGain = null;
+            let reverbNode = null;
+            let filterNode = null;
+            let isPlaying = false;
+            let oscillators = [];
+            let filterLFO = null;
+
+            // Vaporwave chord frequencies (slowed down by ~0.8x, giving that characteristic pitch)
+            const CHORDS = {
+                // Dm7 - dreamy, melancholic
+                Dm7: [146.83 * 0.8, 174.61 * 0.8, 220.00 * 0.8, 261.63 * 0.8],
+                // Am7 - spacious, nostalgic
+                Am7: [110.00 * 0.8, 130.81 * 0.8, 164.81 * 0.8, 196.00 * 0.8],
+                // Em7 - ethereal, floating
+                Em7: [82.41 * 0.8, 98.00 * 0.8, 123.47 * 0.8, 146.83 * 0.8],
+                // Gmaj7 - bright, uplifting
+                Gmaj7: [98.00 * 0.8, 123.47 * 0.8, 146.83 * 0.8, 185.00 * 0.8]
+            };
+
+            const CHORD_PROGRESSION = ['Dm7', 'Am7', 'Em7', 'Gmaj7'];
+            let currentChordIndex = 0;
+
+            // Create impulse response for reverb (convolution)
+            function createReverbImpulse(duration = 4, decay = 3) {
+                const sampleRate = audioCtx.sampleRate;
+                const length = sampleRate * duration;
+                const impulse = audioCtx.createBuffer(2, length, sampleRate);
+
+                for (let channel = 0; channel < 2; channel++) {
+                    const channelData = impulse.getChannelData(channel);
+                    for (let i = 0; i < length; i++) {
+                        // Exponential decay with random noise
+                        channelData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
+                    }
+                }
+                return impulse;
+            }
+
+            // Initialize audio context and effects chain
+            function init() {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+                // Master gain (overall volume)
+                masterGain = audioCtx.createGain();
+                masterGain.gain.value = 0.15; // Keep it ambient, not overwhelming
+                masterGain.connect(audioCtx.destination);
+
+                // Low-pass filter for that muffled vaporwave sound
+                filterNode = audioCtx.createBiquadFilter();
+                filterNode.type = 'lowpass';
+                filterNode.frequency.value = 800;
+                filterNode.Q.value = 1;
+                filterNode.connect(masterGain);
+
+                // Convolution reverb for spacious sound
+                reverbNode = audioCtx.createConvolver();
+                reverbNode.buffer = createReverbImpulse(5, 2.5);
+
+                // Wet/dry mix for reverb
+                const reverbGain = audioCtx.createGain();
+                reverbGain.gain.value = 0.7;
+                reverbNode.connect(reverbGain);
+                reverbGain.connect(filterNode);
+
+                // Dry signal
+                const dryGain = audioCtx.createGain();
+                dryGain.gain.value = 0.3;
+                dryGain.connect(filterNode);
+
+                return { reverbNode, dryGain };
+            }
+
+            // Create a detuned pad oscillator
+            function createPadVoice(frequency, { reverbNode, dryGain }) {
+                // Two oscillators slightly detuned for richness
+                const osc1 = audioCtx.createOscillator();
+                const osc2 = audioCtx.createOscillator();
+
+                osc1.type = 'sawtooth';
+                osc2.type = 'sine';
+
+                osc1.frequency.value = frequency;
+                osc2.frequency.value = frequency * 1.002; // Slight detune
+
+                // Individual voice gains
+                const gain1 = audioCtx.createGain();
+                const gain2 = audioCtx.createGain();
+                gain1.gain.value = 0.1;
+                gain2.gain.value = 0.15;
+
+                osc1.connect(gain1);
+                osc2.connect(gain2);
+
+                gain1.connect(reverbNode);
+                gain1.connect(dryGain);
+                gain2.connect(reverbNode);
+                gain2.connect(dryGain);
+
+                osc1.start();
+                osc2.start();
+
+                return { osc1, osc2, gain1, gain2 };
+            }
+
+            // Play a chord with smooth transitions
+            function playChord(chordName, nodes) {
+                const frequencies = CHORDS[chordName];
+                const now = audioCtx.currentTime;
+
+                // Fade out existing oscillators
+                oscillators.forEach(voice => {
+                    voice.gain1.gain.linearRampToValueAtTime(0, now + 2);
+                    voice.gain2.gain.linearRampToValueAtTime(0, now + 2);
+                    setTimeout(() => {
+                        voice.osc1.stop();
+                        voice.osc2.stop();
+                    }, 3000);
+                });
+
+                oscillators = [];
+
+                // Create new voices for each note in the chord
+                frequencies.forEach((freq, i) => {
+                    setTimeout(() => {
+                        if (isPlaying) {
+                            const voice = createPadVoice(freq, nodes);
+                            // Fade in
+                            voice.gain1.gain.setValueAtTime(0, audioCtx.currentTime);
+                            voice.gain2.gain.setValueAtTime(0, audioCtx.currentTime);
+                            voice.gain1.gain.linearRampToValueAtTime(0.08, audioCtx.currentTime + 1.5);
+                            voice.gain2.gain.linearRampToValueAtTime(0.12, audioCtx.currentTime + 1.5);
+                            oscillators.push(voice);
+                        }
+                    }, i * 200); // Stagger note entry for arpeggio effect
+                });
+            }
+
+            // Slow filter sweep LFO
+            function startFilterSweep() {
+                filterLFO = setInterval(() => {
+                    if (!isPlaying) return;
+                    const now = audioCtx.currentTime;
+                    const minFreq = 400;
+                    const maxFreq = 1200;
+                    // Random target within range
+                    const target = minFreq + Math.random() * (maxFreq - minFreq);
+                    filterNode.frequency.linearRampToValueAtTime(target, now + 8);
+                }, 8000);
+            }
+
+            // Chord progression loop
+            let chordInterval = null;
+            function startChordProgression(nodes) {
+                playChord(CHORD_PROGRESSION[currentChordIndex], nodes);
+
+                chordInterval = setInterval(() => {
+                    if (!isPlaying) return;
+                    currentChordIndex = (currentChordIndex + 1) % CHORD_PROGRESSION.length;
+                    playChord(CHORD_PROGRESSION[currentChordIndex], nodes);
+                }, 12000); // Change chord every 12 seconds
+            }
+
+            // Public API
+            return {
+                start() {
+                    if (isPlaying) return;
+
+                    const nodes = init();
+                    isPlaying = true;
+
+                    startChordProgression(nodes);
+                    startFilterSweep();
+
+                    console.log('🎵 Vaporwave ambient audio started');
+                },
+
+                stop() {
+                    if (!isPlaying) return;
+                    isPlaying = false;
+
+                    clearInterval(chordInterval);
+                    clearInterval(filterLFO);
+
+                    // Fade out all oscillators
+                    const now = audioCtx.currentTime;
+                    oscillators.forEach(voice => {
+                        voice.gain1.gain.linearRampToValueAtTime(0, now + 1);
+                        voice.gain2.gain.linearRampToValueAtTime(0, now + 1);
+                        setTimeout(() => {
+                            voice.osc1.stop();
+                            voice.osc2.stop();
+                        }, 1500);
+                    });
+                    oscillators = [];
+
+                    setTimeout(() => {
+                        if (audioCtx) {
+                            audioCtx.close();
+                            audioCtx = null;
+                        }
+                    }, 2000);
+
+                    console.log('🔇 Vaporwave ambient audio stopped');
+                },
+
+                isPlaying() {
+                    return isPlaying;
+                }
+            };
+        })();
+
+        // Audio toggle button
+        const audioToggle = document.getElementById('audio-toggle');
+        const visualizer = document.getElementById('audio-visualizer');
+
+        audioToggle.addEventListener('click', () => {
+            if (VaporwaveAudio.isPlaying()) {
+                VaporwaveAudio.stop();
+                audioToggle.textContent = '♪ AUDIO OFF';
+                audioToggle.classList.remove('active');
+                visualizer.classList.remove('active');
+            } else {
+                VaporwaveAudio.start();
+                audioToggle.textContent = '♫ AUDIO ON';
+                audioToggle.classList.add('active');
+                visualizer.classList.add('active');
+            }
+        });
+
+        // Smooth scroll for nav links
+        document.querySelectorAll('nav a').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const target = document.querySelector(link.getAttribute('href'));
+                target.scrollIntoView({ behavior: 'smooth' });
+            });
+        });
+
+        // Parallax effect on scroll
+        window.addEventListener('scroll', () => {
+            const scrolled = window.pageYOffset;
+            const sun = document.querySelector('.sunset-sun');
+            if (sun) {
+                sun.style.transform = `translateX(-50%) translateY(${scrolled * 0.3}px)`;
+            }
+        });
+    </script>
+</body>
+</html>

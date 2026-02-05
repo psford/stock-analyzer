@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grimdark Space Opera - Theme Prototype</title>
+    <style>
+        /*
+         * GRIMDARK SPACE OPERA
+         *
+         * Aesthetic Reference: Warhammer 40K, Dune (darker interpretations),
+         * Event Horizon, dead civilizations, cosmic horror
+         *
+         * Color Philosophy:
+         * - Void black backgrounds (the cold emptiness of space)
+         * - Blood red accents (war, sacrifice, the Imperium)
+         * - Bone/ivory text (skulls, ancient parchment, decay)
+         * - Oxidized gold highlights (tarnished glory, fallen empires)
+         * - Sickly greens for success (corruption, Nurgle-touched)
+         *
+         * Typography: Gothic, heavy, imposing
+         * Mood: Oppressive, ancient, war-torn, decaying grandeur
+         */
+
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap');
+
+        :root {
+            /* Void backgrounds - almost pure black with purple undertones */
+            --bg-primary: #05030a;
+            --bg-secondary: #0a0812;
+            --bg-tertiary: #12101a;
+            --bg-panel: #0d0a14;
+
+            /* Bone/ivory text - like ancient parchment and skulls */
+            --text-primary: #d4c4b0;
+            --text-secondary: #9a8a78;
+            --text-muted: #5a4a3a;
+
+            /* Blood red - war, sacrifice, the eternal crusade */
+            --accent: #8b0000;
+            --accent-hover: #a01515;
+            --accent-glow: rgba(139, 0, 0, 0.4);
+
+            /* Oxidized gold - tarnished imperial glory */
+            --gold: #b8860b;
+            --gold-dim: #8b6914;
+
+            /* Status colors */
+            --success: #1a4d1a;  /* Sickly, corrupted green */
+            --error: #8b0000;
+            --warning: #8b4513;  /* Rust/dried blood */
+
+            /* Borders - dark with subtle gold or red hints */
+            --border-primary: #2a1f1a;
+            --border-accent: #3d2020;
+
+            /* Typography */
+            --font-display: 'Cinzel', serif;
+            --font-body: 'Crimson Text', serif;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: var(--font-body);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            position: relative;
+        }
+
+        /* Vignette effect - oppressive darkness at edges */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.7) 100%);
+            z-index: 1000;
+        }
+
+        /* Subtle noise texture */
+        body::after {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            opacity: 0.03;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%' height='100%' filter='url(%23noise)'/%3E%3C/svg%3E");
+            z-index: 999;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Header - Imperial Gothic */
+        .header {
+            text-align: center;
+            margin-bottom: 60px;
+            padding: 40px;
+            background: linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+            border: 1px solid var(--border-accent);
+            position: relative;
+        }
+
+        .header::before {
+            content: '☠';
+            position: absolute;
+            top: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 40px;
+            color: var(--gold-dim);
+            text-shadow: 0 0 20px var(--accent-glow);
+        }
+
+        .header h1 {
+            font-family: var(--font-display);
+            font-size: 48px;
+            font-weight: 700;
+            color: var(--gold);
+            text-transform: uppercase;
+            letter-spacing: 8px;
+            margin-bottom: 10px;
+            text-shadow: 0 0 30px var(--accent-glow), 2px 2px 0 var(--bg-primary);
+        }
+
+        .header .subtitle {
+            font-family: var(--font-display);
+            font-size: 14px;
+            color: var(--text-secondary);
+            letter-spacing: 4px;
+            text-transform: uppercase;
+        }
+
+        /* Grid layout */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+            margin-bottom: 40px;
+        }
+
+        /* Panels - like ancient data-slates */
+        .panel {
+            background: var(--bg-panel);
+            border: 1px solid var(--border-primary);
+            padding: 24px;
+            position: relative;
+        }
+
+        .panel::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+        }
+
+        .panel-title {
+            font-family: var(--font-display);
+            font-size: 14px;
+            color: var(--gold);
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-accent);
+        }
+
+        /* Data displays */
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border-primary);
+        }
+
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
+
+        .stat-value {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .stat-value.positive {
+            color: var(--success);
+        }
+
+        .stat-value.negative {
+            color: var(--error);
+        }
+
+        /* Buttons */
+        .btn {
+            font-family: var(--font-display);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            padding: 12px 24px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: var(--text-primary);
+            box-shadow: 0 0 20px var(--accent-glow);
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-hover);
+            box-shadow: 0 0 30px var(--accent-glow);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--gold);
+            border: 1px solid var(--gold-dim);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(184, 134, 11, 0.1);
+            border-color: var(--gold);
+        }
+
+        /* Chart mockup */
+        .chart-container {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .chart-line {
+            height: 150px;
+            background: linear-gradient(180deg,
+                transparent 0%,
+                transparent 30%,
+                rgba(139, 0, 0, 0.1) 50%,
+                transparent 70%,
+                transparent 100%
+            );
+            position: relative;
+            border-bottom: 1px solid var(--border-primary);
+        }
+
+        .chart-line::before {
+            content: '';
+            position: absolute;
+            bottom: 20%;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg,
+                var(--accent) 0%,
+                var(--gold) 50%,
+                var(--accent) 100%
+            );
+            box-shadow: 0 0 10px var(--accent-glow);
+        }
+
+        /* Watchlist */
+        .watchlist-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background: var(--bg-secondary);
+            margin-bottom: 8px;
+            border-left: 3px solid var(--accent);
+        }
+
+        .ticker {
+            font-family: var(--font-display);
+            font-weight: 600;
+            color: var(--gold);
+        }
+
+        .company {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* Color palette display */
+        .palette {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+
+        .swatch {
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            font-family: monospace;
+            color: var(--text-muted);
+        }
+
+        .swatch.bg-primary { background: var(--bg-primary); }
+        .swatch.bg-secondary { background: var(--bg-secondary); }
+        .swatch.bg-tertiary { background: var(--bg-tertiary); }
+        .swatch.accent { background: var(--accent); color: var(--text-primary); }
+        .swatch.gold { background: var(--gold); color: var(--bg-primary); }
+        .swatch.text { background: var(--text-primary); color: var(--bg-primary); }
+        .swatch.success { background: var(--success); color: var(--text-primary); }
+        .swatch.error { background: var(--error); color: var(--text-primary); }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+            font-size: 12px;
+            border-top: 1px solid var(--border-primary);
+            margin-top: 40px;
+        }
+
+        .footer .imperial {
+            font-family: var(--font-display);
+            color: var(--gold-dim);
+            letter-spacing: 4px;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>Stock Analyzer</h1>
+            <div class="subtitle">In the grim darkness of the far future, there is only profit</div>
+        </header>
+
+        <div class="grid">
+            <div class="panel">
+                <div class="panel-title">Portfolio Overview</div>
+                <div class="stat-row">
+                    <span class="stat-label">Total Value</span>
+                    <span class="stat-value">$2,847,391.42</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Day Change</span>
+                    <span class="stat-value negative">-$12,847.23 (-0.45%)</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">YTD Return</span>
+                    <span class="stat-value positive">+18.7%</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Positions</span>
+                    <span class="stat-value">47</span>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-title">The Watchlist</div>
+                <div class="watchlist-item">
+                    <div>
+                        <div class="ticker">AAPL</div>
+                        <div class="company">Apple Inc.</div>
+                    </div>
+                    <span class="stat-value positive">+2.34%</span>
+                </div>
+                <div class="watchlist-item">
+                    <div>
+                        <div class="ticker">MSFT</div>
+                        <div class="company">Microsoft Corp.</div>
+                    </div>
+                    <span class="stat-value negative">-0.87%</span>
+                </div>
+                <div class="watchlist-item">
+                    <div>
+                        <div class="ticker">GOOGL</div>
+                        <div class="company">Alphabet Inc.</div>
+                    </div>
+                    <span class="stat-value positive">+1.56%</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-title">Price Cogitator</div>
+            <div class="chart-container">
+                <div class="chart-line"></div>
+            </div>
+            <div style="display: flex; gap: 12px; margin-top: 20px;">
+                <button class="btn btn-primary">Execute Trade</button>
+                <button class="btn btn-secondary">Analyze</button>
+            </div>
+        </div>
+
+        <div class="panel" style="margin-top: 24px;">
+            <div class="panel-title">Color Palette</div>
+            <div class="palette">
+                <div class="swatch bg-primary">#05030a</div>
+                <div class="swatch bg-secondary">#0a0812</div>
+                <div class="swatch bg-tertiary">#12101a</div>
+                <div class="swatch accent">#8b0000</div>
+                <div class="swatch gold">#b8860b</div>
+                <div class="swatch text">#d4c4b0</div>
+                <div class="swatch success">#1a4d1a</div>
+                <div class="swatch error">#8b0000</div>
+            </div>
+        </div>
+
+        <footer class="footer">
+            <div class="imperial">The Emperor Protects Your Portfolio</div>
+            <div>Grimdark Space Opera Theme Prototype v1.0</div>
+        </footer>
+    </div>
+</body>
+</html>

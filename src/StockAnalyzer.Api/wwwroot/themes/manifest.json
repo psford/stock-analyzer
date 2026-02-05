@@ -5,18 +5,32 @@
       "id": "light",
       "name": "Light",
       "file": "light.json",
+      "icon": "sun",
+      "iconColor": "#f59e0b",
       "builtin": true
     },
     {
       "id": "dark",
       "name": "Dark",
       "file": "dark.json",
+      "icon": "moon",
+      "iconColor": "#60a5fa",
       "builtin": true
     },
     {
       "id": "neon-noir",
       "name": "Neon Noir",
       "file": "neon-noir.json",
+      "icon": "bolt",
+      "iconColor": "#ff71ce",
+      "builtin": true
+    },
+    {
+      "id": "grimdark-space-opera",
+      "name": "Grimdark Space Opera",
+      "file": "grimdark-space-opera.json",
+      "icon": "moon",
+      "iconColor": "#8b0000",
       "builtin": true
     }
   ],

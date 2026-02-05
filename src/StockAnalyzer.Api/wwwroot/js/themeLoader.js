@@ -71,13 +71,21 @@ const ThemeLoader = (() => {
         currentTheme = theme;
         localStorage.setItem(STORAGE_KEY, themeId);
 
-        // Apply in order: variables -> effects -> fonts -> animations -> overrides
+        // Apply in order: background -> variables -> effects -> fonts -> animations -> overrides
+        applyBackground(theme.background);
         applyVariables(theme.variables);
         applyEffects(theme.effects);
         applyFonts(theme.fonts);
         applyAnimations(theme.animations);
         applyOverrideCSS(theme.overrideCSS);
         updateHtmlClass(theme);
+
+        // Trigger audio update if theme has audio params
+        if (theme.audio) {
+            window.dispatchEvent(new CustomEvent('themeaudiochange', {
+                detail: { audio: theme.audio, themeId: theme.id }
+            }));
+        }
 
         // Notify listeners
         dispatchThemeChangeEvent(theme);
@@ -196,13 +204,21 @@ const ThemeLoader = (() => {
 
         currentTheme = theme;
 
-        // Apply in order: variables -> effects -> fonts -> animations -> overrides
+        // Apply in order: background -> variables -> effects -> fonts -> animations -> overrides
+        applyBackground(theme.background);
         applyVariables(theme.variables);
         applyEffects(theme.effects);
         applyFonts(theme.fonts);
         applyAnimations(theme.animations);
         applyOverrideCSS(theme.overrideCSS);
         updateHtmlClass(theme);
+
+        // Trigger audio update if theme has audio params
+        if (theme.audio) {
+            window.dispatchEvent(new CustomEvent('themeaudiochange', {
+                detail: { audio: theme.audio, themeId: theme.id }
+            }));
+        }
 
         // Notify listeners
         dispatchThemeChangeEvent(theme);
@@ -214,8 +230,23 @@ const ThemeLoader = (() => {
 
     async function fetchManifest() {
         const cacheBuster = '?v=' + Date.now();
+        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
-        // Try Azure first
+        // On localhost, prefer local themes for development
+        if (isLocalhost) {
+            try {
+                const res = await fetch(LOCAL_THEMES_PATH + 'manifest.json' + cacheBuster);
+                if (res.ok) {
+                    themesPath = LOCAL_THEMES_PATH;
+                    console.log('ThemeLoader: Using local themes (localhost)');
+                    return res.json();
+                }
+            } catch (e) {
+                console.warn('ThemeLoader: Local fetch failed, trying Azure');
+            }
+        }
+
+        // Try Azure (production or localhost fallback)
         try {
             const res = await fetch(AZURE_THEMES_URL + 'manifest.json' + cacheBuster);
             if (res.ok) {
@@ -227,7 +258,7 @@ const ThemeLoader = (() => {
             console.warn('ThemeLoader: Azure unreachable, trying local');
         }
 
-        // Fallback to local
+        // Final fallback to local
         const res = await fetch(LOCAL_THEMES_PATH + 'manifest.json' + cacheBuster);
         if (!res.ok) throw new Error('Manifest fetch failed: ' + res.status);
         themesPath = LOCAL_THEMES_PATH;
@@ -328,6 +359,62 @@ const ThemeLoader = (() => {
         for (const [key, value] of Object.entries(variables)) {
             root.style.setProperty('--' + key, value);
         }
+    }
+
+    function applyBackground(background) {
+        // Clear existing background elements
+        const existingBg = document.getElementById('theme-background');
+        const existingOverlay = document.getElementById('theme-background-overlay');
+        if (existingBg) existingBg.remove();
+        if (existingOverlay) existingOverlay.remove();
+        clearDynamicCSS('background');
+
+        if (!background?.image) return;
+
+        // Create background container (behind everything)
+        const bgContainer = document.createElement('div');
+        bgContainer.id = 'theme-background';
+        bgContainer.style.cssText = `
+            position: fixed;
+            inset: 0;
+            z-index: -2;
+            background-image: url('${background.image}');
+            background-size: ${background.size || 'cover'};
+            background-position: ${background.position || 'center'};
+            background-attachment: ${background.attachment || 'fixed'};
+            background-repeat: no-repeat;
+        `;
+
+        // Apply blur if specified
+        if (background.blur && background.blur > 0) {
+            bgContainer.style.filter = `blur(${background.blur}px)`;
+            // Extend edges to hide blur artifacts
+            bgContainer.style.inset = `-${background.blur * 2}px`;
+        }
+
+        document.body.insertBefore(bgContainer, document.body.firstChild);
+
+        // Create overlay for readability
+        if (background.overlay) {
+            const overlay = document.createElement('div');
+            overlay.id = 'theme-background-overlay';
+            overlay.style.cssText = `
+                position: fixed;
+                inset: 0;
+                z-index: -1;
+                background: ${background.overlay};
+                pointer-events: none;
+            `;
+            document.body.insertBefore(overlay, bgContainer.nextSibling);
+        }
+
+        // Make body background transparent so image shows through
+        addDynamicCSS('background', `
+            body { background-color: transparent !important; }
+            #main-container, .main-content { background-color: transparent !important; }
+        `);
+
+        console.log('Background applied:', background.image);
     }
 
     function applyEffects(effects) {
@@ -478,7 +565,7 @@ const ThemeLoader = (() => {
         html.classList.remove('dark', 'neon-noir', 'light');
         delete html.dataset.theme;
 
-        // Add dark class for dark-based themes (for Tailwind dark: utilities)
+        // Add dark class for dark-based themes (for CSS theme selectors)
         const isDark = theme.meta?.category === 'dark' ||
                        theme.id === 'dark' ||
                        theme.id === 'neon-noir';

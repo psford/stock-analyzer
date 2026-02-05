@@ -306,8 +306,8 @@ const App = {
 
         if (editable) {
             input.removeAttribute('readonly');
-            input.classList.remove('bg-gray-50', 'cursor-default');
-            input.classList.add('bg-white', 'cursor-text');
+            input.classList.remove('readonly');
+            input.classList.add('editable');
 
             // Initialize flatpickr on desktop
             if (this.usesFlatpickr && !this.flatpickrInstances[key]) {
@@ -336,8 +336,8 @@ const App = {
                 input.type = 'date';
             }
             input.setAttribute('readonly', true);
-            input.classList.remove('bg-white', 'cursor-text');
-            input.classList.add('bg-gray-50', 'cursor-default');
+            input.classList.remove('editable');
+            input.classList.add('readonly');
         }
     },
 
@@ -399,7 +399,7 @@ const App = {
 
     /**
      * Initialize theme system using JSON-based ThemeLoader
-     * Supports: 'light', 'dark', 'neon-noir', and any JSON theme
+     * Dynamically populates dropdown from manifest
      */
     async initDarkMode() {
         const themeBtn = document.getElementById('theme-toggle-btn');
@@ -408,20 +408,45 @@ const App = {
         const iconDark = document.getElementById('theme-icon-dark');
         const iconNeon = document.getElementById('theme-icon-neon');
 
+        // SVG icons for different theme types
+        const iconSvgs = {
+            sun: `<svg class="icon-md" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"></path></svg>`,
+            moon: `<svg class="icon-md" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>`,
+            bolt: `<svg class="icon-md" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>`,
+            star: `<svg class="icon-md" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>`,
+            palette: `<svg class="icon-md" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 2a2 2 0 00-2 2v11a3 3 0 106 0V4a2 2 0 00-2-2H4zm1 14a1 1 0 100-2 1 1 0 000 2zm5-1.757l4.9-4.9a2 2 0 000-2.828L13.485 5.1a2 2 0 00-2.828 0L10 5.757v8.486zM16 18H9.071l6-6H16a2 2 0 012 2v2a2 2 0 01-2 2z" clip-rule="evenodd"></path></svg>`
+        };
+
         // Initialize ThemeLoader (loads manifest, applies saved theme)
         if (typeof ThemeLoader !== 'undefined') {
             await ThemeLoader.init();
         }
 
-        // Update icon based on current theme
+        // Populate dropdown from manifest
+        const themes = ThemeLoader?.getAvailableThemes() || [];
+        if (themeDropdown && themes.length > 0) {
+            themeDropdown.innerHTML = themes.map(theme => {
+                const iconSvg = iconSvgs[theme.icon] || iconSvgs.palette;
+                const iconColor = theme.iconColor || '#888888';
+                return `<button data-theme="${theme.id}" class="theme-option">
+                    <span style="color: ${iconColor}">${iconSvg}</span>
+                    ${theme.name}
+                </button>`;
+            }).join('');
+        }
+
+        // Update header icon based on current theme's category
         const updateIcon = (themeId) => {
             iconLight?.classList.add('hidden');
             iconDark?.classList.add('hidden');
             iconNeon?.classList.add('hidden');
 
-            if (themeId === 'dark') {
+            const theme = themes.find(t => t.id === themeId);
+            const icon = theme?.icon || 'sun';
+
+            if (icon === 'moon') {
                 iconDark?.classList.remove('hidden');
-            } else if (themeId === 'neon-noir') {
+            } else if (icon === 'bolt') {
                 iconNeon?.classList.remove('hidden');
             } else {
                 iconLight?.classList.remove('hidden');
@@ -448,16 +473,16 @@ const App = {
             themeDropdown?.classList.add('hidden');
         });
 
-        // Theme option click handlers
-        themeDropdown?.querySelectorAll('.theme-option').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                const theme = btn.dataset.theme;
-                if (typeof ThemeLoader !== 'undefined') {
-                    await ThemeLoader.applyTheme(theme);
-                }
-                themeDropdown?.classList.add('hidden');
-            });
+        // Theme option click handlers (using event delegation for dynamic content)
+        themeDropdown?.addEventListener('click', async (e) => {
+            const btn = e.target.closest('.theme-option');
+            if (!btn) return;
+            e.stopPropagation();
+            const theme = btn.dataset.theme;
+            if (typeof ThemeLoader !== 'undefined') {
+                await ThemeLoader.applyTheme(theme);
+            }
+            themeDropdown?.classList.add('hidden');
         });
     },
 
@@ -472,49 +497,83 @@ const App = {
     },
 
     /**
-     * Initialize the vaporwave ambient music toggle
+     * Initialize the theme-driven ambient music toggle
      */
     initMusicToggle() {
         const musicBtn = document.getElementById('music-toggle');
         const visualizer = musicBtn?.querySelector('.music-visualizer');
+        const volumeSlider = document.getElementById('music-volume');
 
-        if (!musicBtn || typeof VaporwaveAudio === 'undefined') {
-            console.debug('Music toggle not initialized (button or VaporwaveAudio not found)');
+        // Use ThemeAudio if available, fall back to VaporwaveAudio for compatibility
+        const AudioEngine = (typeof ThemeAudio !== 'undefined') ? ThemeAudio :
+                           (typeof VaporwaveAudio !== 'undefined') ? VaporwaveAudio : null;
+
+        if (!musicBtn || !AudioEngine) {
+            console.debug('Music toggle not initialized (button or audio engine not found)');
             return;
+        }
+
+        // Configure audio from current theme if ThemeAudio
+        if (AudioEngine.configure && typeof ThemeLoader !== 'undefined') {
+            const theme = ThemeLoader.getCurrentTheme();
+            if (theme?.audio) {
+                AudioEngine.configure(theme.audio);
+                console.log('Music configured from theme:', theme.id);
+            }
         }
 
         // Restore state from localStorage
         const savedState = localStorage.getItem('musicEnabled') === 'true';
+        const savedVolume = parseInt(localStorage.getItem('musicVolume') || '40', 10);
+
+        // Initialize volume slider with saved value
+        if (volumeSlider) {
+            volumeSlider.value = savedVolume;
+        }
 
         const updateUI = (playing) => {
             if (playing) {
                 musicBtn.classList.add('active');
                 musicBtn.title = 'Toggle ambient music (on)';
                 visualizer?.classList.remove('hidden');
+                volumeSlider?.classList.remove('hidden');
             } else {
                 musicBtn.classList.remove('active');
                 musicBtn.title = 'Toggle ambient music (off)';
                 visualizer?.classList.add('hidden');
+                volumeSlider?.classList.add('hidden');
             }
         };
 
         // Auto-start if previously enabled (requires user interaction first due to browser policy)
         if (savedState) {
-            // We can't auto-start audio, but we can show the button as "ready to resume"
             musicBtn.title = 'Click to resume ambient music';
         }
 
         musicBtn.addEventListener('click', () => {
-            if (VaporwaveAudio.isPlaying()) {
-                VaporwaveAudio.stop();
+            if (AudioEngine.isPlaying()) {
+                AudioEngine.stop();
                 updateUI(false);
                 localStorage.setItem('musicEnabled', 'false');
             } else {
-                VaporwaveAudio.start();
+                // Apply saved volume before starting
+                if (AudioEngine.setVolume) {
+                    AudioEngine.setVolume(savedVolume);
+                }
+                AudioEngine.start();
                 updateUI(true);
                 localStorage.setItem('musicEnabled', 'true');
             }
         });
+
+        // Volume slider control
+        if (volumeSlider && AudioEngine.setVolume) {
+            volumeSlider.addEventListener('input', (e) => {
+                const vol = parseInt(e.target.value, 10);
+                AudioEngine.setVolume(vol);
+                localStorage.setItem('musicVolume', vol.toString());
+            });
+        }
     },
 
     /**
@@ -998,17 +1057,16 @@ const App = {
             const message = hasPendingFallback
                 ? 'No local results. Checking server in a few seconds...'
                 : 'No results found';
-            container.innerHTML = `<div class="px-4 py-3 text-gray-500 dark:text-gray-400 text-sm">${message}</div>`;
+            container.innerHTML = `<div class="result-empty">${message}</div>`;
             container.classList.remove('hidden');
             return;
         }
 
         container.innerHTML = results.map(r => `
-            <div class="search-result px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer border-b border-gray-100 dark:border-gray-700 last:border-0"
-                 data-symbol="${r.symbol}">
-                <div class="font-medium text-gray-900 dark:text-white">${r.symbol}</div>
-                <div class="text-sm text-gray-600 dark:text-gray-300">${r.shortName || r.longName || ''}</div>
-                <div class="text-xs text-gray-400 dark:text-gray-500">${r.exchange || ''} ${r.type ? `• ${r.type}` : ''}</div>
+            <div class="search-result" data-symbol="${r.symbol}">
+                <div class="result-symbol">${r.symbol}</div>
+                <div class="result-name">${r.shortName || r.longName || ''}</div>
+                <div class="result-meta">${r.exchange || ''} ${r.type ? `• ${r.type}` : ''}</div>
             </div>
         `).join('');
 
@@ -1032,10 +1090,10 @@ const App = {
     highlightDropdownItem(items, index) {
         items.forEach((item, i) => {
             if (i === index) {
-                item.classList.add('bg-gray-100', 'dark:bg-gray-700');
+                item.classList.add('highlighted');
                 item.scrollIntoView({ block: 'nearest' });
             } else {
-                item.classList.remove('bg-gray-100', 'dark:bg-gray-700');
+                item.classList.remove('highlighted');
             }
         });
     },
@@ -1074,17 +1132,16 @@ const App = {
         this.compareSelectedIndex = -1;
 
         if (!results || results.length === 0) {
-            container.innerHTML = '<div class="px-4 py-3 text-gray-500 dark:text-gray-400 text-sm">No results found</div>';
+            container.innerHTML = '<div class="result-empty">No results found</div>';
             container.classList.remove('hidden');
             return;
         }
 
         container.innerHTML = results.map(r => `
-            <div class="compare-result px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer border-b border-gray-100 dark:border-gray-700 last:border-0"
-                 data-symbol="${r.symbol}">
-                <div class="font-medium text-gray-900 dark:text-white">${r.symbol}</div>
-                <div class="text-sm text-gray-600 dark:text-gray-300">${r.shortName || r.longName || ''}</div>
-                <div class="text-xs text-gray-400 dark:text-gray-500">${r.exchange || ''} ${r.type ? `• ${r.type}` : ''}</div>
+            <div class="compare-result" data-symbol="${r.symbol}">
+                <div class="result-symbol">${r.symbol}</div>
+                <div class="result-name">${r.shortName || r.longName || ''}</div>
+                <div class="result-meta">${r.exchange || ''} ${r.type ? `• ${r.type}` : ''}</div>
             </div>
         `).join('');
 
@@ -1393,10 +1450,10 @@ const App = {
         ].filter(id => id.value);
 
         const identifiersHtml = identifiers.length > 0
-            ? `<div class="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+            ? `<div class="stock-identifiers">
                 ${identifiers.map(id => `
-                    <span class="text-xs text-gray-500 dark:text-gray-400">
-                        <span class="font-medium">${id.label}:</span> ${id.value}
+                    <span class="stock-identifier">
+                        <span class="label">${id.label}:</span> ${id.value}
                     </span>
                 `).join('')}
                </div>`
@@ -1404,22 +1461,22 @@ const App = {
 
         // Smart truncation: only truncate long descriptions, and cut at sentence boundaries
         const descriptionHtml = info.description
-            ? `<p class="text-sm text-gray-600 dark:text-gray-300 mt-3">${this.truncateAtSentence(info.description, 500)}</p>`
+            ? `<p class="stock-description">${this.truncateAtSentence(info.description, 500)}</p>`
             : '';
 
         document.getElementById('stock-info').innerHTML = `
-            <div class="flex-1">
-                <div class="flex items-start justify-between">
+            <div class="stock-info-content">
+                <div class="stock-header">
                     <div>
-                        <h2 class="text-2xl font-bold text-gray-900 dark:text-white">${info.longName || info.shortName || info.symbol}</h2>
-                        <p class="text-sm text-gray-500 dark:text-gray-400">${info.exchange || ''} ${info.currency ? `• ${info.currency}` : ''}${info.sector ? ` • ${info.sector}` : ''}</p>
+                        <h2 class="stock-name">${info.longName || info.shortName || info.symbol}</h2>
+                        <p class="stock-meta">${info.exchange || ''} ${info.currency ? `• ${info.currency}` : ''}${info.sector ? ` • ${info.sector}` : ''}</p>
                         ${identifiersHtml}
                     </div>
-                    <div class="text-right ml-4">
-                        <div class="text-3xl font-bold text-gray-900 dark:text-white">
+                    <div class="stock-price">
+                        <div class="stock-price-value">
                             $${this.formatNumber(info.currentPrice)}
                         </div>
-                        <div class="text-lg ${isPositive ? 'text-success' : 'text-danger'}">
+                        <div class="stock-price-change ${isPositive ? 'text-success' : 'text-danger'}">
                             ${isPositive ? '+' : ''}${this.formatNumber(priceChange)} (${isPositive ? '+' : ''}${this.formatNumber(priceChangePercent)}%)
                         </div>
                     </div>
@@ -1443,9 +1500,9 @@ const App = {
         ];
 
         document.getElementById('key-metrics').innerHTML = metrics.map(m => `
-            <div class="flex justify-between">
-                <span class="text-gray-600 dark:text-gray-400">${m.label}</span>
-                <span class="font-medium text-gray-900 dark:text-white">${m.value || 'N/A'}</span>
+            <div class="metric-row">
+                <span class="metric-label">${m.label}</span>
+                <span class="metric-value">${m.value || 'N/A'}</span>
             </div>
         `).join('');
     },
@@ -1455,7 +1512,7 @@ const App = {
      */
     renderPerformance(performance) {
         if (!performance) {
-            document.getElementById('performance-metrics').innerHTML = '<p class="text-gray-500 dark:text-gray-400">No performance data available</p>';
+            document.getElementById('performance-metrics').innerHTML = '<p class="status-message">No performance data available</p>';
             return;
         }
 
@@ -1468,9 +1525,9 @@ const App = {
         ];
 
         document.getElementById('performance-metrics').innerHTML = metrics.map(m => `
-            <div class="flex justify-between">
-                <span class="text-gray-600 dark:text-gray-400">${m.label}</span>
-                <span class="font-medium ${m.color || 'text-gray-900 dark:text-white'}">${m.value || 'N/A'}</span>
+            <div class="metric-row">
+                <span class="metric-label">${m.label}</span>
+                <span class="metric-value ${m.color || ''}">${m.value || 'N/A'}</span>
             </div>
         `).join('');
     },
@@ -1480,7 +1537,7 @@ const App = {
      */
     renderSignificantMoves(data) {
         if (!data || !data.moves || data.moves.length === 0) {
-            document.getElementById('significant-moves').innerHTML = '<p class="text-gray-500 dark:text-gray-400">No significant moves found</p>';
+            document.getElementById('significant-moves').innerHTML = '<p class="status-message">No significant moves found</p>';
             return;
         }
 
@@ -1488,9 +1545,9 @@ const App = {
             const isPositive = move.percentChange >= 0;
             const date = new Date(move.date).toLocaleDateString();
             return `
-                <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
-                    <span class="text-gray-600 dark:text-gray-400">${date}</span>
-                    <span class="font-medium ${isPositive ? 'text-success' : 'text-danger'}">
+                <div class="move-row">
+                    <span class="move-date">${date}</span>
+                    <span class="move-value ${isPositive ? 'text-success' : 'text-danger'}">
                         ${isPositive ? '+' : ''}${this.formatNumber(move.percentChange)}%
                     </span>
                 </div>
@@ -1503,7 +1560,7 @@ const App = {
      */
     renderNews(data) {
         if (!data || !data.articles || data.articles.length === 0) {
-            document.getElementById('news-list').innerHTML = '<p class="text-gray-500 dark:text-gray-400">No recent news available</p>';
+            document.getElementById('news-list').innerHTML = '<p class="status-message">No recent news available</p>';
             return;
         }
 
@@ -1513,7 +1570,7 @@ const App = {
             const sources = Object.entries(data.sourceBreakdown)
                 .map(([source, count]) => `${source}: ${count}`)
                 .join(', ');
-            sourceHeader = `<p class="text-xs text-gray-400 dark:text-gray-500 mb-3">Sources: ${sources}</p>`;
+            sourceHeader = `<p class="news-sources-header">Sources: ${sources}</p>`;
         }
 
         const articlesHtml = data.articles.slice(0, 5).map(article => {
@@ -1521,16 +1578,15 @@ const App = {
             // Show the API source (Finnhub, Marketaux) alongside the publisher
             const apiSource = article.sourceApi ? `[${article.sourceApi}]` : '';
             return `
-                <div class="border-b border-gray-100 dark:border-gray-700 pb-4">
-                    <a href="${article.url}" target="_blank" rel="noopener noreferrer"
-                       class="text-primary hover:text-blue-700 dark:hover:text-blue-400 font-medium">
+                <div class="news-article">
+                    <a href="${article.url}" target="_blank" rel="noopener noreferrer" class="news-headline">
                         ${article.headline}
                     </a>
-                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    <p class="news-meta">
                         ${article.source} • ${date}
-                        <span class="text-xs text-gray-400 dark:text-gray-500 ml-1">${apiSource}</span>
+                        <span class="news-source-tag">${apiSource}</span>
                     </p>
-                    ${article.summary ? `<p class="text-gray-600 dark:text-gray-300 mt-2 text-sm">${article.summary.substring(0, 150)}...</p>` : ''}
+                    ${article.summary ? `<p class="news-summary">${article.summary.substring(0, 150)}...</p>` : ''}
                 </div>
             `;
         }).join('');
