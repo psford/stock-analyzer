@@ -1,8 +1,8 @@
 # Security Overview
 
 **Document Classification:** Internal
-**Last Updated:** 2026-01-25
-**Version:** 1.3
+**Last Updated:** 2026-02-05
+**Version:** 1.4
 
 This document provides an executive summary of security controls implemented in the Stock Analyzer application, intended for security leadership and compliance review.
 
@@ -220,6 +220,50 @@ External CDN scripts include integrity hashes to detect tampering:
         crossorigin="anonymous"></script>
 ```
 
+#### 3.6 AI Theme Generator Security
+
+The theme editor includes an AI-powered theme generator (`helpers/theme_generator.py`) with comprehensive security controls to prevent abuse.
+
+**Input Sanitization:**
+
+| Control | Implementation |
+|---------|----------------|
+| **Length limiting** | 2000 chars max for prompts, 100 chars max for theme names |
+| **Control character stripping** | Removes null bytes, control chars (CWE-117 prevention) |
+| **Encoding validation** | Strips invalid UTF-8 sequences |
+| **Frontend validation** | Character counters, `maxlength` attributes |
+
+**Scope Enforcement (Anti-Chatbot Abuse):**
+
+| Layer | Control | Action |
+|-------|---------|--------|
+| **Pre-flight** | `is_theme_related()` | Rejects prompts without theme keywords (colors, styles, aesthetics) |
+| **Pattern matching** | OFF_TOPIC_PATTERNS | Blocks greetings, homework requests, code generation, general questions |
+| **System prompt** | Hardened instructions | Claude instructed to ONLY output theme JSON, never conversation |
+| **Response validation** | `validate_theme_response()` | Verifies response contains valid CSS color variables |
+
+**Jailbreak Detection and Rate Limiting:**
+
+| Control | Threshold | Action |
+|---------|-----------|--------|
+| **Rate limiting** | 2 seconds between requests | HTTP 429 with retry message |
+| **Soft block** | 3 violations in 30 minutes | 5-minute cooldown |
+| **Hard block** | 5 violations in 30 minutes | 60-minute ban (escalates on repeat) |
+| **Pattern detection** | Encoding tricks, multi-language evasion, instruction overrides | Logged + counts toward violation threshold |
+
+**Jailbreak Patterns Detected:**
+- Base64/hex encoding attempts (`b64:`, `\x00`, `&#x`)
+- Multi-language evasion ("dime", "escribe", "raconte" = "tell me" in other languages)
+- Instruction override attempts ("but first", "before that", "however", "instead")
+- Role-play escapes ("pretend you're not a theme generator")
+- Theme word stuffing (many theme keywords followed by off-topic request)
+
+**Benefits:**
+- Prevents token burn from users attempting to use as general-purpose chatbot
+- Blocks persistent abuse with escalating timeouts
+- In-memory tracking resets on service restart (no PII stored)
+- HTTP 429 responses with clear user guidance
+
 ---
 
 ## Compliance Mapping
@@ -278,6 +322,7 @@ For security concerns, contact the repository owner through GitHub.
 - [x] Branch protection and PR reviews
 - [x] Azure Key Vault for secrets (SQL connection, Finnhub API key)
 - [x] App Service with HTTPS Only enforcement
+- [x] AI Theme Generator security (input sanitization, scope enforcement, jailbreak detection, rate limiting)
 
 ### Planned Enhancements
 
@@ -306,6 +351,7 @@ For security concerns, contact the repository owner through GitHub.
 
 | Date | Version | Change |
 |------|---------|--------|
+| 2026-02-05 | 1.4 | Added Section 3.6: AI Theme Generator Security — input sanitization, scope enforcement, jailbreak detection, rate limiting |
 | 2026-01-25 | 1.3 | Added local Jenkins CI gate with pre-push hook integration |
 | 2026-01-21 | 1.2 | Added custom domain configuration (psfordtest.com) with Azure managed SSL |
 | 2026-01-19 | 1.1 | Updated for App Service migration, Azure Key Vault implementation |
