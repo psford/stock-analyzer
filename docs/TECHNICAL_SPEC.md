@@ -1990,6 +1990,9 @@ Checkout → Restore → Build → Test (.NET) → Test (JavaScript) → Publish
 
 | Script | Purpose |
 |--------|---------|
+| `helpers/slack_bot.py` | Slack bot manager (start/stop/status/restart listener + acknowledger) |
+| `helpers/slack_listener.py` | Slack message listener with image attachment support (poll/socket modes, downloads images to `slack_attachments/`) |
+| `helpers/slack_acknowledger.py` | Watches for read messages and adds checkmark reaction |
 | `helpers/jenkins-local.ps1` | Main Jenkins management script |
 | `helpers/jenkins-console.ps1` | Fetch build console output |
 | `helpers/jenkins-reload.ps1` | Reload Jenkins configuration |
