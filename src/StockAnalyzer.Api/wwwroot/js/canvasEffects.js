@@ -145,6 +145,115 @@ const CanvasEffects = (function() {
     };
 
     /**
+     * Rain Effect
+     * Falling raindrops with streaks
+     */
+    const rain = {
+        create: function(container, options = {}) {
+            const config = {
+                color: options.color || 'rgba(174, 194, 224, 0.7)',
+                count: options.count || 200,
+                speed: options.speed || 1,
+                angle: options.angle || 15, // degrees from vertical
+                length: options.length || { min: 15, max: 30 },
+                width: options.width || 1.5
+            };
+
+            const canvas = document.createElement('canvas');
+            canvas.className = 'canvas-effect-rain';
+            canvas.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                z-index: 9995;
+                pointer-events: none;
+            `;
+            container.style.position = 'relative';
+            container.insertBefore(canvas, container.firstChild);
+
+            const ctx = canvas.getContext('2d');
+            let animationId = null;
+            let drops = [];
+
+            function resize() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                initDrops();
+            }
+
+            function initDrops() {
+                drops = [];
+                for (let i = 0; i < config.count; i++) {
+                    drops.push({
+                        x: Math.random() * canvas.width * 1.5, // Extra width for angle
+                        y: Math.random() * canvas.height,
+                        length: config.length.min + Math.random() * (config.length.max - config.length.min),
+                        speedY: (10 + Math.random() * 10) * config.speed,
+                        opacity: 0.4 + Math.random() * 0.5
+                    });
+                }
+            }
+
+            function draw() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                const angleRad = (config.angle * Math.PI) / 180;
+                const dx = Math.sin(angleRad);
+                const dy = Math.cos(angleRad);
+
+                ctx.strokeStyle = config.color;
+                ctx.lineWidth = config.width;
+                ctx.lineCap = 'round';
+
+                for (let drop of drops) {
+                    ctx.globalAlpha = drop.opacity;
+                    ctx.beginPath();
+                    ctx.moveTo(drop.x, drop.y);
+                    ctx.lineTo(
+                        drop.x - dx * drop.length,
+                        drop.y + dy * drop.length
+                    );
+                    ctx.stroke();
+
+                    // Move drop
+                    drop.y += drop.speedY;
+                    drop.x -= drop.speedY * dx * 0.3; // Slight horizontal drift
+
+                    // Reset if off screen
+                    if (drop.y > canvas.height + drop.length) {
+                        drop.y = -drop.length;
+                        drop.x = Math.random() * canvas.width * 1.5;
+                        drop.opacity = 0.4 + Math.random() * 0.5;
+                    }
+                }
+                ctx.globalAlpha = 1;
+
+                animationId = requestAnimationFrame(draw);
+            }
+
+            resize();
+            window.addEventListener('resize', resize);
+            animationId = requestAnimationFrame(draw);
+
+            return {
+                canvas: canvas,
+                stop: function() {
+                    if (animationId) {
+                        cancelAnimationFrame(animationId);
+                        animationId = null;
+                    }
+                    window.removeEventListener('resize', resize);
+                    if (canvas.parentNode) {
+                        canvas.parentNode.removeChild(canvas);
+                    }
+                }
+            };
+        }
+    };
+
+    /**
      * Snow Effect
      * Falling snowflakes
      */
@@ -362,6 +471,7 @@ const CanvasEffects = (function() {
 
     // Effect registry
     const effects = {
+        rain: rain,
         matrixRain: matrixRain,
         snow: snow,
         particles: particles

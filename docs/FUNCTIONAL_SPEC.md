@@ -318,8 +318,13 @@ Page Load                    User Types Query
 | FR-010.9 | The system must fall back to local themes if Azure is unavailable |
 | FR-010.10 | Themes must support inheritance via "extends" property |
 | FR-010.11 | The system must display theme icons in the selector dropdown |
+| FR-010.12 | The system must provide "Import Custom Theme" option in the theme dropdown |
+| FR-010.13 | The import modal must allow pasting theme JSON and applying it immediately |
+| FR-010.14 | The import modal must provide a Download button to save applied themes as JSON files |
 
 **User Story:** *As a user, I want to customize the app's appearance with different themes so I can personalize my experience.*
+
+**User Story:** *As a theme developer, I want to test custom themes with all effects (rain, scanlines, etc.) visible so I can iterate without deploying.*
 
 **Available Themes:**
 

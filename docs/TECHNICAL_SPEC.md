@@ -1310,11 +1310,21 @@ Themes can extend base themes via `"extends": "dark"`. ThemeLoader deep-merges c
 
 **Visual Effects (Canvas-based):**
 Canvas effects are managed by `canvasEffects.js` with proper lifecycle (start/stop/cleanup):
+- `rain`: Falling raindrops with angle and streak length (color, count, speed, angle, length, width)
 - `matrixRain`: Falling Matrix-style characters with glow (color, speed, density, fontSize, glowIntensity)
 - `snow`: Falling snowflakes (color, count, speed, wind)
 - `particles`: Floating particles with optional connection lines (color, count, speed, connections)
 
-Canvas effects render at z-index: 1 (above background, below content at z-index: 2). ThemeLoader and ThemePreview both integrate with CanvasEffects for production and editor preview.
+Canvas effects render at z-index: 9995 (fixed position, above content, below CSS overlay effects at 9997-9999). ThemeLoader delegates canvas effects to CanvasEffects when `effects.<name>.enabled` is true.
+
+**Theme Import Modal:**
+Users can test custom themes without deploying via the import modal (`#theme-import-modal`):
+- Access: Theme dropdown → "Import Custom Theme..."
+- Paste JSON with id, variables, effects
+- Apply immediately to see all effects (including canvas-based rain, snow, etc.)
+- Download applied theme as JSON file
+- Keyboard: Ctrl+Enter to apply, Escape to close
+- Modal stays open after apply so Download button is accessible
 
 **Theme Audio Parameters:**
 Music-theory driven procedural audio synthesis:
