@@ -1257,6 +1257,7 @@ The application uses a JSON-based theme system with 94+ CSS custom properties, v
 | ThemePreview | `wwwroot/js/themePreview.js` | Mini-app preview for theme editor |
 | ThemeEditor | `wwwroot/js/themeEditor.js` | AI-powered theme generation UI |
 | ThemeAudio | `wwwroot/js/themeAudio.js` | Procedural audio from theme params |
+| CanvasEffects | `wwwroot/js/canvasEffects.js` | Canvas-based visual effects (Matrix rain, snow, particles) |
 | Theme Generator | `helpers/theme_generator.py` | FastAPI service for AI theme generation |
 
 **Theme JSON Structure:**
@@ -1300,12 +1301,20 @@ Themes can extend base themes via `"extends": "dark"`. ThemeLoader deep-merges c
 1. Localhost: Local themes first (`/themes/`) for dev workflow
 2. Production: Azure Blob Storage first, local fallback
 
-**Visual Effects:**
+**Visual Effects (CSS-based):**
 - `scanlines`: CRT horizontal line overlay
 - `vignette`: Darkened edges (radial gradient)
 - `bloom`: Contrast/brightness boost for glow effect
 - `rain`: Animated rain drops (CSS animation)
 - `crtFlicker`: Subtle screen flicker animation
+
+**Visual Effects (Canvas-based):**
+Canvas effects are managed by `canvasEffects.js` with proper lifecycle (start/stop/cleanup):
+- `matrixRain`: Falling Matrix-style characters with glow (color, speed, density, fontSize, glowIntensity)
+- `snow`: Falling snowflakes (color, count, speed, wind)
+- `particles`: Floating particles with optional connection lines (color, count, speed, connections)
+
+Canvas effects render at z-index: 1 (above background, below content at z-index: 2). ThemeLoader and ThemePreview both integrate with CanvasEffects for production and editor preview.
 
 **Theme Audio Parameters:**
 Music-theory driven procedural audio synthesis:

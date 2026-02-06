@@ -425,6 +425,11 @@ const ThemeLoader = (() => {
         document.body.style.filter = '';
         clearDynamicCSS('effects');
 
+        // Stop all canvas effects
+        if (typeof CanvasEffects !== 'undefined') {
+            CanvasEffects.stopAll();
+        }
+
         if (!effects) return;
 
         // Scanlines overlay
@@ -521,6 +526,43 @@ const ThemeLoader = (() => {
             const contrast = effects.bloom.contrast ?? 1.1;
             const brightness = effects.bloom.brightness ?? 1.05;
             document.body.style.filter = 'contrast(' + contrast + ') brightness(' + brightness + ')';
+        }
+
+        // Canvas-based effects (requires canvasEffects.js)
+        if (typeof CanvasEffects !== 'undefined') {
+            // Matrix Rain - authentic falling characters
+            if (effects.matrixRain?.enabled) {
+                CanvasEffects.start('matrixRain', document.body, {
+                    color: effects.matrixRain.color || '#00ff41',
+                    backgroundColor: effects.matrixRain.backgroundColor || 'rgba(0, 0, 0, 0.05)',
+                    fontSize: effects.matrixRain.fontSize || 14,
+                    speed: effects.matrixRain.speed || 1,
+                    density: effects.matrixRain.density || 0.98,
+                    characters: effects.matrixRain.characters,
+                    glowIntensity: effects.matrixRain.glowIntensity || 0.8
+                });
+            }
+
+            // Snow effect
+            if (effects.snow?.enabled) {
+                CanvasEffects.start('snow', document.body, {
+                    color: effects.snow.color || '#ffffff',
+                    count: effects.snow.count || 100,
+                    speed: effects.snow.speed || 1,
+                    wind: effects.snow.wind || 0.5
+                });
+            }
+
+            // Particles effect
+            if (effects.particles?.enabled) {
+                CanvasEffects.start('particles', document.body, {
+                    color: effects.particles.color || '#ffffff',
+                    count: effects.particles.count || 50,
+                    speed: effects.particles.speed || 0.5,
+                    connections: effects.particles.connections !== false,
+                    connectionDistance: effects.particles.connectionDistance || 100
+                });
+            }
         }
     }
 

@@ -455,7 +455,7 @@
 
                 <div class="input-group">
                     <label for="refine-feedback">What would you like to change?</label>
-                    <textarea id="refine-feedback" placeholder="make the accent color more vibrant pink, add subtle scanlines effect..."></textarea>
+                    <textarea id="refine-feedback" placeholder="make the rain purple, add scanlines, make it darker..."></textarea>
                 </div>
 
                 <button class="btn btn-secondary" id="refine-btn">
@@ -463,6 +463,21 @@
                 </button>
 
                 <div id="refine-status" class="status-message"></div>
+            </section>
+
+            <div class="divider"></div>
+
+            <!-- Import JSON Section -->
+            <section class="control-section">
+                <h3>Import JSON</h3>
+                <div class="input-group">
+                    <label for="import-json">Paste theme JSON</label>
+                    <textarea id="import-json" placeholder='{"id": "my-theme", "name": "My Theme", ...}' rows="4"></textarea>
+                </div>
+                <button class="btn btn-outline" id="import-btn" style="width: 100%;">
+                    Import &amp; Preview
+                </button>
+                <div id="import-status" class="status-message" style="margin-top: 8px;"></div>
             </section>
 
             <div class="divider"></div>
@@ -526,6 +541,8 @@
     </div>
 
     <!-- Scripts -->
+    <script src="/js/cssSanitizer.js"></script>
+    <script src="/js/canvasEffects.js"></script>
     <script src="/js/themePreview.js"></script>
     <script src="/js/themeLoader.js"></script>
     <script src="/js/themeEditor.js"></script>

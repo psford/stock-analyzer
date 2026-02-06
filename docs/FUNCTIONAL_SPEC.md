@@ -357,6 +357,8 @@ The theme editor (`/theme-editor.html`) provides an AI-powered tool for creating
 | FR-010.20 | The theme editor must display clear error messages when requests are blocked |
 | FR-010.21 | The theme editor must show a rate limit message if requests are too frequent |
 | FR-010.22 | The theme editor must reject prompts unrelated to theme generation |
+| FR-010.23 | The theme editor must support canvas-based visual effects (Matrix rain, snow, particles) in preview |
+| FR-010.24 | The theme editor must allow refinement of canvas effect properties (color, speed, density) |
 
 **User Story:** *As a user, I want to create custom themes by describing what I want so I can have a unique look.*
 
@@ -1075,6 +1077,7 @@ The dashboard is fully responsive and adapts to mobile devices.
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
+| 3.4 | 2026-02-05 | **Canvas Effects (FR-010.23-24):** Added canvas-based visual effects to theme system. Matrix rain (falling characters), snow, and particles effects with full lifecycle management. Live preview in theme editor. Refinement support for effect properties (color, speed, density). | Claude |
 | 3.3 | 2026-02-05 | **AI Theme Editor (FR-010.12-22):** New theme editor tool at /theme-editor.html. AI-powered theme generation from text prompts. Live preview. Refine workflow. Character count indicators. Rate limiting and abuse prevention with user-friendly error messages. localStorage persistence for saved themes. | Claude |
 | 3.2 | 2026-02-05 | **JSON Theme System (FR-010):** Rewrote section 3.10 from "Dark Mode" to "Theme System". Added 4 themes (Light, Dark, Neon Noir, Grimdark Space Opera). Visual effects (scanlines, vignette, bloom, rain, CRT flicker). Background image support with overlay/blur. Theme inheritance via "extends" property. Theme icons in selector dropdown. Azure Blob Storage hosting with local fallback. | Claude |
 | 3.1 | 2026-02-03 | **Watchlist Tile + Horizontal Expansion (FR-014, FR-017):** Watchlist converted from fixed sidebar to 7th GridStack tile (4w×5h). Chart narrowed from 12w to 8w. FR-014.6 updated (sidebar → tile). FR-017.1 updated (6 tiles → 7). Added FR-017.19-22: star toggle in header, yellow active state, horizontal neighbor expansion on tile close, and reverse on reopen. Mobile sidebar code removed (no functional regression — tile stacks in single-column on mobile). | Claude |

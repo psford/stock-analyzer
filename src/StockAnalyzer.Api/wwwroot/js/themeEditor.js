@@ -68,7 +68,12 @@ const ThemeEditor = (function() {
             loadingText: document.getElementById('loading-text'),
 
             // Saved themes
-            savedThemesList: document.getElementById('saved-themes-list')
+            savedThemesList: document.getElementById('saved-themes-list'),
+
+            // Import JSON
+            importJson: document.getElementById('import-json'),
+            importBtn: document.getElementById('import-btn'),
+            importStatus: document.getElementById('import-status')
         };
     }
 
@@ -87,6 +92,11 @@ const ThemeEditor = (function() {
 
         // Save button
         elements.saveBtn.addEventListener('click', handleSave);
+
+        // Import button
+        if (elements.importBtn) {
+            elements.importBtn.addEventListener('click', handleImport);
+        }
 
         // Apply button
         elements.applyBtn.addEventListener('click', handleApply);
@@ -289,6 +299,53 @@ const ThemeEditor = (function() {
         loadSavedThemes();
         showStatus(elements.generateStatus, 'success', 'Theme saved!');
         setTimeout(() => clearStatus(elements.generateStatus), 2000);
+    }
+
+    /**
+     * Handle import JSON button click
+     */
+    function handleImport() {
+        const jsonText = elements.importJson?.value?.trim();
+
+        if (!jsonText) {
+            showStatus(elements.importStatus, 'error', 'Please paste theme JSON');
+            return;
+        }
+
+        try {
+            const theme = JSON.parse(jsonText);
+
+            // Basic validation
+            if (!theme.variables) {
+                showStatus(elements.importStatus, 'error', 'Invalid theme: missing "variables" section');
+                return;
+            }
+
+            if (!theme.id) theme.id = 'imported-theme';
+            if (!theme.name) theme.name = 'Imported Theme';
+            if (!theme.meta) theme.meta = { category: 'dark', icon: 'moon', iconColor: '#888' };
+            if (!theme.effects) theme.effects = {};
+            if (!theme.fonts) theme.fonts = {};
+
+            // Apply to preview and set as current
+            currentTheme = theme;
+            preview.applyTheme(theme);
+            updateJsonDisplay(theme);
+            showSections();
+
+            // Update the name input to match imported theme
+            if (elements.themeName) {
+                elements.themeName.value = theme.name;
+            }
+
+            showStatus(elements.importStatus, 'success', `Imported: ${theme.name}`);
+
+            // Clear the import textarea
+            elements.importJson.value = '';
+
+        } catch (e) {
+            showStatus(elements.importStatus, 'error', `JSON parse error: ${e.message}`);
+        }
     }
 
     /**
