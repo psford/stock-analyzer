@@ -3107,33 +3107,11 @@ const newsPromise = API.getAggregatedNews(ticker, 30, 10);
 
 ---
 
-## 14.1 Bluesky Feed Filter (`projects/bsky-feed-filter/`)
+## 14.1 Bluesky Feed Filter (separate repo)
 
-Standalone Python service — custom Bluesky feed generator that filters out self-reposts of recent posts (< 24h old).
+Moved to its own repository: [psford/bsky-feed-filter](https://github.com/psford/bsky-feed-filter)
 
-| Component | Technology | Purpose |
-|-----------|-----------|---------|
-| Web server | aiohttp (port 3000) | Serves 3 AT Protocol feed endpoints |
-| Firehose consumer | websockets → Jetstream | Indexes posts/reposts from followed accounts |
-| Database | SQLite (WAL mode) | Posts, feed items, follows, service state |
-| Deployment | Docker + Cloudflare Tunnel | Synology NAS, outbound-only HTTPS |
-
-**Filter logic:** When a repost arrives, compare reposter DID to original post author DID (extracted from AT URI). If same person and post < 24h old → filtered. Older self-reposts pass through.
-
-**Endpoints:**
-- `GET /.well-known/did.json` — DID document (`did:web:bsky-feed.psford.com`)
-- `GET /xrpc/app.bsky.feed.describeFeedGenerator` — Feed metadata
-- `GET /xrpc/app.bsky.feed.getFeedSkeleton` — Paginated feed skeleton
-
-**Security:** Read-only container, non-root, all capabilities dropped, named Docker volume (no NAS bind mounts), isolated bridge network, Cloudflare Tunnel (no inbound ports).
-
-**Deployment notes (Synology NAS):**
-- Uses `docker-compose` (hyphenated — older Docker version on Synology DSM)
-- `COPY *.py ./` requires trailing slash for older Docker build engine
-- NanoCPUs (cpus limit) not supported by Synology kernel — only mem_limit used
-- User set via `USER feedgen` in Dockerfile, not docker-compose `user:` directive
-- Cloudflare Tunnel routing via local config file (`cloudflared-config.yml`), not dashboard
-- `config.py` uses `load_dotenv(override=True)` to prevent system HOSTNAME from overriding .env
+Custom Bluesky feed generator that filters out self-reposts of recent posts. Deployed on Synology NAS via Docker + Cloudflare Tunnel.
 
 ---
 
