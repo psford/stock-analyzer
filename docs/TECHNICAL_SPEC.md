@@ -1,7 +1,7 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.47
-**Last Updated:** 2026-02-05
+**Version:** 2.48
+**Last Updated:** 2026-02-06
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
 
@@ -3104,6 +3104,28 @@ const newsPromise = API.getAggregatedNews(ticker, 30, 10);
 | 1.2 | 2026-01-16 | Added unit test documentation (Section 8), SRI for Plotly.js (Section 12.5) |
 | 1.1 | 2026-01-16 | Added image caching system, Dog CEO API, CSP configuration |
 | 1.0 | 2026-01-16 | Initial .NET technical specification |
+
+---
+
+## 14.1 Bluesky Feed Filter (`projects/bsky-feed-filter/`)
+
+Standalone Python service — custom Bluesky feed generator that filters out self-reposts of recent posts (< 24h old).
+
+| Component | Technology | Purpose |
+|-----------|-----------|---------|
+| Web server | aiohttp (port 3000) | Serves 3 AT Protocol feed endpoints |
+| Firehose consumer | websockets → Jetstream | Indexes posts/reposts from followed accounts |
+| Database | SQLite (WAL mode) | Posts, feed items, follows, service state |
+| Deployment | Docker + Cloudflare Tunnel | Synology NAS, outbound-only HTTPS |
+
+**Filter logic:** When a repost arrives, compare reposter DID to original post author DID (extracted from AT URI). If same person and post < 24h old → filtered. Older self-reposts pass through.
+
+**Endpoints:**
+- `GET /.well-known/did.json` — DID document (`did:web:bsky-feed.psford.com`)
+- `GET /xrpc/app.bsky.feed.describeFeedGenerator` — Feed metadata
+- `GET /xrpc/app.bsky.feed.getFeedSkeleton` — Paginated feed skeleton
+
+**Security:** Read-only container, non-root, all capabilities dropped, named Docker volume (no NAS bind mounts), isolated bridge network, Cloudflare Tunnel (no inbound ports).
 
 ---
 
