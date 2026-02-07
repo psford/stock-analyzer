@@ -71,12 +71,13 @@ const ThemeLoader = (() => {
         currentTheme = theme;
         localStorage.setItem(STORAGE_KEY, themeId);
 
-        // Apply in order: background -> variables -> effects -> fonts -> animations -> overrides
+        // Apply in order: background -> variables -> effects -> fonts -> animations -> customCSS -> overrides
         applyBackground(theme.background);
         applyVariables(theme.variables);
         applyEffects(theme.effects);
         applyFonts(theme.fonts);
         applyAnimations(theme.animations);
+        applyCustomCSS(theme.customCSS);
         applyOverrideCSS(theme.overrideCSS);
         updateHtmlClass(theme);
 
@@ -204,12 +205,13 @@ const ThemeLoader = (() => {
 
         currentTheme = theme;
 
-        // Apply in order: background -> variables -> effects -> fonts -> animations -> overrides
+        // Apply in order: background -> variables -> effects -> fonts -> animations -> customCSS -> overrides
         applyBackground(theme.background);
         applyVariables(theme.variables);
         applyEffects(theme.effects);
         applyFonts(theme.fonts);
         applyAnimations(theme.animations);
+        applyCustomCSS(theme.customCSS);
         applyOverrideCSS(theme.overrideCSS);
         updateHtmlClass(theme);
 
@@ -369,21 +371,41 @@ const ThemeLoader = (() => {
         if (existingOverlay) existingOverlay.remove();
         clearDynamicCSS('background');
 
-        if (!background?.image) return;
+        if (!background) return;
+
+        // Determine background type: image, gradient, or value (legacy)
+        const hasImage = background.image;
+        const hasGradient = background.type === 'gradient' || background.value?.includes('gradient');
+
+        if (!hasImage && !hasGradient) return;
 
         // Create background container (behind everything)
         const bgContainer = document.createElement('div');
         bgContainer.id = 'theme-background';
-        bgContainer.style.cssText = `
+
+        let bgStyle = `
             position: fixed;
             inset: 0;
             z-index: -2;
-            background-image: url('${background.image}');
-            background-size: ${background.size || 'cover'};
-            background-position: ${background.position || 'center'};
-            background-attachment: ${background.attachment || 'fixed'};
-            background-repeat: no-repeat;
         `;
+
+        if (hasImage) {
+            // Image background
+            bgStyle += `
+                background-image: url('${background.image}');
+                background-size: ${background.size || 'cover'};
+                background-position: ${background.position || 'center'};
+                background-attachment: ${background.attachment || 'fixed'};
+                background-repeat: no-repeat;
+            `;
+        } else if (hasGradient) {
+            // Gradient background
+            bgStyle += `
+                background: ${background.value};
+            `;
+        }
+
+        bgContainer.style.cssText = bgStyle;
 
         // Apply blur if specified
         if (background.blur && background.blur > 0) {
@@ -394,7 +416,7 @@ const ThemeLoader = (() => {
 
         document.body.insertBefore(bgContainer, document.body.firstChild);
 
-        // Create overlay for readability
+        // Create overlay for readability (supports both string and gradient overlays)
         if (background.overlay) {
             const overlay = document.createElement('div');
             overlay.id = 'theme-background-overlay';
@@ -408,13 +430,13 @@ const ThemeLoader = (() => {
             document.body.insertBefore(overlay, bgContainer.nextSibling);
         }
 
-        // Make body background transparent so image shows through
+        // Make body background transparent so background shows through
         addDynamicCSS('background', `
             body { background-color: transparent !important; }
             #main-container, .main-content { background-color: transparent !important; }
         `);
 
-        console.log('Background applied:', background.image);
+        console.log('Background applied:', hasImage ? background.image : 'gradient');
     }
 
     function applyEffects(effects) {
@@ -424,6 +446,11 @@ const ThemeLoader = (() => {
         }
         document.body.style.filter = '';
         clearDynamicCSS('effects');
+
+        // Stop all canvas effects
+        if (typeof CanvasEffects !== 'undefined') {
+            CanvasEffects.stopAll();
+        }
 
         if (!effects) return;
 
@@ -484,43 +511,61 @@ const ThemeLoader = (() => {
             );
         }
 
-        // Rain effect
-        if (effects.rain?.enabled) {
-            const color = effects.rain.color ?? 'rgba(1, 205, 254, 0.03)';
-            const speed = effects.rain.speed ?? 0.5;
-
-            const rain = document.createElement('div');
-            rain.className = 'theme-effect-rain';
-            rain.style.cssText =
-                'position: fixed;' +
-                'inset: 0;' +
-                'z-index: 9997;' +
-                'pointer-events: none;' +
-                'background: repeating-linear-gradient(' +
-                    '180deg,' +
-                    'transparent,' +
-                    'transparent 2px,' +
-                    color + ' 2px,' +
-                    color + ' 4px' +
-                ');';
-            effectsContainer.appendChild(rain);
-
-            addDynamicCSS('effects-rain',
-                '@keyframes theme-rain-fall {' +
-                    '0% { transform: translateY(-4px); }' +
-                    '100% { transform: translateY(0); }' +
-                '}' +
-                '.theme-effect-rain {' +
-                    'animation: theme-rain-fall ' + speed + 's linear infinite;' +
-                '}'
-            );
-        }
+        // Rain effect - now uses canvas for actual visible rain
+        // (CSS rain was just subtle horizontal lines - useless)
 
         // Bloom filter
         if (effects.bloom?.enabled) {
             const contrast = effects.bloom.contrast ?? 1.1;
             const brightness = effects.bloom.brightness ?? 1.05;
             document.body.style.filter = 'contrast(' + contrast + ') brightness(' + brightness + ')';
+        }
+
+        // Canvas-based effects (requires canvasEffects.js)
+        if (typeof CanvasEffects !== 'undefined') {
+            // Rain - actual falling raindrops
+            if (effects.rain?.enabled) {
+                CanvasEffects.start('rain', document.body, {
+                    color: effects.rain.color || 'rgba(174, 194, 224, 0.5)',
+                    count: effects.rain.count || 150,
+                    speed: effects.rain.speed || 1,
+                    angle: effects.rain.angle || 15
+                });
+            }
+
+            // Matrix Rain - authentic falling characters
+            if (effects.matrixRain?.enabled) {
+                CanvasEffects.start('matrixRain', document.body, {
+                    color: effects.matrixRain.color || '#00ff41',
+                    backgroundColor: effects.matrixRain.backgroundColor || 'rgba(0, 0, 0, 0.05)',
+                    fontSize: effects.matrixRain.fontSize || 14,
+                    speed: effects.matrixRain.speed || 1,
+                    density: effects.matrixRain.density || 0.98,
+                    characters: effects.matrixRain.characters,
+                    glowIntensity: effects.matrixRain.glowIntensity || 0.8
+                });
+            }
+
+            // Snow effect
+            if (effects.snow?.enabled) {
+                CanvasEffects.start('snow', document.body, {
+                    color: effects.snow.color || '#ffffff',
+                    count: effects.snow.count || 100,
+                    speed: effects.snow.speed || 1,
+                    wind: effects.snow.wind || 0.5
+                });
+            }
+
+            // Particles effect
+            if (effects.particles?.enabled) {
+                CanvasEffects.start('particles', document.body, {
+                    color: effects.particles.color || '#ffffff',
+                    count: effects.particles.count || 50,
+                    speed: effects.particles.speed || 0.5,
+                    connections: effects.particles.connections !== false,
+                    connectionDistance: effects.particles.connectionDistance || 100
+                });
+            }
         }
     }
 
@@ -555,6 +600,72 @@ const ThemeLoader = (() => {
         clearDynamicCSS('overrides');
         if (cssText) {
             addDynamicCSS('overrides', cssText);
+        }
+    }
+
+    /**
+     * Apply customCSS object - maps element names to inline styles.
+     * This allows themes to define per-element styling without writing raw CSS.
+     *
+     * Supported elements and their selectors:
+     *   container      -> .main-content, #main-container
+     *   header         -> header, .app-header
+     *   logoText       -> .logo-text, header h1
+     *   tiles          -> .tile-card, .panel
+     *   tileHeaders    -> .tile-header
+     *   tileTitles     -> .tile-header span, .tile-title
+     *   tileBodies     -> .tile-body
+     *   buttonsPrimary -> .btn-primary, button[type="submit"]
+     *   inputs         -> input, select, textarea
+     *   searchSection  -> .search-section, .controls-panel
+     *   watchlist      -> .watchlist, .watchlist-container
+     *   watchlistTicker-> .watchlist-ticker, .ticker-symbol
+     *   watchlistChange-> .watchlist-change, .price-change
+     *   metrics        -> .metrics, .stats-container
+     *   metricValues   -> .metric-value, .stat-value
+     *   footer         -> footer, .app-footer
+     */
+    function applyCustomCSS(customCSS) {
+        clearDynamicCSS('customCSS');
+        if (!customCSS || typeof customCSS !== 'object') return;
+
+        // Map of element names to CSS selectors
+        const selectorMap = {
+            container: '.main-content, #main-container, .container',
+            header: 'header, .app-header, .header',
+            logoText: '.logo-text, header h1, .app-title',
+            tiles: '.tile-card, .panel, .card',
+            tileHeaders: '.tile-header, .panel-header, .card-header',
+            tileTitles: '.tile-header span, .tile-title, .panel-title',
+            tileBodies: '.tile-body, .panel-body, .card-body',
+            buttonsPrimary: '.btn-primary, button.primary, [type="submit"]',
+            buttonsSecondary: '.btn-secondary, button.secondary',
+            inputs: 'input:not([type="checkbox"]):not([type="radio"]), select, textarea',
+            searchSection: '.search-section, .controls-panel, .search-controls',
+            watchlist: '.watchlist, .watchlist-container, .sidebar-watchlist',
+            watchlistTicker: '.watchlist-ticker, .ticker-symbol, .stock-symbol',
+            watchlistChange: '.watchlist-change, .price-change, .change-percent',
+            metrics: '.metrics, .stats-container, .metrics-grid',
+            metricValues: '.metric-value, .stat-value, .metric-number',
+            footer: 'footer, .app-footer, .footer',
+            charts: '.chart-container, .plotly-chart, [id$="-chart"]',
+            modals: '.modal, .dialog, .popup',
+            tooltips: '.tooltip, .hover-card, .popover'
+        };
+
+        let css = '';
+        for (const [element, styles] of Object.entries(customCSS)) {
+            const selector = selectorMap[element];
+            if (selector && styles) {
+                // Ensure styles end with semicolon
+                const normalizedStyles = styles.endsWith(';') ? styles : styles + ';';
+                css += `${selector} { ${normalizedStyles} }\n`;
+            }
+        }
+
+        if (css) {
+            addDynamicCSS('customCSS', css);
+            console.log('CustomCSS applied for:', Object.keys(customCSS).join(', '));
         }
     }
 
@@ -664,6 +775,9 @@ const ThemeLoader = (() => {
         isCurrentTheme: isCurrentTheme,
     };
 })();
+
+// Expose to window for external access (Boris Theme Studio, console, etc.)
+window.ThemeLoader = ThemeLoader;
 
 // Export for module systems if needed
 if (typeof module !== 'undefined' && module.exports) {

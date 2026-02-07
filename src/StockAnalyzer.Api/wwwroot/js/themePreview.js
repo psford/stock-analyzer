@@ -217,6 +217,8 @@ const ThemePreview = (function() {
 
             /* Header */
             .preview-header {
+                position: relative;
+                z-index: 2;
                 background: var(--bg-secondary, #f9fafb);
                 border-bottom: 1px solid var(--border-primary, #e5e7eb);
                 padding: 8px 12px;
@@ -268,6 +270,8 @@ const ThemePreview = (function() {
 
             /* Main content */
             .preview-main {
+                position: relative;
+                z-index: 2;
                 padding: 8px;
             }
 
@@ -491,6 +495,8 @@ const ThemePreview = (function() {
 
             /* Footer */
             .preview-footer {
+                position: relative;
+                z-index: 2;
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
@@ -638,6 +644,11 @@ const ThemePreview = (function() {
         effectsContainer.className = 'preview-effects';
         effectsContainer.innerHTML = '';
 
+        // Stop any active canvas effects
+        if (typeof CanvasEffects !== 'undefined') {
+            CanvasEffects.stopAll();
+        }
+
         if (!effects) return;
 
         // Scanlines
@@ -657,7 +668,7 @@ const ThemePreview = (function() {
             effectsContainer.classList.add('crt-flicker');
         }
 
-        // Rain
+        // Rain (CSS-based simple rain)
         if (effects.rain?.enabled) {
             const rainContainer = document.createElement('div');
             rainContainer.className = 'rain-drops';
@@ -674,6 +685,45 @@ const ThemePreview = (function() {
                 rainContainer.appendChild(drop);
             }
             effectsContainer.appendChild(rainContainer);
+        }
+
+        // Canvas-based effects (requires canvasEffects.js)
+        if (typeof CanvasEffects !== 'undefined') {
+            const previewContainer = effectsContainer.closest('.theme-preview-container');
+
+            // Matrix Rain - authentic falling characters
+            if (effects.matrixRain?.enabled && previewContainer) {
+                CanvasEffects.start('matrixRain', previewContainer, {
+                    color: effects.matrixRain.color || '#00ff41',
+                    backgroundColor: effects.matrixRain.backgroundColor || 'rgba(0, 0, 0, 0.05)',
+                    fontSize: effects.matrixRain.fontSize || 14,
+                    speed: effects.matrixRain.speed || 1,
+                    density: effects.matrixRain.density || 0.98,
+                    characters: effects.matrixRain.characters,
+                    glowIntensity: effects.matrixRain.glowIntensity || 0.8
+                });
+            }
+
+            // Snow effect
+            if (effects.snow?.enabled && previewContainer) {
+                CanvasEffects.start('snow', previewContainer, {
+                    color: effects.snow.color || '#ffffff',
+                    count: effects.snow.count || 100,
+                    speed: effects.snow.speed || 1,
+                    wind: effects.snow.wind || 0.5
+                });
+            }
+
+            // Particles effect
+            if (effects.particles?.enabled && previewContainer) {
+                CanvasEffects.start('particles', previewContainer, {
+                    color: effects.particles.color || '#ffffff',
+                    count: effects.particles.count || 50,
+                    speed: effects.particles.speed || 0.5,
+                    connections: effects.particles.connections !== false,
+                    connectionDistance: effects.particles.connectionDistance || 100
+                });
+            }
         }
     }
 
@@ -710,16 +760,44 @@ const ThemePreview = (function() {
             applyTheme: function(themeJson) {
                 if (!themeJson) return;
 
-                // Apply CSS variables
+                // Apply CSS variables via scoped <style> element
+                // This ensures variables override the main app's :root variables
                 const variables = themeJson.variables || {};
-                Object.entries(variables).forEach(([key, value]) => {
-                    previewEl.style.setProperty(`--${key}`, value);
-                });
-
-                // Apply fonts
-                if (themeJson.fonts?.primary) {
-                    previewEl.style.setProperty('--font-primary', themeJson.fonts.primary);
+                const dynamicStyleId = 'theme-preview-dynamic-vars';
+                let dynamicStyle = document.getElementById(dynamicStyleId);
+                if (!dynamicStyle) {
+                    dynamicStyle = document.createElement('style');
+                    dynamicStyle.id = dynamicStyleId;
+                    document.head.appendChild(dynamicStyle);
                 }
+
+                // Build CSS with variables scoped to preview container
+                let cssVars = '';
+                Object.entries(variables).forEach(([key, value]) => {
+                    cssVars += `--${key}: ${value};\n`;
+                });
+                if (themeJson.fonts?.primary) {
+                    cssVars += `--font-primary: ${themeJson.fonts.primary};\n`;
+                }
+                if (themeJson.fonts?.mono) {
+                    cssVars += `--font-mono: ${themeJson.fonts.mono};\n`;
+                }
+
+                // Build customCSS rules if present
+                let customCssRules = '';
+                if (themeJson.customCSS && typeof CssSanitizer !== 'undefined') {
+                    const sanitizedCustom = CssSanitizer.sanitizeCustomCss(themeJson.customCSS);
+                    customCssRules = CssSanitizer.generateScopedCss(sanitizedCustom);
+                }
+
+                // Apply to preview container and ALL descendants
+                dynamicStyle.textContent = `
+                    .theme-preview-container,
+                    .theme-preview-container * {
+                        ${cssVars}
+                    }
+                    ${customCssRules}
+                `;
 
                 // Redraw chart with theme colors
                 const themeColors = {

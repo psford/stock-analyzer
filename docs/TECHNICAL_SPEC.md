@@ -1257,6 +1257,7 @@ The application uses a JSON-based theme system with 94+ CSS custom properties, v
 | ThemePreview | `wwwroot/js/themePreview.js` | Mini-app preview for theme editor |
 | ThemeEditor | `wwwroot/js/themeEditor.js` | AI-powered theme generation UI |
 | ThemeAudio | `wwwroot/js/themeAudio.js` | Procedural audio from theme params |
+| CanvasEffects | `wwwroot/js/canvasEffects.js` | Canvas-based visual effects (Matrix rain, snow, particles) |
 | Theme Generator | `helpers/theme_generator.py` | FastAPI service for AI theme generation |
 
 **Theme JSON Structure:**
@@ -1300,12 +1301,30 @@ Themes can extend base themes via `"extends": "dark"`. ThemeLoader deep-merges c
 1. Localhost: Local themes first (`/themes/`) for dev workflow
 2. Production: Azure Blob Storage first, local fallback
 
-**Visual Effects:**
+**Visual Effects (CSS-based):**
 - `scanlines`: CRT horizontal line overlay
 - `vignette`: Darkened edges (radial gradient)
 - `bloom`: Contrast/brightness boost for glow effect
 - `rain`: Animated rain drops (CSS animation)
 - `crtFlicker`: Subtle screen flicker animation
+
+**Visual Effects (Canvas-based):**
+Canvas effects are managed by `canvasEffects.js` with proper lifecycle (start/stop/cleanup):
+- `rain`: Falling raindrops with angle and streak length (color, count, speed, angle, length, width)
+- `matrixRain`: Falling Matrix-style characters with glow (color, speed, density, fontSize, glowIntensity)
+- `snow`: Falling snowflakes (color, count, speed, wind)
+- `particles`: Floating particles with optional connection lines (color, count, speed, connections)
+
+Canvas effects render at z-index: 9995 (fixed position, above content, below CSS overlay effects at 9997-9999). ThemeLoader delegates canvas effects to CanvasEffects when `effects.<name>.enabled` is true.
+
+**Theme Import Modal:**
+Users can test custom themes without deploying via the import modal (`#theme-import-modal`):
+- Access: Theme dropdown → "Import Custom Theme..."
+- Paste JSON with id, variables, effects
+- Apply immediately to see all effects (including canvas-based rain, snow, etc.)
+- Download applied theme as JSON file
+- Keyboard: Ctrl+Enter to apply, Escape to close
+- Modal stays open after apply so Download button is accessible
 
 **Theme Audio Parameters:**
 Music-theory driven procedural audio synthesis:
@@ -1321,6 +1340,32 @@ Python FastAPI sidecar (`helpers/theme_generator.py`):
 - Live mode (`THEME_GENERATOR_LIVE=true`): Claude API for custom themes
 - Endpoints: `/generate`, `/refine`, `/health`
 - Port: 8001
+
+**Prompt Sanitization (Security):**
+User-entered prompts are sanitized before processing:
+- Max length: 2000 characters (prevents DoS, controls API costs)
+- Theme name max: 100 characters
+- Control character removal (CWE-117 log injection prevention)
+- Null byte stripping
+- Suspicious prompt injection patterns logged (not blocked)
+- Frontend: Character counters, `maxlength` attributes
+- Backend: `sanitize_prompt()` function as security boundary
+
+**Scope Enforcement (Anti-Abuse):**
+The theme generator is locked to theme generation only:
+- **Pre-flight validation** (`is_theme_related()`): Rejects prompts that don't contain theme keywords (colors, styles, aesthetics) or match off-topic patterns (greetings, homework requests, code generation, general questions)
+- **System prompt hardening**: Claude instructed to ONLY output theme JSON, interpret ANY input as theme description (e.g., "tell me a joke" becomes Comedy theme with playful colors)
+- **Response validation** (`validate_theme_response()`): Verifies response contains valid CSS color variables, rejects chatbot-style text responses
+- Prevents token burn from users attempting to use as general-purpose chatbot
+
+**Jailbreak Detection (Persistent Abuse Prevention):**
+Tracks violations per IP and escalates to temporary blocks:
+- **Rate limiting**: 2-second minimum between requests
+- **Violation tracking**: 30-minute rolling window, violations recorded for off-topic requests and jailbreak patterns
+- **Soft block**: After 3 violations → 5-minute cooldown
+- **Hard block**: After 5 violations → 60-minute ban (escalates with repeat offenses)
+- **Jailbreak patterns detected**: Base64/encoding tricks, multi-language evasion, instruction overrides, role-play escapes, theme word stuffing
+- In-memory tracking resets on service restart (stateless between deploys)
 
 **Available Themes:**
 | ID | Name | Category |
@@ -1945,6 +1990,9 @@ Checkout → Restore → Build → Test (.NET) → Test (JavaScript) → Publish
 
 | Script | Purpose |
 |--------|---------|
+| `helpers/slack_bot.py` | Slack bot manager (start/stop/status/restart listener + acknowledger) |
+| `helpers/slack_listener.py` | Slack message listener with image attachment support (poll/socket modes, downloads images to `slack_attachments/`) |
+| `helpers/slack_acknowledger.py` | Watches for read messages and adds checkmark reaction |
 | `helpers/jenkins-local.ps1` | Main Jenkins management script |
 | `helpers/jenkins-console.ps1` | Fetch build console output |
 | `helpers/jenkins-reload.ps1` | Reload Jenkins configuration |
@@ -2988,6 +3036,7 @@ const newsPromise = API.getAggregatedNews(ticker, 30, 10);
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.48 | 2026-02-05 | **Theme Editor Security Hardening:** Comprehensive anti-abuse system for theme generator. **Sanitization:** `sanitize_prompt()` enforces 2000-char max, strips control characters (CWE-117), removes null bytes. Frontend: character counters, `maxlength` attributes. **Scope Enforcement:** `is_theme_related()` rejects off-topic prompts; system prompt hardened to ONLY output theme JSON; `validate_theme_response()` verifies valid CSS variables in response. **Jailbreak Detection:** IP-based violation tracking with escalating blocks — 2s rate limit, 3 violations → 5-min soft block, 5 violations → 60-min hard block (escalates on repeat). Detects evasion patterns: encoding tricks, multi-language, instruction overrides, theme word stuffing. `enforce_access_control()` integrates all checks. HTTP 429 responses for blocked clients. |
 | 2.47 | 2026-02-05 | **JSON Theme System with AI Generation:** Complete theme system overhaul. New `ThemeLoader.js` with 94+ CSS custom properties, theme inheritance (`extends` property), deep merge with circular detection. Background image support with overlay and blur. Theme audio parameters (key, mode, chordProgression, texture, tempo) for procedural music synthesis. Visual effects: scanlines, vignette, bloom, rain, CRT flicker. New `ThemePreview.js` mini-app component for live preview. New `ThemeEditor.js` with AI-powered generation via Python FastAPI service. New `ThemeAudio.js` for theme-driven audio. Theme Generator (`helpers/theme_generator.py`): mock mode (keyword-matched themes, no API cost) and live mode (Claude API). New Grimdark Space Opera theme (Warhammer 40K inspired, blood red + imperial gold). Hotdog Stand mock theme. Theme manifest with icons. ThemeLoader localhost priority for dev workflow. Watchlist.js refactored to use semantic CSS classes (Tailwind removal). Section 6.3 rewritten to document JSON theme architecture. |
 | 2.46 | 2026-02-03 | **Watchlist as GridStack Tile:** Converted fixed-position `<aside id="watchlist-sidebar">` into 7th GridStack tile (`tile-watchlist`, 4w×5h, min-w 3, min-h 3). Chart tile narrowed from 12w to 8w; watchlist fills right side of top row. LAYOUT_VERSION bumped from 6 to 7 (clears saved layouts). **Watchlist toggle:** Star button (`#watchlist-toggle-btn`) in page header toggles tile visibility with `.watchlist-toggle-active` yellow highlight state. On reopen, calls `Watchlist.loadWatchlists()` to re-bind events. **Horizontal expansion on tile close:** New `expandRowNeighbor()` function — when any tile is closed, its horizontal neighbor on the same row expands to fill the gap. State tracked in `tileExpansions` object (`{ neighborId, origW, origX }`). On reopen, neighbor shrinks back and tile restores to original position. General-purpose: works for any adjacent tile pair. **Dead code removed:** `initMobileSidebar()` (~37 lines), `bindMobileWatchlistEvents()` (~57 lines), mobile-watchlist-drawer handlers (~50 lines) from app.js. Sidebar DOM references removed from watchlist.js (2 lines). `<aside>`, `<div id="sidebar-overlay">`, and `mobile-watchlist-toggle` button removed from index.html. **CSS:** `#tile-watchlist-body` flex column layout with internal scroll; `.watchlist-toggle-active` yellow star styles (light + dark mode). All watchlist element IDs preserved — no changes to watchlist.js business logic. |
 | 2.45 | 2026-02-03 | **Wikipedia Company Bio with DB Caching (`data.CompanyBio`):** New `CompanyBioEntity` with 1:1 FK to SecurityMaster via SecurityAlias. EF Core migration `AddCompanyBio` creates `data.CompanyBio` table (PK: SecurityAlias, nvarchar(max) Description, nvarchar(50) Source, FetchedAt/UpdatedAt with GETUTCDATE defaults). New `WikipediaService` fetches descriptions from Wikipedia REST API — two-step lookup: (1) direct page summary via `en.wikipedia.org/api/rest_v1/page/summary/{name}`, (2) search fallback via `en.wikipedia.org/w/api.php?action=query&list=search` for abbreviated names. Filters disambiguation pages (`type == "standard"`), 5s timeout, 24h IMemoryCache, no API key. **Rate limiting:** `SemaphoreSlim(1,1)` single-concurrency + 2-second minimum gap between every HTTP request to Wikipedia — treats Wikipedia as a shared public resource, never exceeds casual browsing pace. Combined with permanent DB caching, each company is fetched at most once. **Endpoint integration (`GET /api/stock/{ticker}`):** checks CompanyBio by SecurityAlias first (DB cache hit = no external calls); on cache miss, determines best description (provider if ≥150 chars, else Wikipedia fallback) and fire-and-forget stores in CompanyBio. Tickers not in SecurityMaster get Wikipedia lookup without caching. FR-006.8, FR-006.9. |

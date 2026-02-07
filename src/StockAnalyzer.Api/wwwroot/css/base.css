@@ -600,24 +600,34 @@ label {
 }
 
 /* === Modal === */
+.modal {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+
+.modal.hidden {
+    display: none;
+}
+
 .modal-backdrop {
     position: fixed;
     inset: 0;
     background-color: rgba(0, 0, 0, 0.5);
-    z-index: 50;
+    z-index: 100;
 }
 
-.modal {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+.modal-content {
+    position: relative;
     width: 100%;
     max-width: 32rem;
     background-color: var(--bg-secondary);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-xl);
-    z-index: 51;
+    z-index: 101;
 }
 
 .modal-header {
@@ -2304,4 +2314,68 @@ input[type="range"]::-moz-range-thumb {
 .status-message {
     text-align: center;
     color: var(--text-muted);
+}
+
+/* ========================================
+   THEME IMPORT MODAL
+   ======================================== */
+
+.theme-import-textarea {
+    width: 100%;
+    min-height: 200px;
+    padding: 0.75rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    resize: vertical;
+}
+
+.theme-import-textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-bg);
+}
+
+.theme-import-textarea::placeholder {
+    color: var(--text-muted);
+}
+
+.theme-import-error {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    background-color: var(--danger-bg);
+    border: 1px solid var(--danger-border);
+    border-radius: var(--radius-sm);
+    color: var(--error);
+    font-size: 0.875rem;
+}
+
+/* Import button in theme dropdown */
+.theme-import-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    margin-top: 0.5rem;
+    border-top: 1px solid var(--border-primary);
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    text-align: left;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.theme-import-btn:hover {
+    background-color: var(--bg-tertiary);
+    color: var(--accent);
+}
+
+.theme-import-btn svg {
+    width: 1rem;
+    height: 1rem;
+    opacity: 0.7;
 }

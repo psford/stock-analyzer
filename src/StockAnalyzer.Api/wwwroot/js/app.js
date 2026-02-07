@@ -425,7 +425,7 @@ const App = {
         // Populate dropdown from manifest
         const themes = ThemeLoader?.getAvailableThemes() || [];
         if (themeDropdown && themes.length > 0) {
-            themeDropdown.innerHTML = themes.map(theme => {
+            const themeButtons = themes.map(theme => {
                 const iconSvg = iconSvgs[theme.icon] || iconSvgs.palette;
                 const iconColor = theme.iconColor || '#888888';
                 return `<button data-theme="${theme.id}" class="theme-option">
@@ -433,6 +433,16 @@ const App = {
                     ${theme.name}
                 </button>`;
             }).join('');
+
+            // Add "Import Custom Theme" button at the bottom
+            const importBtn = `<button id="theme-import-open-btn" class="theme-import-btn">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                </svg>
+                Import Custom Theme...
+            </button>`;
+
+            themeDropdown.innerHTML = themeButtons + importBtn;
         }
 
         // Update header icon based on current theme's category
@@ -483,6 +493,145 @@ const App = {
                 await ThemeLoader.applyTheme(theme);
             }
             themeDropdown?.classList.add('hidden');
+        });
+
+        // Theme Import Modal functionality
+        this.initThemeImportModal(themeDropdown);
+    },
+
+    /**
+     * Initialize theme import modal functionality
+     */
+    initThemeImportModal(themeDropdown) {
+        const modal = document.getElementById('theme-import-modal');
+        const backdrop = modal?.querySelector('.modal-backdrop');
+        const closeBtn = modal?.querySelector('.modal-close');
+        const cancelBtn = document.getElementById('theme-import-cancel');
+        const applyBtn = document.getElementById('theme-import-apply');
+        const downloadBtn = document.getElementById('theme-import-download');
+        const textarea = document.getElementById('theme-import-json');
+        const errorDiv = document.getElementById('theme-import-error');
+
+        if (!modal || !textarea) return;
+
+        // Store applied custom theme for download
+        let appliedTheme = null;
+
+        const openModal = () => {
+            modal.classList.remove('hidden');
+            textarea.focus();
+        };
+
+        const closeModal = () => {
+            modal.classList.add('hidden');
+            errorDiv?.classList.add('hidden');
+        };
+
+        const showError = (msg) => {
+            if (errorDiv) {
+                errorDiv.textContent = msg;
+                errorDiv.classList.remove('hidden');
+            }
+        };
+
+        const hideError = () => {
+            errorDiv?.classList.add('hidden');
+        };
+
+        // Open modal when import button clicked
+        themeDropdown?.addEventListener('click', (e) => {
+            const importBtn = e.target.closest('#theme-import-open-btn');
+            if (importBtn) {
+                e.stopPropagation();
+                themeDropdown?.classList.add('hidden');
+                openModal();
+            }
+        });
+
+        // Close modal handlers
+        backdrop?.addEventListener('click', closeModal);
+        closeBtn?.addEventListener('click', closeModal);
+        cancelBtn?.addEventListener('click', closeModal);
+
+        // Close on Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+                closeModal();
+            }
+        });
+
+        // Apply theme button
+        applyBtn?.addEventListener('click', async () => {
+            hideError();
+            const jsonStr = textarea.value.trim();
+
+            if (!jsonStr) {
+                showError('Please paste theme JSON to apply.');
+                return;
+            }
+
+            let themeData;
+            try {
+                themeData = JSON.parse(jsonStr);
+            } catch (e) {
+                showError(`Invalid JSON: ${e.message}`);
+                return;
+            }
+
+            // Basic validation
+            if (!themeData.id && !themeData.name) {
+                showError('Theme must have at least an "id" or "name" property.');
+                return;
+            }
+
+            // Generate id from name if missing
+            if (!themeData.id && themeData.name) {
+                themeData.id = themeData.name.toLowerCase().replace(/\s+/g, '-');
+            }
+
+            // Apply the theme
+            if (typeof ThemeLoader !== 'undefined' && ThemeLoader.applyThemeJson) {
+                try {
+                    await ThemeLoader.applyThemeJson(themeData);
+                    appliedTheme = themeData;
+                    downloadBtn.disabled = false;
+                    // Show success - keep modal open so user can download
+                    applyBtn.textContent = 'Applied!';
+                    applyBtn.disabled = true;
+                    setTimeout(() => {
+                        applyBtn.textContent = 'Apply Theme';
+                        applyBtn.disabled = false;
+                    }, 2000);
+                } catch (e) {
+                    showError(`Failed to apply theme: ${e.message}`);
+                }
+            } else {
+                showError('ThemeLoader.applyThemeJson not available.');
+            }
+        });
+
+        // Download button - exports the applied theme as JSON file
+        downloadBtn?.addEventListener('click', () => {
+            if (!appliedTheme) return;
+
+            const jsonStr = JSON.stringify(appliedTheme, null, 2);
+            const blob = new Blob([jsonStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${appliedTheme.id || 'custom-theme'}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+
+        // Ctrl+Enter to apply
+        textarea?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                applyBtn?.click();
+            }
         });
     },
 

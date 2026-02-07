@@ -681,6 +681,28 @@
         </div>
     </div>
 
+    <!-- Theme Import Modal -->
+    <div id="theme-import-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3>Import Custom Theme</h3>
+                <button class="modal-close" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted mb-3">Paste theme JSON below to preview it on the live site.</p>
+                <textarea id="theme-import-json" class="theme-import-textarea" rows="12"
+                    placeholder='{"id": "my-theme", "name": "My Theme", "variables": {...}, "effects": {...}}'></textarea>
+                <div id="theme-import-error" class="theme-import-error hidden"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="theme-import-cancel" class="btn btn-secondary">Cancel</button>
+                <button id="theme-import-download" class="btn btn-secondary" disabled>Download JSON</button>
+                <button id="theme-import-apply" class="btn btn-primary">Apply Theme</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Wikipedia-style hover card for significant moves -->
     <div id="wiki-hover-card" class="wiki-hover-card hidden">
         <img id="wiki-hover-image" class="hidden" alt="">
@@ -710,6 +732,7 @@
     <script src="js/dragMeasure.js?v=3.0.5"></script>
     <script src="js/watchlist.js?v=3.0.5"></script>
     <script src="js/vaporwaveAudio.js?v=3.0.5"></script>
+    <script src="js/canvasEffects.js?v=3.0.5"></script>
     <script src="js/themeLoader.js?v=3.0.5"></script>
     <script src="js/themeAudio.js?v=3.0.5"></script>
     <script src="js/app.js?v=3.0.5"></script>

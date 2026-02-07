@@ -8,6 +8,8 @@ const ThemeEditor = (function() {
     // Configuration
     const GENERATOR_URL = 'http://localhost:8001';
     const STORAGE_KEY = 'stockAnalyzer_customThemes';
+    const MAX_PROMPT_LENGTH = 2000;  // Match backend limit
+    const MAX_NAME_LENGTH = 100;
 
     // State
     let currentTheme = null;
@@ -66,7 +68,12 @@ const ThemeEditor = (function() {
             loadingText: document.getElementById('loading-text'),
 
             // Saved themes
-            savedThemesList: document.getElementById('saved-themes-list')
+            savedThemesList: document.getElementById('saved-themes-list'),
+
+            // Import JSON
+            importJson: document.getElementById('import-json'),
+            importBtn: document.getElementById('import-btn'),
+            importStatus: document.getElementById('import-status')
         };
     }
 
@@ -85,6 +92,11 @@ const ThemeEditor = (function() {
 
         // Save button
         elements.saveBtn.addEventListener('click', handleSave);
+
+        // Import button
+        if (elements.importBtn) {
+            elements.importBtn.addEventListener('click', handleImport);
+        }
 
         // Apply button
         elements.applyBtn.addEventListener('click', handleApply);
@@ -107,6 +119,28 @@ const ThemeEditor = (function() {
                 handleRefine();
             }
         });
+
+        // Character counters and input sanitization
+        elements.themePrompt.addEventListener('input', () => {
+            updateCharCounter(elements.themePrompt, MAX_PROMPT_LENGTH);
+        });
+
+        elements.refineFeedback.addEventListener('input', () => {
+            updateCharCounter(elements.refineFeedback, MAX_PROMPT_LENGTH);
+        });
+
+        elements.themeName.addEventListener('input', () => {
+            updateCharCounter(elements.themeName, MAX_NAME_LENGTH);
+        });
+
+        // Set maxlength attributes for hard limits
+        elements.themePrompt.setAttribute('maxlength', MAX_PROMPT_LENGTH);
+        elements.refineFeedback.setAttribute('maxlength', MAX_PROMPT_LENGTH);
+        elements.themeName.setAttribute('maxlength', MAX_NAME_LENGTH);
+
+        // Initialize counters
+        updateCharCounter(elements.themePrompt, MAX_PROMPT_LENGTH);
+        updateCharCounter(elements.refineFeedback, MAX_PROMPT_LENGTH);
     }
 
     /**
@@ -138,8 +172,9 @@ const ThemeEditor = (function() {
      * Handle generate button click
      */
     async function handleGenerate() {
-        const prompt = elements.themePrompt.value.trim();
-        const name = elements.themeName.value.trim() || 'Custom Theme';
+        // Sanitize inputs before sending
+        const prompt = sanitizeInput(elements.themePrompt.value, MAX_PROMPT_LENGTH);
+        const name = sanitizeInput(elements.themeName.value, MAX_NAME_LENGTH) || 'Custom Theme';
         const baseTheme = elements.baseTheme.value;
 
         if (!prompt) {
@@ -182,7 +217,8 @@ const ThemeEditor = (function() {
             return;
         }
 
-        const feedback = elements.refineFeedback.value.trim();
+        // Sanitize feedback before sending
+        const feedback = sanitizeInput(elements.refineFeedback.value, MAX_PROMPT_LENGTH);
         if (!feedback) {
             showStatus(elements.refineStatus, 'error', 'Please describe what to change');
             return;
@@ -263,6 +299,53 @@ const ThemeEditor = (function() {
         loadSavedThemes();
         showStatus(elements.generateStatus, 'success', 'Theme saved!');
         setTimeout(() => clearStatus(elements.generateStatus), 2000);
+    }
+
+    /**
+     * Handle import JSON button click
+     */
+    function handleImport() {
+        const jsonText = elements.importJson?.value?.trim();
+
+        if (!jsonText) {
+            showStatus(elements.importStatus, 'error', 'Please paste theme JSON');
+            return;
+        }
+
+        try {
+            const theme = JSON.parse(jsonText);
+
+            // Basic validation
+            if (!theme.variables) {
+                showStatus(elements.importStatus, 'error', 'Invalid theme: missing "variables" section');
+                return;
+            }
+
+            if (!theme.id) theme.id = 'imported-theme';
+            if (!theme.name) theme.name = 'Imported Theme';
+            if (!theme.meta) theme.meta = { category: 'dark', icon: 'moon', iconColor: '#888' };
+            if (!theme.effects) theme.effects = {};
+            if (!theme.fonts) theme.fonts = {};
+
+            // Apply to preview and set as current
+            currentTheme = theme;
+            preview.applyTheme(theme);
+            updateJsonDisplay(theme);
+            showSections();
+
+            // Update the name input to match imported theme
+            if (elements.themeName) {
+                elements.themeName.value = theme.name;
+            }
+
+            showStatus(elements.importStatus, 'success', `Imported: ${theme.name}`);
+
+            // Clear the import textarea
+            elements.importJson.value = '';
+
+        } catch (e) {
+            showStatus(elements.importStatus, 'error', `JSON parse error: ${e.message}`);
+        }
     }
 
     /**
@@ -495,6 +578,47 @@ const ThemeEditor = (function() {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    /**
+     * Sanitize user input before sending to backend
+     * Note: Backend also sanitizes, this is for UX feedback
+     */
+    function sanitizeInput(text, maxLength) {
+        if (!text) return '';
+
+        // Remove null bytes
+        text = text.replace(/\x00/g, '');
+
+        // Truncate to max length
+        if (text.length > maxLength) {
+            text = text.substring(0, maxLength);
+        }
+
+        // Remove control characters except newlines and tabs
+        text = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+
+        return text.trim();
+    }
+
+    /**
+     * Update character counter for a textarea
+     */
+    function updateCharCounter(textarea, maxLength) {
+        const counterId = textarea.id + '-counter';
+        let counter = document.getElementById(counterId);
+
+        if (!counter) {
+            counter = document.createElement('div');
+            counter.id = counterId;
+            counter.className = 'char-counter';
+            textarea.parentNode.insertBefore(counter, textarea.nextSibling);
+        }
+
+        const remaining = maxLength - textarea.value.length;
+        counter.textContent = `${textarea.value.length}/${maxLength}`;
+        counter.classList.toggle('warning', remaining < 200);
+        counter.classList.toggle('error', remaining < 0);
     }
 
     /**
