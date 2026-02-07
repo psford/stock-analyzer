@@ -3127,6 +3127,14 @@ Standalone Python service — custom Bluesky feed generator that filters out sel
 
 **Security:** Read-only container, non-root, all capabilities dropped, named Docker volume (no NAS bind mounts), isolated bridge network, Cloudflare Tunnel (no inbound ports).
 
+**Deployment notes (Synology NAS):**
+- Uses `docker-compose` (hyphenated — older Docker version on Synology DSM)
+- `COPY *.py ./` requires trailing slash for older Docker build engine
+- NanoCPUs (cpus limit) not supported by Synology kernel — only mem_limit used
+- User set via `USER feedgen` in Dockerfile, not docker-compose `user:` directive
+- Cloudflare Tunnel routing via local config file (`cloudflared-config.yml`), not dashboard
+- `config.py` uses `load_dotenv(override=True)` to prevent system HOSTNAME from overriding .env
+
 ---
 
 ## 15. References
