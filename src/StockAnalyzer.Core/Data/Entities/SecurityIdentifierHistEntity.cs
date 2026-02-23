@@ -12,7 +12,7 @@ public class SecurityIdentifierHistEntity
     /// Auto-incrementing primary key for this history record.
     /// Each snapshot gets a unique identifier.
     /// </summary>
-    public int Id { get; set; }
+    public long Id { get; set; }
 
     /// <summary>
     /// Foreign key reference to SecurityMaster.

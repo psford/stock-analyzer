@@ -2401,9 +2401,10 @@ CREATE INDEX IX_PriceStaging_Ticker_EffectiveDate ON staging.PriceStaging(Ticker
 
 **DbContext Configuration:**
 - IndexDefinitionEntity: Composite index on `(IndexCode)` unique
-- IndexConstituentEntity: Composite unique index on `(IndexId, SecurityAlias, EffectiveDate, SourceId)` prevents duplicates
+- IndexConstituentEntity: `Id` is `long` (maps to `bigint` PK); composite unique index on `(IndexId, SecurityAlias, EffectiveDate, SourceId)` prevents duplicates
 - SecurityIdentifierEntity: Composite PK on `(SecurityAlias, IdentifierType)` enables 1:N identifiers per security
-- SecurityIdentifierHistEntity: Tracks historical identifier changes using SCD Type 2 with effective date ranges
+- SecurityIdentifierHistEntity: `Id` is `long` (maps to `bigint` PK); tracks historical identifier changes using SCD Type 2 with effective date ranges
+- Schema validation integration test (`SchemaValidationTests.cs`) compares all EF Core entity CLR types against actual SQL Server column types via `INFORMATION_SCHEMA.COLUMNS` to catch int/bigint drift
 
 #### EODHD Integration (Historical Price Data)
 
@@ -2650,14 +2651,14 @@ WPF desktop application (.NET 8, `net8.0-windows10.0.19041`) for managing price 
 
 **Implementation Details:**
 - Downloads iShares holdings JSON from `https://www.ishares.com/us/products/{product_id}/{slug}/1467271812596.ajax` with user-agent and 60s timeout
-- Auto-detects Format A (17 cols, IVV-style) vs Format B (19 cols, IJK-style) column layouts
+- Auto-detects three iShares JSON formats: Format A (17 cols, IVV-style), Format B (19 cols, IJK-style), Format C (18-19 cols, active/thematic ETFs like IDEF, ICLN where col[5] is an object shifting subsequent column indices +1)
 - Strips UTF-8 BOM prefix before JSON parsing (AC1.2)
 - Filters non-equity holdings (Cash, Futures, Money Market) — keeps equities only (AC2.3)
 - 3-level security matching: (1) ticker lookup, (2) CUSIP lookup, (3) ISIN lookup (AC3.2)
 - Creates new securities in SecurityMaster if no match found (AC3.1)
 - Upserts SecurityIdentifier with SCD Type 2 history — changed values snapshot old record with date range (AC3.3)
 - Idempotent constituent insertion via composite unique constraint `(IndexId, SecurityAlias, EffectiveDate, SourceId)` (AC3.5)
-- Error isolation per holding — one failure doesn't abort ETF (AC3.6)
+- Error isolation per holding — one failure doesn't abort ETF (AC3.6); failed entities detached from change tracker to prevent poison cascade
 - Rate limiting: 2s gap between ETF downloads (AC6.1, constant `RequestDelayMs`)
 - iShares Source ID: 10
 

@@ -11,7 +11,7 @@ public class IndexConstituentEntity
     /// <summary>
     /// Auto-incrementing surrogate key for this constituent record.
     /// </summary>
-    public int Id { get; set; }
+    public long Id { get; set; }
 
     /// <summary>
     /// Foreign key reference to IndexDefinition.

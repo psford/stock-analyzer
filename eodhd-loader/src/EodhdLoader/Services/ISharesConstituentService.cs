@@ -174,8 +174,17 @@ public class ISharesConstituentService : IISharesConstituentService
             catch (Exception ex)
             {
                 // Error isolation: log and continue (AC3.6)
-                LogMessage?.Invoke($"{holding.Ticker}: Error during ingest — {ex.Message}");
+                var innerMsg = ex.InnerException?.Message ?? ex.Message;
+                LogMessage?.Invoke($"{holding.Ticker}: Error during ingest — {innerMsg}");
                 stats = stats with { Failed = stats.Failed + 1 };
+
+                // Detach failed entities to prevent change tracker poison
+                // (failed Added entities would re-fail on every subsequent SaveChangesAsync)
+                foreach (var entry in _dbContext.ChangeTracker.Entries()
+                    .Where(e => e.State == EntityState.Added || e.State == EntityState.Modified))
+                {
+                    entry.State = EntityState.Detached;
+                }
             }
         }
 
@@ -559,7 +568,7 @@ public class ISharesConstituentService : IISharesConstituentService
     }
 
     /// <summary>
-    /// AC2: Parses iShares JSON holdings data, auto-detecting Format A/B and filtering equity only.
+    /// AC2: Parses iShares JSON holdings data, auto-detecting Format A/B/C and filtering equity only.
     /// Internal so tests can access via InternalsVisibleTo.
     /// </summary>
     /// <param name="data">JSON element with aaData array</param>
@@ -581,9 +590,8 @@ public class ISharesConstituentService : IISharesConstituentService
             return (holdings, 0);
         }
 
-        // Detect format (Format A vs Format B)
-        var isFormatB = DetectFormatB(rows[0]);
-        var colMap = isFormatB ? GetFormatBColumns() : GetFormatAColumns();
+        // Detect format (A, B, or C) based on column count and value types
+        var colMap = DetectAndGetColumns(rows[0]);
 
         // Parse each row
         foreach (var row in rows)
@@ -633,28 +641,36 @@ public class ISharesConstituentService : IISharesConstituentService
     }
 
     /// <summary>
-    /// Detects if JSON is Format B (19 cols, col[4] is string) vs Format A (17 cols, col[4] is object).
+    /// Detects iShares JSON format from first row and returns the appropriate column mapping.
+    /// Three formats exist based on column count and value types:
+    ///   Format A (17 cols): col[4] is object (market value). Broad ETFs like IVV, EFA, AAXJ.
+    ///   Format B (18-19 cols): col[4] is string, col[5] is string. S&amp;P index ETFs like IJH, IJR.
+    ///   Format C (18-19 cols): col[4] is string, col[5] is object. Active ETFs like IDEF, ICLN.
+    /// Format C has an extra weight column at [6] that shifts quantity, identifiers,
+    /// price, location, exchange, and currency each +1 vs Format B.
     /// </summary>
-    private static bool DetectFormatB(JsonElement firstRow)
+    private static Dictionary<string, int> DetectAndGetColumns(JsonElement firstRow)
     {
         if (firstRow.ValueKind != JsonValueKind.Array)
-            return false;
+            return GetFormatAColumns();
 
         var rowArray = firstRow.EnumerateArray().ToList();
 
-        // Format B: 19+ columns and col[4] is a string (asset class)
         // Format A: col[4] is an object (market value with {display, raw})
-        if (rowArray.Count >= 19)
-        {
-            var col4 = rowArray[4];
-            return col4.ValueKind == JsonValueKind.String;
-        }
+        if (rowArray.Count < 18 || rowArray[4].ValueKind != JsonValueKind.String)
+            return GetFormatAColumns();
 
-        return false;
+        // col[4] is string — distinguish B vs C by checking col[5]
+        // Format C: col[5] is object (market value as {display, raw})
+        // Format B: col[5] is string (market value as plain string like "1,137,287,274.50")
+        if (rowArray.Count >= 5 && rowArray[5].ValueKind == JsonValueKind.Object)
+            return GetFormatCColumns();
+
+        return GetFormatBColumns();
     }
 
     /// <summary>
-    /// Column indices for Format A (17 cols, broad ETFs like IVV, IWB).
+    /// Column indices for Format A (17 cols, broad ETFs like IVV, EFA, AAXJ).
     /// </summary>
     private static Dictionary<string, int> GetFormatAColumns()
     {
@@ -678,7 +694,8 @@ public class ISharesConstituentService : IISharesConstituentService
     }
 
     /// <summary>
-    /// Column indices for Format B (19 cols, S&P style like IJH, IJK).
+    /// Column indices for Format B (19 cols, S&amp;P style like IJH, IJK).
+    /// col[5] is a plain string (market value), weight is at col[17].
     /// </summary>
     private static Dictionary<string, int> GetFormatBColumns()
     {
@@ -698,6 +715,32 @@ public class ISharesConstituentService : IISharesConstituentService
             ["location"] = 12,
             ["exchange"] = 13,
             ["currency"] = 14,
+        };
+    }
+
+    /// <summary>
+    /// Column indices for Format C (18-19 cols, active/thematic ETFs like IDEF, ICLN).
+    /// col[5] is an object (market value), col[6] is weight (object),
+    /// shifting quantity and all subsequent fields +1 vs Format B.
+    /// </summary>
+    private static Dictionary<string, int> GetFormatCColumns()
+    {
+        return new Dictionary<string, int>
+        {
+            ["ticker"] = 0,
+            ["name"] = 1,
+            ["sector"] = 3,
+            ["asset_class"] = 4,
+            ["market_value"] = 5,
+            ["weight_pct"] = 6,
+            ["quantity"] = 8,
+            ["cusip"] = 9,
+            ["isin"] = 10,
+            ["sedol"] = 11,
+            ["price"] = 12,
+            ["location"] = 13,
+            ["exchange"] = 14,
+            ["currency"] = 15,
         };
     }
 
