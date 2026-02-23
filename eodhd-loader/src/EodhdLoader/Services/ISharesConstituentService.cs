@@ -217,32 +217,60 @@ public class ISharesConstituentService : IISharesConstituentService
 
     /// <summary>
     /// Returns ETFs with stale constituent data (missing latest month-end).
+    /// Checks each IndexDefinition with a ProxyEtfTicker and compares the max EffectiveDate
+    /// of its constituents against the last month-end business day.
     /// </summary>
     public async Task<IReadOnlyList<(string EtfTicker, string IndexCode)>> GetStaleEtfsAsync(CancellationToken ct = default)
     {
-        // Find the latest date in IndexConstituent table
-        var latestDate = await _dbContext.IndexConstituents
+        var lastMonthEnd = GetLastMonthEnd();
+        var staleEtfs = new List<(string, string)>();
+
+        // Query all IndexDefinitions that have a ProxyEtfTicker (these are the ETFs we track)
+        var indexDefs = await _dbContext.IndexDefinitions
             .AsNoTracking()
-            .MaxAsync(c => (DateTime?)c.EffectiveDate, ct);
+            .Where(id => id.ProxyEtfTicker != null)
+            .ToListAsync(ct);
 
-        if (latestDate == null)
-            return EtfConfigs.Select(kvp => (kvp.Key, kvp.Value.IndexCode)).ToList();
-
-        var latestDateTime = (DateTime)latestDate;
-
-        // Compute the last business day of the PREVIOUS month-end
-        var today = DateTime.UtcNow.Date;
-        var firstOfMonth = new DateTime(today.Year, today.Month, 1);
-        var previousMonthEnd = firstOfMonth.AddDays(-1); // Last day of previous month
-        var lastBusinessDay = AdjustToLastBusinessDay(previousMonthEnd);
-
-        // If latest data is before last business day of previous month, consider stale
-        if (latestDateTime.Date < lastBusinessDay)
+        // For each IndexDefinition, check if its constituent data is stale
+        foreach (var indexDef in indexDefs)
         {
-            return EtfConfigs.Select(kvp => (kvp.Key, kvp.Value.IndexCode)).ToList();
+            // Query the max EffectiveDate for constituents from iShares source (SourceId = 10)
+            var maxDate = await _dbContext.IndexConstituents
+                .AsNoTracking()
+                .Where(ic => ic.IndexId == indexDef.IndexId && ic.SourceId == ISharesSourceId)
+                .MaxAsync(ic => (DateTime?)ic.EffectiveDate, ct);
+
+            // If max date is null or earlier than last month-end, ETF is stale
+            if (maxDate == null || maxDate.Value.Date < lastMonthEnd.Date)
+            {
+                // Look up the ETF ticker from EtfConfigs using the IndexCode
+                var etfEntry = EtfConfigs.FirstOrDefault(kvp => kvp.Value.IndexCode == indexDef.IndexCode);
+                if (etfEntry.Key != null)
+                {
+                    staleEtfs.Add((etfEntry.Key, indexDef.IndexCode));
+                }
+            }
         }
 
-        return new List<(string, string)>();
+        return staleEtfs;
+    }
+
+    /// <summary>
+    /// Calculates the last business day of the current month.
+    /// </summary>
+    private static DateTime GetLastMonthEnd()
+    {
+        var today = DateTime.UtcNow.Date;
+        var firstOfMonth = new DateTime(today.Year, today.Month, 1);
+        var lastDayOfMonth = firstOfMonth.AddDays(-1); // Last day of previous month
+
+        // Adjust to last business day (if weekend)
+        while (lastDayOfMonth.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)
+        {
+            lastDayOfMonth = lastDayOfMonth.AddDays(-1);
+        }
+
+        return lastDayOfMonth;
     }
 
     /// <summary>

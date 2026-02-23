@@ -20,6 +20,7 @@ namespace EodhdLoader.ViewModels;
 public partial class CrawlerViewModel : ViewModelBase
 {
     private readonly StockAnalyzerApiClient _apiClient;
+    private readonly IISharesConstituentService _constituentService;
     private readonly DispatcherTimer _crawlTimer;
     private CancellationTokenSource? _cts;
 
@@ -188,9 +189,10 @@ public partial class CrawlerViewModel : ViewModelBase
     // race conditions on _currentSecurity, _dateQueue, and _securityQueue.
     private bool _isProcessing;
 
-    public CrawlerViewModel(StockAnalyzerApiClient apiClient)
+    public CrawlerViewModel(StockAnalyzerApiClient apiClient, IISharesConstituentService constituentService)
     {
         _apiClient = apiClient;
+        _constituentService = constituentService;
 
         // Timer for paced API calls
         _crawlTimer = new DispatcherTimer
@@ -324,6 +326,69 @@ public partial class CrawlerViewModel : ViewModelBase
         return await RefreshGapsAsync();
     }
 
+    /// <summary>
+    /// Checks for stale constituent data and loads missing month-end snapshots if needed.
+    /// AC5.1-AC5.4: Detects stale ETFs, loads them with rate limiting, proceeds even if all fail.
+    /// </summary>
+    private async Task CheckAndLoadConstituentsAsync()
+    {
+        CurrentAction = "Checking constituent staleness...";
+        StatusText = "Checking constituent data freshness...";
+        AddActivity("🔍", "Constituents", "Checking for stale month-end data...");
+
+        try
+        {
+            var staleEtfs = await _constituentService.GetStaleEtfsAsync(_cts?.Token ?? default);
+
+            if (staleEtfs.Count == 0)
+            {
+                AddActivity("✅", "Constituents", "All constituent data is current");
+                return;
+            }
+
+            AddActivity("📊", "Constituents", $"Found {staleEtfs.Count} ETFs with stale data, loading...");
+            StatusText = $"Loading constituents for {staleEtfs.Count} stale ETFs...";
+
+            int loaded = 0, failed = 0;
+            foreach (var (etfTicker, indexCode) in staleEtfs)
+            {
+                if (_cts?.Token.IsCancellationRequested == true) break;
+
+                CurrentAction = $"Loading constituents: {etfTicker} ({loaded + failed + 1}/{staleEtfs.Count})";
+
+                try
+                {
+                    var stats = await _constituentService.IngestEtfAsync(etfTicker, null, _cts?.Token ?? default);
+                    loaded++;
+                    AddActivity("✅", etfTicker, $"{stats.Inserted} inserted, {stats.SkippedExisting} skipped");
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    AddActivity("⚠️", etfTicker, $"Failed: {ex.Message}");
+                }
+
+                // Rate limiting — use shared constant from service (AC6.1)
+                if (_cts?.Token.IsCancellationRequested != true)
+                    await Task.Delay(ISharesConstituentService.RequestDelayMs, _cts?.Token ?? default);
+            }
+
+            var summary = $"Constituent refresh complete: {loaded} loaded, {failed} failed";
+            AddActivity("📊", "Constituents", summary);
+            StatusText = summary;
+        }
+        catch (OperationCanceledException)
+        {
+            AddActivity("⏹️", "Constituents", "Constituent check cancelled");
+        }
+        catch (Exception ex)
+        {
+            // Best effort — log and continue to gap filling (AC5.4)
+            AddActivity("⚠️", "Constituents", $"Staleness check failed: {ex.Message}");
+            StatusText = "Constituent check failed — proceeding to gap filling";
+        }
+    }
+
     private bool CanStartCrawl() => IsConnected && !IsCrawling;
 
     [RelayCommand(CanExecute = nameof(CanStartCrawl))]
@@ -362,6 +427,9 @@ public partial class CrawlerViewModel : ViewModelBase
             IsCrawling = false;
             return;
         }
+
+        // Check and load stale constituent data before proceeding with gap filling
+        await CheckAndLoadConstituentsAsync();
 
         if (_securityQueue.Count == 0)
         {

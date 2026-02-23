@@ -44,11 +44,12 @@
 - `Failed`: Holdings that failed to process
 - `IdentifiersSet`: Count of security identifiers upserted (new or updated)
 
-### Stale ETF Detection
+### Stale ETF Detection (AC5.1, AC5.2)
 - **Method**: `GetStaleEtfsAsync()`
-- **Logic**: Compares latest IndexConstituent date against previous month-end
-- **Month-End Calculation**: `firstOfMonth.AddDays(-1)` for previous month, then adjusted to last business day
-- **Return**: List of ETF tickers missing latest month-end data
+- **Logic**: Per-ETF staleness check. Queries each IndexDefinition with ProxyEtfTicker set, finds max EffectiveDate of constituents from iShares source (SourceId = 10), compares against last month-end business day.
+- **Month-End Calculation**: `GetLastMonthEnd()` helper calculates `firstOfMonth.AddDays(-1)` (previous month), then adjusted to last business day if weekend.
+- **Per-ETF Check**: For each indexed ETF, if max EffectiveDate is null or earlier than last month-end, ETF is considered stale.
+- **Return**: List of `(EtfTicker, IndexCode)` tuples for ETFs with stale data. Only checks indices explicitly tracked (those with ProxyEtfTicker in IndexDefinition).
 
 ### Rate Limiting
 - **Constant**: `RequestDelayMs = 2000` (2 seconds between requests)
@@ -59,8 +60,9 @@
 - **Download Tests**: 11 tests covering AC1 (success, BOM, unknown ETF, timeout, date adjustment)
 - **Parsing Tests**: 8 tests covering AC2 (Format A/B, filtering, malformed, null values)
 - **Persistence Tests**: 7 tests covering AC3 (matching, SCD Type 2, idempotency, error isolation)
+- **Staleness Tests**: 5 tests covering AC5.1-AC5.2 (stale detection, current data, mixed, no data, proxy filter)
 - **Test Framework**: xUnit + Moq + EF Core InMemory provider
-- **All Tests**: 26 passing
+- **All Tests**: 31 passing (Phase 1 + Task 1)
 
 ### Exception Handling
 - **Network/Parse**: Caught and logged, return null/empty gracefully
@@ -70,6 +72,7 @@
 
 ### Version History
 - **Phase 1 (2026-02-23)**: Initial implementation with AC1-AC3 coverage, code review fixes applied
+- **Phase 3, Task 1 (2026-02-23)**: Implemented GetStaleEtfsAsync with per-ETF staleness detection (AC5.1, AC5.2). Added 5 comprehensive tests covering stale detection, current data, mixed staleness, no data, and proxy filter.
 
 ---
 
@@ -137,5 +140,79 @@
 - **All Tests**: 11 passing (xUnit + Moq).
 
 ### Version History
+- **Phase 2 Code Review Fixes (2026-02-23)**:
+  - C1: Fixed `IsLoading_SetDuringLoad_ClearedWhenDone` test to capture IsLoading during callback
+  - I1: Added division-by-zero guard in `OnServiceProgressUpdated` (TotalEtfs > 0 check)
+  - I2: Refactored `ProgressUpdated_UpdatesCurrentEtfLabel_AndProgress` to use mock .Raise() instead of reflection
+  - I3: Replaced arbitrary `Task.Delay()` with `TaskCompletionSource` for deterministic test signaling
+  - M1-M2: Removed unused variables and standardized naming
+  - All 11 tests passing after fixes
 - **Phase 2 Task 5-6 (2026-02-23)**: Removed deprecated `IndexService` from DI container; legacy Wikipedia-based index manager completely retired.
 - **Phase 2 (2026-02-23)**: ViewModel refactor for iShares constituent loading (AC4.1-AC4.6).
+
+---
+
+## CrawlerViewModel - Constituent Integration (Phase 3)
+
+### Overview
+`CrawlerViewModel` integrates constituent staleness checking as an autonomous pre-step in the crawl startup flow. After initial gap refresh succeeds, the crawler checks for stale ETF data and loads missing month-end snapshots before proceeding to gap filling.
+
+### Constructor & Dependency Injection
+- **Pattern**: Singleton (`AddSingleton<CrawlerViewModel>()`)
+- **Constructor**: `public CrawlerViewModel(StockAnalyzerApiClient apiClient, IISharesConstituentService constituentService)`
+- **Dependencies Added**: `IISharesConstituentService` (new in Phase 3)
+- **DI Config**: `App.xaml.cs` (auto-wired, no manual registration needed)
+
+### Constituent Pre-Step (AC5)
+- **Method**: `CheckAndLoadConstituentsAsync()`
+- **When**: Called in `StartCrawlAsync` after `RefreshGapsAsync()` succeeds but before gap filling loop starts
+- **Flow**:
+  1. Query `GetStaleEtfsAsync()` to identify ETFs with missing latest month-end data
+  2. If stale ETFs found:
+     - Display status: "Loading constituents for N stale ETFs..."
+     - Iterate each stale ETF with 2-second rate limiting (`ISharesConstituentService.RequestDelayMs`)
+     - Call `IngestEtfAsync(etfTicker, null, token)` for each
+     - Log success/failure per ETF to activity log
+     - Display summary: "Constituent refresh complete: X loaded, Y failed"
+  3. If no stale ETFs: Log silently and continue
+  4. If any exception: Log to activity, continue to gap filling (best effort, AC5.4)
+
+### Activity Logging
+- **Icons Used**:
+  - `🔍` — Check initiated
+  - `✅` — ETF load succeeded or all current
+  - `📊` — Summary info
+  - `⚠️` — ETF load failed or check failed
+  - `⏹️` — Cancelled
+- **Categories**:
+  - "Constituents" for staleness check messages
+  - Individual ETF ticker for per-ETF results
+- **Pattern**: Matches existing `AddActivity(icon, category, details)` convention
+
+### Status Updates (AC5.3)
+- **CurrentAction**: Updated to "Loading constituents: {ticker} (X/N)" during loading
+- **StatusText**: Updated to "Loading constituents for N stale ETFs..." during load, summary on completion
+- **Observable**: Changes reflected in UI in real-time
+
+### Error Handling
+- **Graceful Degradation**: Stale check failures don't prevent gap filling (AC5.4)
+- **Per-ETF Isolation**: Individual ETF failures logged but don't abort loop
+- **Cancellation Support**: Respects `_cts?.Token` for early exit if user stops crawl
+- **Exception Types**:
+  - `OperationCanceledException`: Break loop, log cancellation
+  - Other exceptions: Continue to gap filling with warning
+
+### Rate Limiting
+- **Constant**: Uses `ISharesConstituentService.RequestDelayMs = 2000`
+- **Implementation**: `Task.Delay(RequestDelayMs, token)` between each ETF
+- **Respects Cancellation**: Checks token before and after delay
+
+### Test Coverage (AC5.1-AC5.4)
+- **AC5.1**: Stale ETFs detected and loaded via mocked GetStaleEtfsAsync
+- **AC5.2**: No stale ETFs skips loading silently
+- **AC5.3**: Status text updates during loading ("Loading constituents...", "Checking constituent...")
+- **AC5.4**: Service exceptions caught; crawl proceeds to gap filling anyway
+- **Test Framework**: xUnit + Moq, mocks `IISharesConstituentService` and `StockAnalyzerApiClient`
+
+### Version History
+- **Phase 3, Task 3 (2026-02-23)**: Added constituent pre-step to CrawlerViewModel. Implemented `CheckAndLoadConstituentsAsync()` with stale detection, per-ETF loading, rate limiting, and best-effort error handling (AC5.1, AC5.3, AC5.4).
