@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <!-- Allow dotnet restore on Linux CI runners (GitHub Automatic Dependency Submission).
+         EodhdLoader is a WPF app that only builds on Windows, but restore must succeed
+         cross-platform for dependency graph generation. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+</Project>
