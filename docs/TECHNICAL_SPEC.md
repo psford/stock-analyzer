@@ -2629,6 +2629,10 @@ WPF desktop application (.NET 8, `net8.0-windows10.0.19041`) for managing price 
 5. When nothing left to promote → "All securities processed!" (truly done)
 - Auto-promotion triggers at 3 code points: startup (no initial gaps), mid-crawl (queue empty), and skip-set exhaustion (all remaining in skip set)
 
+**Crawler — Constituent Pre-Step Logging:**
+- `CrawlerViewModel.CheckAndLoadConstituentsAsync` subscribes to `ISharesConstituentService.LogMessage` during constituent refresh so detailed status (download progress, "no equity holdings found", format detection, etc.) appears in the activity log instead of silent 0/0 summaries
+- Event wired with try/finally to ensure unsubscription after the loop completes
+
 **Heatmap V2 (SkiaSharp Custom Control):**
 
 `HeatmapV2Control.cs` — bivariate Year × ImportanceScore coverage visualization.
@@ -2644,6 +2648,9 @@ WPF desktop application (.NET 8, `net8.0-windows10.0.19041`) for managing price 
 | Ripple timing | `RipplePeriod = 6π` (~4.2s cycle), quadratic alpha fade, thinning stroke |
 | Hover | Semi-transparent white overlay with tooltip (tracked/untracked counts) |
 | Refresh | 30fps `DispatcherTimer` for animation; data refreshed from API after each security load |
+| Bitmap scaling | `BitmapScalingMode.NearestNeighbor` prevents WPF bilinear filtering from blending adjacent cell colors |
+| Cell padding | 2px gap between cells for visible boundaries between data-rich and empty cells |
+| Hit-test DPI | Cached `_lastSurfaceWidth`/`_lastSurfaceHeight` from `OnPaintSurface` — HitTest uses cached dims instead of re-deriving via `PresentationSource` DPI to avoid mismatch |
 
 **iShares Constituent Loader (Phase 1 - Core Service):**
 

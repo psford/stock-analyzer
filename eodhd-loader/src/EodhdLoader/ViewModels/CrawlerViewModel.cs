@@ -349,38 +349,49 @@ public partial class CrawlerViewModel : ViewModelBase
             AddActivity("📊", "Constituents", $"Found {staleEtfs.Count} ETFs with stale data, loading...");
             StatusText = $"Loading constituents for {staleEtfs.Count} stale ETFs...";
 
+            // Wire up service log messages so detailed reasons appear in activity log
+            void OnLogMessage(string msg) => AddActivity("ℹ️", "iShares", msg);
+            _constituentService.LogMessage += OnLogMessage;
+
             int loaded = 0, failed = 0;
-            foreach (var (etfTicker, indexCode) in staleEtfs)
+            try
             {
-                if (_cts?.Token.IsCancellationRequested == true) break;
-
-                CurrentAction = $"Loading constituents: {etfTicker} ({loaded + failed + 1}/{staleEtfs.Count})";
-
-                try
+                foreach (var (etfTicker, indexCode) in staleEtfs)
                 {
-                    var stats = await _constituentService.IngestEtfAsync(etfTicker, null, _cts?.Token ?? default);
-                    loaded++;
-                    AddActivity("✅", etfTicker, $"{stats.Inserted} inserted, {stats.SkippedExisting} skipped");
-                }
-                catch (OperationCanceledException)
-                {
-                    // Cancellation should break the loop, not count as a failure
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    failed++;
-                    AddActivity("⚠️", etfTicker, $"Failed: {ex.Message}");
+                    if (_cts?.Token.IsCancellationRequested == true) break;
+
+                    CurrentAction = $"Loading constituents: {etfTicker} ({loaded + failed + 1}/{staleEtfs.Count})";
+
+                    try
+                    {
+                        var stats = await _constituentService.IngestEtfAsync(etfTicker, null, _cts?.Token ?? default);
+                        loaded++;
+                        AddActivity("✅", etfTicker, $"{stats.Inserted} inserted, {stats.SkippedExisting} skipped");
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Cancellation should break the loop, not count as a failure
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        failed++;
+                        AddActivity("⚠️", etfTicker, $"Failed: {ex.Message}");
+                    }
+
+                    // Rate limiting — use shared constant from service (AC6.1)
+                    if (_cts?.Token.IsCancellationRequested != true)
+                        await Task.Delay(ISharesConstituentService.RequestDelayMs, _cts?.Token ?? default);
                 }
 
-                // Rate limiting — use shared constant from service (AC6.1)
-                if (_cts?.Token.IsCancellationRequested != true)
-                    await Task.Delay(ISharesConstituentService.RequestDelayMs, _cts?.Token ?? default);
+                var summary = $"Constituent refresh complete: {loaded} loaded, {failed} failed";
+                AddActivity("📊", "Constituents", summary);
+                StatusText = summary;
             }
-
-            var summary = $"Constituent refresh complete: {loaded} loaded, {failed} failed";
-            AddActivity("📊", "Constituents", summary);
-            StatusText = summary;
+            finally
+            {
+                _constituentService.LogMessage -= OnLogMessage;
+            }
         }
         catch (OperationCanceledException)
         {
