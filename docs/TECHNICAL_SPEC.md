@@ -2397,6 +2397,7 @@ CREATE INDEX IX_PriceStaging_Ticker_EffectiveDate ON staging.PriceStaging(Ticker
 - `scripts/002_AddSecurityMasterAndPrices.sql` - Migration script
 - `Migrations/20260223034707_MapIndexAttributionTables.cs` - Baseline migration (empty Up/Down, tables created by Python pipeline)
 - `Migrations/20260223034707_MapIndexAttributionTables.Designer.cs` - Migration snapshot metadata
+- `Migrations/20260223232008_CreateIndexTablesIfNotExist.cs` - Idempotent migration: creates IndexDefinition, IndexConstituent, SecurityIdentifier, SecurityIdentifierHist tables with `IF NOT EXISTS` guards (safe for both local and production)
 - `Data/StockAnalyzerDbContext.cs` - DbContext with Fluent API configuration for all entities
 
 **DbContext Configuration:**
@@ -2581,7 +2582,8 @@ Maintains the historical price database with automatic daily updates.
 - Primary signal: **index membership** from IndexConstituent data (which indices, how many)
 - Secondary signals: security type, exchange quality
 - Pre-loads all index membership via efficient CTE+JOIN query with `NOLOCK` (DTU-safe)
-- Falls back gracefully when IndexConstituent table is empty (all securities get attribute-based scores only)
+- Falls back gracefully when IndexConstituent table is empty or missing (all securities get attribute-based scores only)
+- Resilient to missing index tables: catches `SqlException` for "Invalid object name" and falls back to heuristic-only scoring
 - Scoring algorithm (base score: 1):
   - **Index membership (primary, 0-6 pts):** Tier 1 x2+ → +6, Tier 1 x1 → +5, Tier 2 x2+ → +4, Tier 2 x1 → +3, 3+ other → +2, 1-2 other → +1
   - **Index tiers:** Tier 1 = SP500, R1000, R2000, R3000, MSCI_ACWI, MSCI_EAFE, MSCI_EM; Tier 2 = IJH, IJR, OEF, ITOT, IDEV, IEMG, IEFA, IXUS
