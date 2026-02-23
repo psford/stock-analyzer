@@ -2395,7 +2395,8 @@ CREATE INDEX IX_PriceStaging_Ticker_EffectiveDate ON staging.PriceStaging(Ticker
 - `Data/SqlPriceRepository.cs` - SQL implementation
 - `scripts/001_CreateDataSchema.sql` - Schema creation script
 - `scripts/002_AddSecurityMasterAndPrices.sql` - Migration script
-- `Migrations/20260223034707_MapIndexAttributionTables.cs` - Baseline migration (empty, tables exist)
+- `Migrations/20260223034707_MapIndexAttributionTables.cs` - Baseline migration (empty Up/Down, tables created by Python pipeline)
+- `Migrations/20260223034707_MapIndexAttributionTables.Designer.cs` - Migration snapshot metadata
 - `Data/StockAnalyzerDbContext.cs` - DbContext with Fluent API configuration for all entities
 
 **DbContext Configuration:**
