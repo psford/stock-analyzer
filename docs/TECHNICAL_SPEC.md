@@ -1,7 +1,7 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.48
-**Last Updated:** 2026-02-06
+**Version:** 2.49
+**Last Updated:** 2026-02-23
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
 
@@ -2385,12 +2385,17 @@ CREATE INDEX IX_PriceStaging_Ticker_EffectiveDate ON staging.PriceStaging(Ticker
 **Files:**
 - `Data/Entities/SecurityMasterEntity.cs` - Security master entity
 - `Data/Entities/PriceEntity.cs` - Price entity
+- `Data/Entities/IndexDefinitionEntity.cs` - Index definition entity (iShares)
+- `Data/Entities/IndexConstituentEntity.cs` - Index constituent snapshot entity (iShares)
+- `Data/Entities/SecurityIdentifierEntity.cs` - Security identifier mapping (CUSIP, ISIN, SEDOL)
+- `Data/Entities/SecurityIdentifierHistEntity.cs` - Security identifier history (SCD Type 2)
 - `Services/ISecurityMasterRepository.cs` - Interface + DTOs
 - `Services/IPriceRepository.cs` - Interface + DTOs
 - `Data/SqlSecurityMasterRepository.cs` - SQL implementation
 - `Data/SqlPriceRepository.cs` - SQL implementation
 - `scripts/001_CreateDataSchema.sql` - Schema creation script
 - `scripts/002_AddSecurityMasterAndPrices.sql` - Migration script
+- `Migrations/20260223034707_MapIndexAttributionTables.cs` - Baseline migration (empty, tables exist)
 
 #### EODHD Integration (Historical Price Data)
 
