@@ -7,7 +7,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Reflection;
-using System.Runtime.Serialization;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using EodhdLoader.Models;
@@ -85,7 +85,7 @@ public class RateLimitingTests
     public async Task CheckAndLoadConstituentsAsync_EnforcesMinimum2sDelayBetweenRequests()
     {
         // Arrange: Create CrawlerViewModel bypassing constructor (avoids DispatcherTimer dependency)
-        var vm = (CrawlerViewModel)FormatterServices.GetUninitializedObject(typeof(CrawlerViewModel));
+        var vm = (CrawlerViewModel)RuntimeHelpers.GetUninitializedObject(typeof(CrawlerViewModel));
 
         // Set up required fields via reflection
         var constituentField = typeof(CrawlerViewModel)

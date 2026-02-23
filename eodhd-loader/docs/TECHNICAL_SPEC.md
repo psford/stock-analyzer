@@ -240,7 +240,7 @@ Implements three tests verifying minimum 2-second gaps between consecutive iShar
 
 1. **IngestAllEtfsAsync Rate Limiting** [Slow]: Creates a real `ISharesConstituentService` with mocked `HttpMessageHandler` returning empty JSON and InMemory DbContext. Limits EtfConfigs to 3 entries via reflection. Calls `IngestAllEtfsAsync()` — the real production method. Records HTTP request timestamps and asserts >= 1.9s gap between consecutive requests.
 
-2. **CheckAndLoadConstituentsAsync Rate Limiting** [Slow]: Creates a real `CrawlerViewModel` (bypasses WPF constructor via `FormatterServices.GetUninitializedObject`), sets up mocked `IISharesConstituentService` via reflection. Calls `CheckAndLoadConstituentsAsync()` — the real production method (internal via InternalsVisibleTo). Records `IngestEtfAsync` invocation timestamps, asserts >= 1.9s gap between calls.
+2. **CheckAndLoadConstituentsAsync Rate Limiting** [Slow]: Creates a real `CrawlerViewModel` (bypasses WPF constructor via `RuntimeHelpers.GetUninitializedObject`), sets up mocked `IISharesConstituentService` via reflection. Calls `CheckAndLoadConstituentsAsync()` — the real production method (internal via InternalsVisibleTo). Records `IngestEtfAsync` invocation timestamps, asserts >= 1.9s gap between calls. `AddActivity` is null-safe with symmetric log truncation in both Dispatcher and non-Dispatcher branches.
 
 3. **RequestDelayMs Constant**: Supplementary check that the rate limiting constant equals 2000ms.
 

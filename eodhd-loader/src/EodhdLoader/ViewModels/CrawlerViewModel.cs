@@ -1192,6 +1192,12 @@ public partial class CrawlerViewModel : ViewModelBase
                 Details = details,
                 Timestamp = DateTime.Now.ToString("HH:mm:ss")
             });
+
+            // Keep log manageable (same as dispatcher branch)
+            while (ActivityLog.Count > 50)
+            {
+                ActivityLog.RemoveAt(ActivityLog.Count - 1);
+            }
         }
     }
 }
