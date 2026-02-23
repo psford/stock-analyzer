@@ -5,8 +5,10 @@ using System.IO;
 using System.Net.Http;
 using System.Text.Json;
 using EodhdLoader.Models;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using StockAnalyzer.Core.Data;
+using StockAnalyzer.Core.Data.Entities;
 
 /// <summary>
 /// Implements IISharesConstituentService with JSON download, parsing, and database persistence.
@@ -57,33 +59,303 @@ public class ISharesConstituentService : IISharesConstituentService
     public IReadOnlyDictionary<string, EtfConfig> EtfConfigs => _etfConfigs.AsReadOnly();
 
     /// <summary>
-    /// Downloads and parses holdings for a single ETF.
-    /// Stub: returns empty stats (full implementation in Task 10).
+    /// Downloads and parses holdings for a single ETF, persists to database.
+    /// Implements full orchestration: 3-level matching, SCD Type 2 identifier upsert, idempotent constituent insert, error isolation per holding.
     /// </summary>
     public async Task<IngestStats> IngestEtfAsync(string etfTicker, DateTime? asOfDate = null, CancellationToken ct = default)
     {
-        // Stub for Task 10
-        return new IngestStats(Parsed: 0, Matched: 0, Created: 0, Inserted: 0, SkippedExisting: 0, Failed: 0, IdentifiersSet: 0);
+        // Look up EtfConfig
+        if (!_etfConfigs.TryGetValue(etfTicker.ToUpperInvariant(), out var config))
+        {
+            LogMessage?.Invoke($"Unknown ETF: {etfTicker}");
+            return new IngestStats(Parsed: 0, Matched: 0, Created: 0, Inserted: 0, SkippedExisting: 0, Failed: 0, IdentifiersSet: 0);
+        }
+
+        // Adjust date to last business day if weekend
+        var requestDate = asOfDate?.Date ?? DateTime.UtcNow.Date;
+        var adjustedDate = AdjustToLastBusinessDay(requestDate);
+        var effectiveDate = adjustedDate;
+
+        // Download JSON
+        var data = await DownloadAsync(etfTicker, adjustedDate, ct);
+        if (data == null || data.Value.ValueKind == JsonValueKind.Undefined)
+        {
+            return new IngestStats(Parsed: 0, Matched: 0, Created: 0, Inserted: 0, SkippedExisting: 0, Failed: 0, IdentifiersSet: 0);
+        }
+
+        // Parse holdings
+        var holdings = ParseHoldings(data.Value);
+        if (holdings.Count == 0)
+        {
+            LogMessage?.Invoke($"{etfTicker}: No equity holdings found");
+            return new IngestStats(Parsed: holdings.Count, Matched: 0, Created: 0, Inserted: 0, SkippedExisting: 0, Failed: 0, IdentifiersSet: 0);
+        }
+
+        // Look up IndexId
+        var indexId = await _dbContext.IndexDefinitions
+            .AsNoTracking()
+            .Where(i => i.IndexCode == config.IndexCode)
+            .Select(i => i.IndexId)
+            .FirstOrDefaultAsync(ct);
+
+        if (indexId == 0)
+        {
+            LogMessage?.Invoke($"IndexDefinition not found for {config.IndexCode}");
+            return new IngestStats(Parsed: holdings.Count, Matched: 0, Created: 0, Inserted: 0, SkippedExisting: 0, Failed: 0, IdentifiersSet: 0);
+        }
+
+        var stats = new IngestStats(Parsed: holdings.Count, Matched: 0, Created: 0, Inserted: 0, SkippedExisting: 0, Failed: 0, IdentifiersSet: 0);
+
+        // Process each holding
+        foreach (var holding in holdings)
+        {
+            try
+            {
+                // 3-level security matching
+                var securityResult = await MatchOrCreateSecurityAsync(holding, ct);
+                if (securityResult.SecurityAlias == 0)
+                {
+                    stats = stats with { Failed = stats.Failed + 1 };
+                    LogMessage?.Invoke($"{holding.Ticker}: Failed to match/create security");
+                    continue;
+                }
+
+                if (securityResult.IsNew)
+                    stats = stats with { Created = stats.Created + 1 };
+                else
+                    stats = stats with { Matched = stats.Matched + 1 };
+
+                // Upsert identifiers with SCD Type 2
+                await UpsertSecurityIdentifiersAsync(securityResult.SecurityAlias, holding, ct);
+
+                // Check if constituent already exists (idempotent)
+                var exists = await _dbContext.IndexConstituents
+                    .AsNoTracking()
+                    .AnyAsync(c => c.IndexId == indexId &&
+                                   c.SecurityAlias == securityResult.SecurityAlias &&
+                                   c.EffectiveDate == effectiveDate &&
+                                   c.SourceId == ISharesSourceId, ct);
+
+                if (exists)
+                {
+                    stats = stats with { SkippedExisting = stats.SkippedExisting + 1 };
+                    continue;
+                }
+
+                // Insert constituent
+                var constituent = new IndexConstituentEntity
+                {
+                    IndexId = indexId,
+                    SecurityAlias = securityResult.SecurityAlias,
+                    EffectiveDate = effectiveDate,
+                    Weight = holding.Weight,
+                    MarketValue = holding.MarketValue,
+                    Shares = holding.Shares,
+                    Sector = holding.Sector,
+                    Location = holding.Location,
+                    Currency = holding.Currency,
+                    SourceId = ISharesSourceId,
+                    SourceTicker = holding.Ticker
+                };
+
+                _dbContext.IndexConstituents.Add(constituent);
+                await _dbContext.SaveChangesAsync(ct);
+                stats = stats with { Inserted = stats.Inserted + 1 };
+            }
+            catch (Exception ex)
+            {
+                // Error isolation: log and continue (AC3.6)
+                LogMessage?.Invoke($"{holding.Ticker}: Error during ingest — {ex.Message}");
+                stats = stats with { Failed = stats.Failed + 1 };
+            }
+        }
+
+        LogMessage?.Invoke($"{etfTicker} as of {effectiveDate:yyyy-MM-dd}: {stats.Parsed} parsed, {stats.Matched} matched, {stats.Created} created, {stats.Inserted} inserted, {stats.SkippedExisting} skipped, {stats.Failed} failed");
+
+        return stats;
     }
 
     /// <summary>
     /// Loads all configured ETFs with rate limiting.
-    /// Stub: no-op (full implementation in Task 10).
     /// </summary>
     public async Task IngestAllEtfsAsync(DateTime? asOfDate = null, CancellationToken ct = default)
     {
-        // Stub for Task 10
-        await Task.CompletedTask;
+        var etfTickers = EtfConfigs.Keys.ToList();
+        int current = 0;
+
+        foreach (var ticker in etfTickers)
+        {
+            ct.ThrowIfCancellationRequested();
+            current++;
+
+            try
+            {
+                var stats = await IngestEtfAsync(ticker, asOfDate, ct);
+                ProgressUpdated?.Invoke(new IngestProgress(ticker, current, etfTickers.Count, 0, 0, stats));
+                LogMessage?.Invoke($"{ticker}: {stats.Inserted} inserted, {stats.SkippedExisting} skipped, {stats.Failed} failed");
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                LogMessage?.Invoke($"{ticker}: FAILED — {ex.Message}");
+                ProgressUpdated?.Invoke(new IngestProgress(ticker, current, etfTickers.Count, 0, 0,
+                    new IngestStats(0, 0, 0, 0, 0, 1, 0)));
+            }
+
+            // Rate limiting — minimum 2s between iShares requests
+            if (current < etfTickers.Count)
+                await Task.Delay(RequestDelayMs, ct);
+        }
     }
 
     /// <summary>
-    /// Returns ETFs with stale constituent data.
-    /// Stub: empty list (full implementation in Task 10).
+    /// Returns ETFs with stale constituent data (missing latest month-end).
     /// </summary>
     public async Task<IReadOnlyList<(string EtfTicker, string IndexCode)>> GetStaleEtfsAsync(CancellationToken ct = default)
     {
-        // Stub for Task 10
+        // Find the latest date in IndexConstituent table
+        var latestDate = await _dbContext.IndexConstituents
+            .AsNoTracking()
+            .MaxAsync(c => (DateTime?)c.EffectiveDate, ct);
+
+        if (latestDate == null)
+            return EtfConfigs.Select(kvp => (kvp.Key, kvp.Value.IndexCode)).ToList();
+
+        var latestDateTime = (DateTime)latestDate;
+
+        // Find the last business day of the previous month-end
+        var today = DateTime.UtcNow.Date;
+        var monthEnd = new DateTime(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month));
+        var lastBusinessDay = AdjustToLastBusinessDay(monthEnd);
+
+        // If latest data is before last business day, consider stale
+        if (latestDateTime.Date < lastBusinessDay)
+        {
+            return EtfConfigs.Select(kvp => (kvp.Key, kvp.Value.IndexCode)).ToList();
+        }
+
         return new List<(string, string)>();
+    }
+
+    /// <summary>
+    /// Matches an existing security or creates a new one (3-level matching: ticker, CUSIP, ISIN).
+    /// </summary>
+    private async Task<(int SecurityAlias, bool IsNew)> MatchOrCreateSecurityAsync(ISharesHolding holding, CancellationToken ct)
+    {
+        // Level 1: Ticker lookup
+        var security = await _dbContext.SecurityMaster
+            .FirstOrDefaultAsync(s => s.TickerSymbol == holding.Ticker, ct);
+
+        if (security != null)
+            return (security.SecurityAlias, false);
+
+        // Level 2: CUSIP lookup
+        if (holding.Cusip != null)
+        {
+            var identifier = await _dbContext.SecurityIdentifiers
+                .FirstOrDefaultAsync(si => si.IdentifierType == "CUSIP" && si.IdentifierValue == holding.Cusip, ct);
+            if (identifier != null)
+            {
+                var foundSecurity = await _dbContext.SecurityMaster.FindAsync(new object[] { identifier.SecurityAlias }, cancellationToken: ct);
+                if (foundSecurity != null)
+                    return (foundSecurity.SecurityAlias, false);
+            }
+        }
+
+        // Level 3: ISIN lookup
+        if (holding.Isin != null)
+        {
+            var identifier = await _dbContext.SecurityIdentifiers
+                .FirstOrDefaultAsync(si => si.IdentifierType == "ISIN" && si.IdentifierValue == holding.Isin, ct);
+            if (identifier != null)
+            {
+                var foundSecurity = await _dbContext.SecurityMaster.FindAsync(new object[] { identifier.SecurityAlias }, cancellationToken: ct);
+                if (foundSecurity != null)
+                    return (foundSecurity.SecurityAlias, false);
+            }
+        }
+
+        // Create new security
+        var newSecurity = new SecurityMasterEntity
+        {
+            PrimaryAssetId = holding.Cusip ?? holding.Isin,
+            IssueName = holding.Name,
+            TickerSymbol = holding.Ticker,
+            Exchange = holding.Exchange,
+            SecurityType = "Common Stock",
+            Country = holding.Location,
+            Currency = holding.Currency,
+            Isin = holding.Isin,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        _dbContext.SecurityMaster.Add(newSecurity);
+        await _dbContext.SaveChangesAsync(ct);
+
+        return (newSecurity.SecurityAlias, true);
+    }
+
+    /// <summary>
+    /// Upserts security identifiers with SCD Type 2 history tracking.
+    /// </summary>
+    private async Task UpsertSecurityIdentifiersAsync(int securityAlias, ISharesHolding holding, CancellationToken ct)
+    {
+        var identifiersToUpsert = new[]
+        {
+            ("CUSIP", holding.Cusip),
+            ("ISIN", holding.Isin),
+            ("SEDOL", holding.Sedol)
+        };
+
+        foreach (var (idType, idValue) in identifiersToUpsert)
+        {
+            if (string.IsNullOrWhiteSpace(idValue))
+                continue;
+
+            var existing = await _dbContext.SecurityIdentifiers
+                .FirstOrDefaultAsync(si => si.SecurityAlias == securityAlias && si.IdentifierType == idType, ct);
+
+            if (existing != null)
+            {
+                if (existing.IdentifierValue == idValue)
+                    continue; // No change
+
+                // Snapshot old value to history (SCD Type 2)
+                var hist = new SecurityIdentifierHistEntity
+                {
+                    SecurityAlias = securityAlias,
+                    IdentifierType = idType,
+                    IdentifierValue = existing.IdentifierValue,
+                    EffectiveFrom = existing.UpdatedAt.Date,
+                    EffectiveTo = DateTime.UtcNow.Date,
+                    SourceId = ISharesSourceId
+                };
+                _dbContext.SecurityIdentifierHistory.Add(hist);
+
+                // Update current
+                existing.IdentifierValue = idValue;
+                existing.SourceId = ISharesSourceId;
+                existing.UpdatedAt = DateTime.UtcNow;
+                existing.UpdatedBy = "ishares-ingest";
+            }
+            else
+            {
+                // Insert new
+                var newIdentifier = new SecurityIdentifierEntity
+                {
+                    SecurityAlias = securityAlias,
+                    IdentifierType = idType,
+                    IdentifierValue = idValue,
+                    SourceId = ISharesSourceId,
+                    UpdatedBy = "ishares-ingest",
+                    UpdatedAt = DateTime.UtcNow
+                };
+                _dbContext.SecurityIdentifiers.Add(newIdentifier);
+            }
+        }
+
+        await _dbContext.SaveChangesAsync(ct);
     }
 
     /// <summary>
