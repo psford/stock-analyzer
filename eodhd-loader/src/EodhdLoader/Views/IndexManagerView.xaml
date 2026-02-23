@@ -4,7 +4,6 @@
              xmlns:local="clr-namespace:EodhdLoader">
     <UserControl.Resources>
         <local:InverseBoolConverter x:Key="InverseBoolConverter"/>
-        <local:EnvironmentConverter x:Key="EnvironmentConverter"/>
     </UserControl.Resources>
     <Grid Margin="20">
         <Grid.RowDefinitions>
@@ -12,58 +11,17 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Header -->
+        <!-- Row 0: Header -->
         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,20">
-            <TextBlock Text="Index Manager" FontSize="24" FontWeight="Bold" VerticalAlignment="Center"/>
-            <TextBlock Text="Environment:" FontSize="14" Margin="30,0,10,0" VerticalAlignment="Center"/>
-            <ComboBox Width="120" SelectedIndex="{Binding SelectedEnvironment, Converter={StaticResource EnvironmentConverter}}">
-                <ComboBoxItem Content="Local"/>
-                <ComboBoxItem Content="Production"/>
-            </ComboBox>
-            <Button Content="Test Connection" Command="{Binding TestConnectionCommand}"
-                    Width="120" Height="30" Margin="10,0,0,0"/>
+            <TextBlock Text="iShares Constituent Loader" FontSize="24" FontWeight="Bold" VerticalAlignment="Center"/>
         </StackPanel>
 
-        <!-- Index Selection -->
-        <GroupBox Grid.Row="1" Header="Select Index" Margin="0,0,0,15">
-            <Grid Margin="10">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-
-                <ComboBox Grid.Column="0" ItemsSource="{Binding AvailableIndices}"
-                          SelectedItem="{Binding SelectedIndex}"
-                          DisplayMemberPath="Name"
-                          Margin="0,0,10,0"/>
-
-                <Button Grid.Column="1" Content="Load Constituents"
-                        Command="{Binding LoadConstituentsCommand}"
-                        Width="140" Height="30"
-                        IsEnabled="{Binding IsLoadingConstituents, Converter={StaticResource InverseBoolConverter}}"/>
-            </Grid>
-        </GroupBox>
-
-        <!-- Constituents Info -->
-        <GroupBox Grid.Row="2" Header="Constituents" Margin="0,0,0,15">
-            <Grid Margin="10">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-
-                <TextBlock Grid.Column="0" Text="Securities in index:" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                <TextBlock Grid.Column="1" Text="{Binding ConstituentCount, StringFormat=N0}"
-                           FontWeight="Bold" FontSize="16" Foreground="Blue"/>
-            </Grid>
-        </GroupBox>
-
-        <!-- Backfill Configuration -->
-        <GroupBox Grid.Row="3" Header="Backfill Configuration" Margin="0,0,0,15">
+        <!-- Row 1: Load Configuration -->
+        <GroupBox Grid.Row="1" Header="Load Configuration" Margin="0,0,0,15">
             <Grid Margin="10">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -71,36 +29,54 @@
                 </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="200"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="From Date:" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                <DatePicker Grid.Row="0" Grid.Column="1" SelectedDate="{Binding BackfillFromDate}" Margin="0,0,20,0"/>
+                <!-- As-of Date Row -->
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="As-of Date:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <DatePicker Grid.Row="0" Grid.Column="1" SelectedDate="{Binding AsOfDate}" Margin="0,0,20,0"/>
 
-                <TextBlock Grid.Row="0" Grid.Column="2" Text="To Date:" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                <DatePicker Grid.Row="0" Grid.Column="3" SelectedDate="{Binding BackfillToDate}"/>
-
-                <!-- Progress Bar -->
-                <ProgressBar Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4"
-                             Value="{Binding Progress}" Minimum="0" Maximum="100"
-                             Height="25" Margin="0,10,0,0"/>
+                <!-- ETF Selection Row -->
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="ETF:" VerticalAlignment="Center" Margin="0,10,10,0"/>
+                <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding AvailableEtfTickers}"
+                          SelectedItem="{Binding SelectedEtfTicker}"
+                          Margin="0,10,20,0"/>
             </Grid>
         </GroupBox>
 
-        <!-- Actions -->
-        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,15">
-            <TextBlock Text="{Binding ProgressText}" VerticalAlignment="Center" Margin="0,0,15,0" FontWeight="Bold"/>
+        <!-- Row 2: Progress -->
+        <GroupBox Grid.Row="2" Header="Progress" Margin="0,0,0,15">
+            <Grid Margin="10">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Current ETF Label -->
+                <TextBlock Grid.Row="0" Text="{Binding CurrentEtfLabel}" FontWeight="Bold" Margin="0,0,0,5"/>
+
+                <!-- Progress Bar -->
+                <ProgressBar Grid.Row="1" Value="{Binding Progress}" Minimum="0" Maximum="100"
+                             Height="25" Margin="0,0,0,5"/>
+
+                <!-- Progress Stats -->
+                <TextBlock Grid.Row="2" Text="{Binding ProgressText}" Foreground="#666" FontSize="11" Margin="0,0,0,0"/>
+            </Grid>
+        </GroupBox>
+
+        <!-- Row 3: Actions -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,15">
             <Button Content="Clear Log" Command="{Binding ClearLogCommand}" Width="80" Height="30" Margin="0,0,10,0"/>
-            <Button Content="Cancel" Command="{Binding CancelBackfillCommand}" Width="80" Height="30" Margin="0,0,10,0"
+            <Button Content="Cancel" Command="{Binding CancelCommand}" Width="80" Height="30" Margin="0,0,10,0"
                     IsEnabled="{Binding IsLoading}"/>
-            <Button Content="Start Backfill" Command="{Binding StartBackfillCommand}" Width="120" Height="30"
+            <Button Content="Load" Command="{Binding LoadAllCommand}" Width="80" Height="30"
                     IsEnabled="{Binding IsLoading, Converter={StaticResource InverseBoolConverter}}"/>
         </StackPanel>
 
-        <!-- Log -->
-        <GroupBox Grid.Row="5" Header="Log">
+        <!-- Row 4: Activity Log -->
+        <GroupBox Grid.Row="4" Header="Activity Log" Margin="0,0,0,0">
             <ListBox ItemsSource="{Binding LogMessages}" FontFamily="Consolas" FontSize="11"
                      ScrollViewer.HorizontalScrollBarVisibility="Auto">
                 <ListBox.ItemTemplate>
@@ -110,5 +86,7 @@
                 </ListBox.ItemTemplate>
             </ListBox>
         </GroupBox>
+
+        <!-- Row 5: Reserved for future use -->
     </Grid>
 </UserControl>
