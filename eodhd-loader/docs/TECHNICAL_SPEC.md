@@ -242,7 +242,7 @@ Implements two integration tests verifying minimum 2-second gaps between consecu
 
 2. **CrawlerViewModel Rate Limiting**: Tests the Crawler's loop via `CheckAndLoadConstituentsAsync` with mocked service. Records `IngestEtfAsync` invocation timestamps, asserts >= 1.9s gap between calls.
 
-**Test Count**: 1 test (marked `[Trait("Category", "Slow")]` for CI filtering)
+**Test Count**: 2 tests (both marked `[Trait("Category", "Slow")]` for CI filtering)
 **Status**: Passing
 
 ### Task 2: Pipeline Parity Tests (AC6.2)
