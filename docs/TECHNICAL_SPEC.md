@@ -2602,7 +2602,7 @@ WPF desktop application (.NET 8, `net8.0-windows10.0.19041`) for managing price 
 | Boris | `BorisView` | `BorisViewModel` | Single-ticker price loading |
 | Crawler | `CrawlerView` | `CrawlerViewModel` | Autonomous gap-filling agent (Data Load Monitor) — 3-tier metric dashboard |
 | Bulk Fill | `BulkFillView` | `BulkFillViewModel` | Batch historical data loading |
-| Index Manager | `IndexManagerView` | `IndexManagerViewModel` | Index composition management |
+| Index Manager | `IndexManagerView` | `IndexManagerViewModel` | Index composition management — ETF dropdown shows "TICKER - Name" with acronym handling (MSCI, ESG, EAFE, etc.) |
 | Dashboard | `DashboardView` | `DashboardViewModel` | Coverage stats and charts |
 
 **Crawler — 3-Tier Metric Dashboard:**

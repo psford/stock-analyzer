@@ -63,11 +63,44 @@ public partial class IndexManagerViewModel : ViewModelBase
 
     private void PopulateAvailableEtfs()
     {
-        var tickers = new List<string> { "(All)" };
-        tickers.AddRange(_constituentService.EtfConfigs.Keys.OrderBy(k => k));
+        var items = new List<string> { "(All)" };
+        items.AddRange(
+            _constituentService.EtfConfigs
+                .OrderBy(kvp => kvp.Key)
+                .Select(kvp => $"{kvp.Key} - {FormatSlugAsName(kvp.Value.Slug)}"));
 
-        AvailableEtfTickers = new ObservableCollection<string>(tickers);
+        AvailableEtfTickers = new ObservableCollection<string>(items);
         SelectedEtfTicker = "(All)";
+    }
+
+    /// <summary>
+    /// Converts an iShares slug like "ishares-core-s-p-500-etf" to "Core S&amp;P 500 ETF".
+    /// Strips the leading "ishares-" prefix and title-cases the rest.
+    /// </summary>
+    private static readonly HashSet<string> UppercaseAcronyms = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "msci", "esg", "eafe", "usa", "etf", "tips", "mbs", "gnma", "cmbs",
+    };
+
+    private static string FormatSlugAsName(string slug)
+    {
+        // Strip "ishares-" prefix
+        var name = slug.StartsWith("ishares-", StringComparison.OrdinalIgnoreCase)
+            ? slug["ishares-".Length..]
+            : slug;
+
+        // Replace hyphens with spaces and apply casing rules
+        var words = name.Split('-', StringSplitOptions.RemoveEmptyEntries);
+        for (int i = 0; i < words.Length; i++)
+        {
+            var w = words[i];
+            if (UppercaseAcronyms.Contains(w) || w.Length <= 3)
+                words[i] = w.ToUpperInvariant();
+            else
+                words[i] = char.ToUpper(w[0]) + w[1..];
+        }
+
+        return string.Join(' ', words);
     }
 
     private static DateTime GetLastMonthEnd() => DateUtilities.GetLastMonthEnd();
@@ -94,15 +127,17 @@ public partial class IndexManagerViewModel : ViewModelBase
             Log($"Loading iShares ETF constituents as of {AsOfDate:yyyy-MM-dd}");
 
             // Determine which ETF(s) to load
-            if (string.IsNullOrEmpty(SelectedEtfTicker) || SelectedEtfTicker == "(All)")
+            // Display format is "TICKER - Name", extract just the ticker
+            var ticker = SelectedEtfTicker?.Split(" - ", 2)[0];
+            if (string.IsNullOrEmpty(ticker) || ticker == "(All)")
             {
                 Log("Loading all configured ETFs...");
                 await _constituentService.IngestAllEtfsAsync(AsOfDate, _cts.Token);
             }
             else
             {
-                Log($"Loading specific ETF: {SelectedEtfTicker}");
-                await _constituentService.IngestEtfAsync(SelectedEtfTicker, AsOfDate, _cts.Token);
+                Log($"Loading specific ETF: {ticker}");
+                await _constituentService.IngestEtfAsync(ticker, AsOfDate, _cts.Token);
             }
 
             Progress = 100;
