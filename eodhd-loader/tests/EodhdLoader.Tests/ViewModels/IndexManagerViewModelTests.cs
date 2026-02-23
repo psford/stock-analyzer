@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Threading;
 using EodhdLoader.Models;
 using EodhdLoader.Services;
+using EodhdLoader.Utilities;
 using EodhdLoader.ViewModels;
 using Moq;
 using Xunit;
@@ -457,17 +458,7 @@ public class IndexManagerViewModelTests
     }
 
     /// <summary>
-    /// Helper: Calculate last month-end business day (mirrors ViewModel logic).
+    /// Delegates to shared DateUtilities for last month-end business day calculation.
     /// </summary>
-    private static DateTime GetLastMonthEnd()
-    {
-        var today = DateTime.Today;
-        var firstOfMonth = new DateTime(today.Year, today.Month, 1);
-        var lastOfPrevMonth = firstOfMonth.AddDays(-1);
-
-        while (lastOfPrevMonth.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)
-            lastOfPrevMonth = lastOfPrevMonth.AddDays(-1);
-
-        return lastOfPrevMonth;
-    }
+    private static DateTime GetLastMonthEnd() => DateUtilities.GetLastMonthEnd();
 }
