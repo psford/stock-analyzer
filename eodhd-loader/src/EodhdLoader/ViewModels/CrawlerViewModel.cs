@@ -362,6 +362,11 @@ public partial class CrawlerViewModel : ViewModelBase
                     loaded++;
                     AddActivity("✅", etfTicker, $"{stats.Inserted} inserted, {stats.SkippedExisting} skipped");
                 }
+                catch (OperationCanceledException)
+                {
+                    // Cancellation should break the loop, not count as a failure
+                    break;
+                }
                 catch (Exception ex)
                 {
                     failed++;

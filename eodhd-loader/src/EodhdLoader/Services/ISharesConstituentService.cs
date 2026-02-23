@@ -6,6 +6,7 @@ using System.Net.Http;
 using System.Security;
 using System.Text.Json;
 using EodhdLoader.Models;
+using EodhdLoader.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using StockAnalyzer.Core.Data;
@@ -256,22 +257,9 @@ public class ISharesConstituentService : IISharesConstituentService
     }
 
     /// <summary>
-    /// Calculates the last business day of the current month.
+    /// Calculates the last business day of the previous month.
     /// </summary>
-    private static DateTime GetLastMonthEnd()
-    {
-        var today = DateTime.UtcNow.Date;
-        var firstOfMonth = new DateTime(today.Year, today.Month, 1);
-        var lastDayOfMonth = firstOfMonth.AddDays(-1); // Last day of previous month
-
-        // Adjust to last business day (if weekend)
-        while (lastDayOfMonth.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)
-        {
-            lastDayOfMonth = lastDayOfMonth.AddDays(-1);
-        }
-
-        return lastDayOfMonth;
-    }
+    private static DateTime GetLastMonthEnd() => DateUtilities.GetLastMonthEnd();
 
     /// <summary>
     /// Matches an existing security or creates a new one (3-level matching: ticker, CUSIP, ISIN).

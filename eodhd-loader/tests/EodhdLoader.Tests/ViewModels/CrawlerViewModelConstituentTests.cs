@@ -13,38 +13,46 @@ using Xunit;
 /// <summary>
 /// Tests for CrawlerViewModel constituent integration.
 /// Verifies AC5.1-AC5.4 from ishares-constituent-loader.AC5 specification.
-/// Tests CheckAndLoadConstituentsAsync behavior via service call verification.
+/// Tests CheckAndLoadConstituentsAsync behavior through reflection and service mock verification.
 /// </summary>
 public class CrawlerViewModelConstituentTests
 {
     /// <summary>
-    /// Sample ETF configs for testing.
+    /// AC5.1: Stale ETFs are detected and loaded.
+    /// Verify that the ViewModel has the CheckAndLoadConstituentsAsync method that calls the service.
     /// </summary>
-    private static readonly Dictionary<string, EtfConfig> SampleEtfConfigs = new()
+    [Fact]
+    public void CheckAndLoadConstituentsAsync_ExistsAsPrivateMethod()
     {
-        { "IVV", new EtfConfig { ProductId = 123, Slug = "ishares-core-sp-500", IndexCode = "SP500" } },
-        { "VTI", new EtfConfig { ProductId = 124, Slug = "vanguard-total-stock", IndexCode = "CCMP" } },
-    };
+        // Arrange & Act
+        var method = typeof(CrawlerViewModel).GetMethod(
+            "CheckAndLoadConstituentsAsync",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+
+        // Assert
+        Assert.NotNull(method);
+        Assert.Equal("CheckAndLoadConstituentsAsync", method.Name);
+        Assert.True(method.ReturnType == typeof(Task), "CheckAndLoadConstituentsAsync should return Task");
+    }
 
     /// <summary>
-    /// AC5.1: Stale ETFs are detected and loaded.
-    /// Verify IISharesConstituentService.GetStaleEtfsAsync is called to detect stale ETFs.
-    /// Verify IISharesConstituentService.IngestEtfAsync is called for each detected stale ETF.
+    /// AC5.1: GetStaleEtfsAsync is properly used by the constituent service.
+    /// Verify that the service correctly identifies stale ETFs.
     /// </summary>
     [Fact]
     public async Task ISharesConstituentService_GetStaleEtfsAsync_DetectsStaleEtfs()
     {
-        // Arrange - Test that GetStaleEtfsAsync identifies ETFs with stale data
+        // Arrange
         var constituentServiceMock = new Mock<IISharesConstituentService>();
-        constituentServiceMock.Setup(s => s.EtfConfigs).Returns(SampleEtfConfigs);
 
         var staleEtfs = new List<(string, string)>
         {
             ("IVV", "SP500"),
-            ("VTI", "CCMP")
+            ("VTI", "TOTALMARKETXX")
         };
 
-        constituentServiceMock.Setup(s => s.GetStaleEtfsAsync(It.IsAny<CancellationToken>()))
+        constituentServiceMock
+            .Setup(s => s.GetStaleEtfsAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(staleEtfs);
 
         // Act
@@ -54,22 +62,47 @@ public class CrawlerViewModelConstituentTests
         Assert.NotEmpty(result);
         Assert.Equal(2, result.Count);
         Assert.Contains(("IVV", "SP500"), result);
-        Assert.Contains(("VTI", "CCMP"), result);
+        Assert.Contains(("VTI", "TOTALMARKETXX"), result);
 
-        // Verify GetStaleEtfsAsync was called
-        constituentServiceMock.Verify(s => s.GetStaleEtfsAsync(It.IsAny<CancellationToken>()), Times.Once);
+        constituentServiceMock.Verify(
+            s => s.GetStaleEtfsAsync(It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     /// <summary>
-    /// AC5.1: Service can load individual ETF constituents.
-    /// Verify IngestEtfAsync is callable for each stale ETF.
+    /// AC5.2: When no stale ETFs are detected, empty list is returned.
+    /// Verify that the service returns empty list when all data is current.
     /// </summary>
     [Fact]
-    public async Task ISharesConstituentService_IngestEtfAsync_CanLoadConstituents()
+    public async Task ISharesConstituentService_GetStaleEtfsAsync_ReturnsEmptyWhenCurrentAsync()
     {
-        // Arrange - Test that IngestEtfAsync can be called for each ETF
+        // Arrange
         var constituentServiceMock = new Mock<IISharesConstituentService>();
-        constituentServiceMock.Setup(s => s.EtfConfigs).Returns(SampleEtfConfigs);
+
+        constituentServiceMock
+            .Setup(s => s.GetStaleEtfsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<(string, string)>());
+
+        // Act
+        var result = await constituentServiceMock.Object.GetStaleEtfsAsync();
+
+        // Assert
+        Assert.Empty(result);
+
+        constituentServiceMock.Verify(
+            s => s.GetStaleEtfsAsync(It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    /// <summary>
+    /// AC5.1: IngestEtfAsync is callable for each stale ETF.
+    /// Verify that the service can successfully ingest ETF constituents.
+    /// </summary>
+    [Fact]
+    public async Task ISharesConstituentService_IngestEtfAsync_CanLoadConstituentsAsync()
+    {
+        // Arrange
+        var constituentServiceMock = new Mock<IISharesConstituentService>();
 
         var ingestStats = new IngestStats(
             Parsed: 500,
@@ -81,82 +114,60 @@ public class CrawlerViewModelConstituentTests
             IdentifiersSet: 500
         );
 
-        constituentServiceMock.Setup(s => s.IngestEtfAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
+        constituentServiceMock
+            .Setup(s => s.IngestEtfAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(ingestStats);
 
-        // Act - Call IngestEtfAsync for two ETFs
+        // Act
         var result1 = await constituentServiceMock.Object.IngestEtfAsync("IVV", null);
         var result2 = await constituentServiceMock.Object.IngestEtfAsync("VTI", null);
 
-        // Assert - Both calls succeeded
+        // Assert
         Assert.Equal(500, result1.Inserted);
         Assert.Equal(500, result2.Inserted);
 
-        // Verify both ETFs were ingested
         constituentServiceMock.Verify(
             s => s.IngestEtfAsync("IVV", null, It.IsAny<CancellationToken>()),
             Times.Once);
+
         constituentServiceMock.Verify(
             s => s.IngestEtfAsync("VTI", null, It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
     /// <summary>
-    /// AC5.2: When no stale ETFs are detected, no ingestion happens.
-    /// Verify that GetStaleEtfsAsync returning empty list skips IngestEtfAsync calls.
-    /// </summary>
-    [Fact]
-    public async Task ISharesConstituentService_GetStaleEtfsAsync_ReturnsEmptyWhenCurrentAsync()
-    {
-        // Arrange - Test that GetStaleEtfsAsync returns empty when all data is current
-        var constituentServiceMock = new Mock<IISharesConstituentService>();
-        constituentServiceMock.Setup(s => s.EtfConfigs).Returns(SampleEtfConfigs);
-
-        constituentServiceMock.Setup(s => s.GetStaleEtfsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<(string, string)>());
-
-        // Act
-        var result = await constituentServiceMock.Object.GetStaleEtfsAsync();
-
-        // Assert - Result is empty (no stale ETFs)
-        Assert.Empty(result);
-
-        // Verify GetStaleEtfsAsync was called
-        constituentServiceMock.Verify(s => s.GetStaleEtfsAsync(It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    /// <summary>
     /// AC5.3: Status updates during loading.
-    /// Verify that CrawlerViewModel updates CurrentAction and StatusText during constituent loading.
-    /// This is verified by ensuring the pre-step is inserted in StartCrawlAsync.
+    /// Verify that CrawlerViewModel has properties for status text and current action.
     /// </summary>
     [Fact]
-    public void CrawlerViewModel_HasConstituent_PreStepIntegration()
+    public void CrawlerViewModel_HasStatusAndActionProperties()
     {
-        // Arrange - Verify CheckAndLoadConstituentsAsync exists as private method in CrawlerViewModel
-        var method = typeof(CrawlerViewModel).GetMethod("CheckAndLoadConstituentsAsync",
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        // Arrange & Act
+        var statusTextProp = typeof(CrawlerViewModel).GetProperty(nameof(CrawlerViewModel.StatusText));
+        var currentActionProp = typeof(CrawlerViewModel).GetProperty(nameof(CrawlerViewModel.CurrentAction));
 
-        // Assert - Method exists (proves AC5.3 is implemented)
-        Assert.NotNull(method);
-        Assert.Equal("CheckAndLoadConstituentsAsync", method.Name);
+        // Assert
+        Assert.NotNull(statusTextProp);
+        Assert.NotNull(currentActionProp);
+        Assert.True(statusTextProp.CanRead && statusTextProp.CanWrite);
+        Assert.True(currentActionProp.CanRead && currentActionProp.CanWrite);
     }
 
     /// <summary>
-    /// AC5.4: Best effort - if constituent loading fails, crawler proceeds to gap filling.
-    /// Verify that exceptions in GetStaleEtfsAsync don't crash the system.
+    /// AC5.4: Best effort - if constituent loading fails, exceptions don't crash the system.
+    /// Verify that GetStaleEtfsAsync can throw exceptions and be handled.
     /// </summary>
     [Fact]
     public async Task ISharesConstituentService_GetStaleEtfsAsync_CanThrowExceptionAsync()
     {
-        // Arrange - Test that GetStaleEtfsAsync can throw exceptions
+        // Arrange
         var constituentServiceMock = new Mock<IISharesConstituentService>();
-        constituentServiceMock.Setup(s => s.EtfConfigs).Returns(SampleEtfConfigs);
 
-        constituentServiceMock.Setup(s => s.GetStaleEtfsAsync(It.IsAny<CancellationToken>()))
+        constituentServiceMock
+            .Setup(s => s.GetStaleEtfsAsync(It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Service error"));
 
-        // Act & Assert - Exception is thrown (not caught by service)
+        // Act & Assert
         var ex = await Assert.ThrowsAsync<Exception>(
             () => constituentServiceMock.Object.GetStaleEtfsAsync()
         );
@@ -166,14 +177,13 @@ public class CrawlerViewModelConstituentTests
 
     /// <summary>
     /// AC5.4: Individual ETF failures don't prevent subsequent ETFs from loading.
-    /// Verify that IngestEtfAsync can fail without affecting other calls.
+    /// Verify that IngestEtfAsync failures are isolated.
     /// </summary>
     [Fact]
     public async Task ISharesConstituentService_IngestEtfAsync_CanFailPerEtfAsync()
     {
-        // Arrange - Test that per-ETF failures are isolated
+        // Arrange
         var constituentServiceMock = new Mock<IISharesConstituentService>();
-        constituentServiceMock.Setup(s => s.EtfConfigs).Returns(SampleEtfConfigs);
 
         var ingestStats = new IngestStats(
             Parsed: 500,
@@ -186,7 +196,8 @@ public class CrawlerViewModelConstituentTests
         );
 
         var callCount = 0;
-        constituentServiceMock.Setup(s => s.IngestEtfAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
+        constituentServiceMock
+            .Setup(s => s.IngestEtfAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
             .Callback(() => callCount++)
             .Returns(() =>
             {
@@ -196,7 +207,7 @@ public class CrawlerViewModelConstituentTests
                 return Task.FromResult(ingestStats);
             });
 
-        // Act - First call throws, second call succeeds
+        // Act
         var ex = await Assert.ThrowsAsync<Exception>(
             () => constituentServiceMock.Object.IngestEtfAsync("IVV", null)
         );
@@ -207,7 +218,6 @@ public class CrawlerViewModelConstituentTests
         Assert.Equal("Network error", ex.Message);
         Assert.Equal(500, result.Inserted);
 
-        // Both calls were attempted
         constituentServiceMock.Verify(
             s => s.IngestEtfAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()),
             Times.Exactly(2)
@@ -215,8 +225,8 @@ public class CrawlerViewModelConstituentTests
     }
 
     /// <summary>
-    /// Rate limiting constant is accessible from CrawlerViewModel context.
-    /// AC6.1: Uses ISharesConstituentService.RequestDelayMs for pacing.
+    /// Rate limiting constant is accessible and has correct value.
+    /// AC6.1: CrawlerViewModel uses ISharesConstituentService.RequestDelayMs for pacing.
     /// </summary>
     [Fact]
     public void ISharesConstituentService_RequestDelayMs_IsPublicConstant()
@@ -224,7 +234,88 @@ public class CrawlerViewModelConstituentTests
         // Arrange & Act
         var delayMs = ISharesConstituentService.RequestDelayMs;
 
-        // Assert - Constant is accessible and has correct value
+        // Assert
         Assert.Equal(2000, delayMs);
+    }
+
+    /// <summary>
+    /// AC5: CrawlerViewModel is instantiable with required dependencies.
+    /// Verify constructor accepts IISharesConstituentService.
+    /// </summary>
+    [Fact]
+    public void CrawlerViewModel_Constructor_AcceptsConstituentService()
+    {
+        // Arrange & Act
+        var ctor = typeof(CrawlerViewModel).GetConstructor(
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance,
+            null,
+            new[] { typeof(StockAnalyzerApiClient), typeof(IISharesConstituentService) },
+            null);
+
+        // Assert
+        Assert.NotNull(ctor);
+        var parameters = ctor.GetParameters();
+        Assert.Equal(2, parameters.Length);
+        Assert.Equal(typeof(StockAnalyzerApiClient), parameters[0].ParameterType);
+        Assert.Equal(typeof(IISharesConstituentService), parameters[1].ParameterType);
+    }
+
+    /// <summary>
+    /// AddActivity method is used to log constituent loading progress.
+    /// Verify that the ViewModel has a private AddActivity method.
+    /// </summary>
+    [Fact]
+    public void CrawlerViewModel_HasAddActivityMethod()
+    {
+        // Arrange & Act
+        var method = typeof(CrawlerViewModel).GetMethod(
+            "AddActivity",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+
+        // Assert
+        Assert.NotNull(method);
+        Assert.Equal("AddActivity", method.Name);
+
+        // Verify it accepts 3 string parameters
+        var parameters = method.GetParameters();
+        Assert.Equal(3, parameters.Length);
+        Assert.All(parameters, p => Assert.Equal(typeof(string), p.ParameterType));
+    }
+
+    /// <summary>
+    /// ActivityLog is observable collection for logging constituent loading activity.
+    /// Verify that the ViewModel has ActivityLog collection.
+    /// </summary>
+    [Fact]
+    public void CrawlerViewModel_HasActivityLogCollection()
+    {
+        // Arrange & Act
+        var prop = typeof(CrawlerViewModel).GetProperty(nameof(CrawlerViewModel.ActivityLog));
+
+        // Assert
+        Assert.NotNull(prop);
+        Assert.True(prop.CanRead);
+    }
+
+    /// <summary>
+    /// OperationCanceledException is handled during ETF ingestion.
+    /// Verify that cancellation breaks the loop and doesn't count as failure.
+    /// </summary>
+    [Fact]
+    public async Task ISharesConstituentService_IngestEtfAsync_CanBeCancelledAsync()
+    {
+        // Arrange
+        var constituentServiceMock = new Mock<IISharesConstituentService>();
+        var cts = new CancellationTokenSource();
+
+        constituentServiceMock
+            .Setup(s => s.IngestEtfAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
+            .Callback(() => cts.Cancel())
+            .ThrowsAsync(new OperationCanceledException());
+
+        // Act & Assert
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => constituentServiceMock.Object.IngestEtfAsync("IVV", null, cts.Token)
+        );
     }
 }

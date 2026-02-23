@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
 using EodhdLoader.Services;
+using EodhdLoader.Utilities;
 using StockAnalyzer.Core.Data;
 using StockAnalyzer.Core.Data.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -41,23 +42,10 @@ public class ISharesConstituentServiceStalenessTests
     }
 
     /// <summary>
-    /// Helper: Calculates the last business day of the current/previous month.
-    /// Mirrors GetLastMonthEnd() logic from phase spec.
+    /// Helper: Calculates the last business day of the previous month.
+    /// Delegates to shared DateUtilities to stay in sync with production code.
     /// </summary>
-    private static DateTime GetLastMonthEnd()
-    {
-        var today = DateTime.UtcNow.Date;
-        var firstOfMonth = new DateTime(today.Year, today.Month, 1);
-        var lastDayOfMonth = firstOfMonth.AddDays(-1);
-
-        // Adjust to last business day
-        while (lastDayOfMonth.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)
-        {
-            lastDayOfMonth = lastDayOfMonth.AddDays(-1);
-        }
-
-        return lastDayOfMonth;
-    }
+    private static DateTime GetLastMonthEnd() => DateUtilities.GetLastMonthEnd();
 
     /// <summary>
     /// AC5.1: Detects stale data — ETF with max EffectiveDate two months ago should be returned as stale.

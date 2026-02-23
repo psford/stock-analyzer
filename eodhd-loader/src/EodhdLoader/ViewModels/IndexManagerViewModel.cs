@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using EodhdLoader.Models;
 using EodhdLoader.Services;
+using EodhdLoader.Utilities;
 
 namespace EodhdLoader.ViewModels;
 
@@ -69,18 +70,7 @@ public partial class IndexManagerViewModel : ViewModelBase
         SelectedEtfTicker = "(All)";
     }
 
-    private static DateTime GetLastMonthEnd()
-    {
-        var today = DateTime.Today;
-        var firstOfMonth = new DateTime(today.Year, today.Month, 1);
-        var lastOfPrevMonth = firstOfMonth.AddDays(-1);
-
-        // Walk back to last business day (skip weekends)
-        while (lastOfPrevMonth.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)
-            lastOfPrevMonth = lastOfPrevMonth.AddDays(-1);
-
-        return lastOfPrevMonth;
-    }
+    private static DateTime GetLastMonthEnd() => DateUtilities.GetLastMonthEnd();
 
     [RelayCommand]
     private async Task LoadAllAsync()
