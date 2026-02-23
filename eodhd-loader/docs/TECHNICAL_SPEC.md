@@ -236,13 +236,15 @@ Phase 4 completes the iShares constituent loader with comprehensive verification
 ### Task 1: Rate Limiting Verification Tests (AC6.1)
 **File**: `projects/eodhd-loader/tests/EodhdLoader.Tests/Integration/RateLimitingTests.cs`
 
-Implements two integration tests verifying minimum 2-second gaps between consecutive iShares HTTP requests:
+Implements three tests verifying minimum 2-second gaps between consecutive iShares HTTP requests:
 
-1. **IngestAllEtfsAsync Rate Limiting**: Tests the service's own loop with real `ISharesConstituentService` and mocked `HttpMessageHandler` returning empty JSON. Records HTTP request timestamps, asserts >= 1.9s gap between consecutive calls.
+1. **IngestAllEtfsAsync Rate Limiting** [Slow]: Creates a real `ISharesConstituentService` with mocked `HttpMessageHandler` returning empty JSON and InMemory DbContext. Limits EtfConfigs to 3 entries via reflection. Calls `IngestAllEtfsAsync()` — the real production method. Records HTTP request timestamps and asserts >= 1.9s gap between consecutive requests.
 
-2. **CrawlerViewModel Rate Limiting**: Tests the Crawler's loop via `CheckAndLoadConstituentsAsync` with mocked service. Records `IngestEtfAsync` invocation timestamps, asserts >= 1.9s gap between calls.
+2. **CheckAndLoadConstituentsAsync Rate Limiting** [Slow]: Creates a real `CrawlerViewModel` (bypasses WPF constructor via `FormatterServices.GetUninitializedObject`), sets up mocked `IISharesConstituentService` via reflection. Calls `CheckAndLoadConstituentsAsync()` — the real production method (internal via InternalsVisibleTo). Records `IngestEtfAsync` invocation timestamps, asserts >= 1.9s gap between calls.
 
-**Test Count**: 2 tests (both marked `[Trait("Category", "Slow")]` for CI filtering)
+3. **RequestDelayMs Constant**: Supplementary check that the rate limiting constant equals 2000ms.
+
+**Test Count**: 3 tests (2 marked `[Trait("Category", "Slow")]` for CI filtering)
 **Status**: Passing
 
 ### Task 2: Pipeline Parity Tests (AC6.2)

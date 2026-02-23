@@ -330,7 +330,7 @@ public partial class CrawlerViewModel : ViewModelBase
     /// Checks for stale constituent data and loads missing month-end snapshots if needed.
     /// AC5.1-AC5.4: Detects stale ETFs, loads them with rate limiting, proceeds even if all fail.
     /// </summary>
-    private async Task CheckAndLoadConstituentsAsync()
+    internal async Task CheckAndLoadConstituentsAsync()
     {
         CurrentAction = "Checking constituent staleness...";
         StatusText = "Checking constituent data freshness...";
@@ -1162,8 +1162,29 @@ public partial class CrawlerViewModel : ViewModelBase
 
     private void AddActivity(string icon, string item, string details)
     {
-        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher != null)
         {
+            dispatcher.Invoke(() =>
+            {
+                ActivityLog.Insert(0, new CrawlActivity
+                {
+                    Icon = icon,
+                    Date = item,
+                    Details = details,
+                    Timestamp = DateTime.Now.ToString("HH:mm:ss")
+                });
+
+                // Keep log manageable
+                while (ActivityLog.Count > 50)
+                {
+                    ActivityLog.RemoveAt(ActivityLog.Count - 1);
+                }
+            });
+        }
+        else
+        {
+            // Test context — no WPF Dispatcher available
             ActivityLog.Insert(0, new CrawlActivity
             {
                 Icon = icon,
@@ -1171,13 +1192,7 @@ public partial class CrawlerViewModel : ViewModelBase
                 Details = details,
                 Timestamp = DateTime.Now.ToString("HH:mm:ss")
             });
-
-            // Keep log manageable
-            while (ActivityLog.Count > 50)
-            {
-                ActivityLog.RemoveAt(ActivityLog.Count - 1);
-            }
-        });
+        }
     }
 }
 
