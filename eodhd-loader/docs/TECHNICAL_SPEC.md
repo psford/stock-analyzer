@@ -137,4 +137,5 @@
 - **All Tests**: 11 passing (xUnit + Moq).
 
 ### Version History
+- **Phase 2 Task 5-6 (2026-02-23)**: Removed deprecated `IndexService` from DI container; legacy Wikipedia-based index manager completely retired.
 - **Phase 2 (2026-02-23)**: ViewModel refactor for iShares constituent loading (AC4.1-AC4.6).
