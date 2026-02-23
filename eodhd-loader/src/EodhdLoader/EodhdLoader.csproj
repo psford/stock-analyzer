@@ -16,6 +16,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="EodhdLoader.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\..\stock-analyzer\src\StockAnalyzer.Core\StockAnalyzer.Core.csproj" />
   </ItemGroup>
 

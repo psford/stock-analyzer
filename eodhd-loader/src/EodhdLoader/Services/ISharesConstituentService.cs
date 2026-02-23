@@ -251,4 +251,282 @@ public class ISharesConstituentService : IISharesConstituentService
         }
         return date;
     }
+
+    /// <summary>
+    /// AC2: Parses iShares JSON holdings data, auto-detecting Format A/B and filtering equity only.
+    /// Internal so tests can access via InternalsVisibleTo.
+    /// </summary>
+    /// <param name="data">JSON element with aaData array</param>
+    /// <returns>List of parsed holdings (equity only, non-equity rows filtered)</returns>
+    internal static List<ISharesHolding> ParseHoldings(JsonElement data)
+    {
+        var holdings = new List<ISharesHolding>();
+
+        // Extract aaData array from JSON
+        if (!data.TryGetProperty("aaData", out var aaDataElement) || aaDataElement.ValueKind != JsonValueKind.Array)
+        {
+            return holdings; // AC2.4: Malformed JSON returns empty list
+        }
+
+        var rows = aaDataElement.EnumerateArray().ToList();
+        if (rows.Count == 0)
+        {
+            return holdings;
+        }
+
+        // Detect format (Format A vs Format B)
+        var isFormatB = DetectFormatB(rows[0]);
+        var colMap = isFormatB ? GetFormatBColumns() : GetFormatAColumns();
+
+        // Parse each row
+        foreach (var row in rows)
+        {
+            if (row.ValueKind != JsonValueKind.Array)
+                continue;
+
+            var rowArray = row.EnumerateArray().ToList();
+
+            // Skip rows that are too short
+            if (rowArray.Count < 15)
+                continue;
+
+            // Get asset class and filter non-equity
+            var assetClassValue = GetStringValue(rowArray, colMap["asset_class"]);
+            if (IsNonEquityAssetClass(assetClassValue))
+                continue;
+
+            // Parse holding
+            try
+            {
+                var holding = new ISharesHolding(
+                    Ticker: GetStringValue(rowArray, colMap["ticker"]) ?? "",
+                    Name: GetStringValue(rowArray, colMap["name"]) ?? "",
+                    Sector: GetStringValue(rowArray, colMap["sector"]),
+                    MarketValue: GetDecimalValue(rowArray, colMap["market_value"]),
+                    Weight: GetWeightValue(rowArray, colMap["weight_pct"]),
+                    Shares: GetDecimalValue(rowArray, colMap["quantity"]),
+                    Location: GetStringValue(rowArray, colMap["location"]),
+                    Exchange: GetStringValue(rowArray, colMap["exchange"]),
+                    Currency: GetStringValue(rowArray, colMap["currency"]),
+                    Cusip: CleanIdentifier(GetStringValue(rowArray, colMap["cusip"])),
+                    Isin: CleanIdentifier(GetStringValue(rowArray, colMap["isin"])),
+                    Sedol: CleanIdentifier(GetStringValue(rowArray, colMap["sedol"]))
+                );
+
+                holdings.Add(holding);
+            }
+            catch
+            {
+                // AC2.4: Skip malformed rows, continue processing
+                continue;
+            }
+        }
+
+        return holdings;
+    }
+
+    /// <summary>
+    /// Detects if JSON is Format B (19 cols, col[4] is string) vs Format A (17 cols, col[4] is object).
+    /// </summary>
+    private static bool DetectFormatB(JsonElement firstRow)
+    {
+        if (firstRow.ValueKind != JsonValueKind.Array)
+            return false;
+
+        var rowArray = firstRow.EnumerateArray().ToList();
+
+        // Format B: 19+ columns and col[4] is a string (asset class)
+        // Format A: col[4] is an object (market value with {display, raw})
+        if (rowArray.Count >= 19)
+        {
+            var col4 = rowArray[4];
+            return col4.ValueKind == JsonValueKind.String;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Column indices for Format A (17 cols, broad ETFs like IVV, IWB).
+    /// </summary>
+    private static Dictionary<string, int> GetFormatAColumns()
+    {
+        return new Dictionary<string, int>
+        {
+            ["ticker"] = 0,
+            ["name"] = 1,
+            ["sector"] = 2,
+            ["asset_class"] = 3,
+            ["market_value"] = 4,
+            ["weight_pct"] = 5,
+            ["quantity"] = 7,
+            ["cusip"] = 8,
+            ["isin"] = 9,
+            ["sedol"] = 10,
+            ["price"] = 11,
+            ["location"] = 12,
+            ["exchange"] = 13,
+            ["currency"] = 14,
+        };
+    }
+
+    /// <summary>
+    /// Column indices for Format B (19 cols, S&P style like IJH, IJK).
+    /// </summary>
+    private static Dictionary<string, int> GetFormatBColumns()
+    {
+        return new Dictionary<string, int>
+        {
+            ["ticker"] = 0,
+            ["name"] = 1,
+            ["sector"] = 3,
+            ["asset_class"] = 4,
+            ["market_value"] = 5,
+            ["weight_pct"] = 17,
+            ["quantity"] = 7,
+            ["cusip"] = 8,
+            ["isin"] = 9,
+            ["sedol"] = 10,
+            ["price"] = 11,
+            ["location"] = 12,
+            ["exchange"] = 13,
+            ["currency"] = 14,
+        };
+    }
+
+    /// <summary>
+    /// Non-equity asset classes to filter out.
+    /// </summary>
+    private static readonly HashSet<string> NonEquityAssetClasses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Cash",
+        "Cash Collateral and Margins",
+        "Cash and/or Derivatives",
+        "Futures",
+        "Money Market",
+    };
+
+    /// <summary>
+    /// Checks if asset class should be filtered (non-equity).
+    /// </summary>
+    private static bool IsNonEquityAssetClass(string? assetClass)
+    {
+        return string.IsNullOrWhiteSpace(assetClass) || NonEquityAssetClasses.Contains(assetClass);
+    }
+
+    /// <summary>
+    /// Extracts string value from JSON cell (direct string or from display property).
+    /// </summary>
+    private static string? GetStringValue(List<JsonElement> row, int colIndex)
+    {
+        if (colIndex < 0 || colIndex >= row.Count)
+            return null;
+
+        var element = row[colIndex];
+
+        // If it's a dict with "display" property, try that first
+        if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty("display", out var displayProp))
+        {
+            var val = displayProp.GetString();
+            return string.IsNullOrWhiteSpace(val) ? null : val.Trim();
+        }
+
+        // Direct string
+        if (element.ValueKind == JsonValueKind.String)
+        {
+            var val = element.GetString();
+            return string.IsNullOrWhiteSpace(val) ? null : val.Trim();
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Extracts decimal value from JSON cell (handles dicts with raw, strings with commas, nulls).
+    /// </summary>
+    private static decimal? GetDecimalValue(List<JsonElement> row, int colIndex)
+    {
+        if (colIndex < 0 || colIndex >= row.Count)
+            return null;
+
+        var element = row[colIndex];
+
+        // If it's a dict with "raw" property, extract numeric value
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            if (element.TryGetProperty("raw", out var rawProp))
+            {
+                if (rawProp.ValueKind == JsonValueKind.Number)
+                    return rawProp.GetDecimal();
+                if (rawProp.ValueKind == JsonValueKind.String)
+                {
+                    var str = rawProp.GetString();
+                    return ParseNumericString(str);
+                }
+                // Null raw property
+                return null;
+            }
+        }
+
+        // Direct numeric
+        if (element.ValueKind == JsonValueKind.Number)
+            return element.GetDecimal();
+
+        // Direct string
+        if (element.ValueKind == JsonValueKind.String)
+        {
+            var str = element.GetString();
+            return ParseNumericString(str);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Extracts weight percentage and converts from percentage to decimal (e.g., 6.5 -> 0.065).
+    /// </summary>
+    private static decimal? GetWeightValue(List<JsonElement> row, int colIndex)
+    {
+        var pctValue = GetDecimalValue(row, colIndex);
+        if (pctValue == null)
+            return null;
+
+        // Weight in source data is percentage (e.g., 6.5 = 6.5%), convert to decimal
+        return pctValue / 100;
+    }
+
+    /// <summary>
+    /// Parses numeric string, handling commas, hyphens, empty, and "N/A".
+    /// </summary>
+    private static decimal? ParseNumericString(string? str)
+    {
+        if (string.IsNullOrWhiteSpace(str))
+            return null;
+
+        var cleaned = str.Replace(",", "").Trim();
+
+        if (cleaned == "-" || cleaned == "" || cleaned == "N/A")
+            return null;
+
+        if (decimal.TryParse(cleaned, System.Globalization.CultureInfo.InvariantCulture, out var result))
+            return result;
+
+        return null;
+    }
+
+    /// <summary>
+    /// Cleans identifier value: strips whitespace, returns null for "-", "", "N/A".
+    /// </summary>
+    private static string? CleanIdentifier(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var cleaned = value.Trim();
+
+        if (cleaned == "-" || cleaned == "" || cleaned == "N/A")
+            return null;
+
+        return cleaned;
+    }
 }
