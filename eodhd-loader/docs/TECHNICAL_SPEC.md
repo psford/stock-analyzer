@@ -70,3 +70,71 @@
 
 ### Version History
 - **Phase 1 (2026-02-23)**: Initial implementation with AC1-AC3 coverage, code review fixes applied
+
+---
+
+## IndexManagerViewModel (Phase 2)
+
+### Overview
+`IndexManagerViewModel` provides the WPF UI bindings for the iShares constituent loading tab. Replaces Wikipedia-based index manager with ETF-focused constituent ingestion.
+
+### Constructor & Dependency Injection
+- **Pattern**: Transient (`AddTransient<IndexManagerViewModel>()`)
+- **Constructor**: `public IndexManagerViewModel(IISharesConstituentService constituentService, ConfigurationService config)`
+- **Dependencies**: `IISharesConstituentService`, `ConfigurationService`
+- **Removed**: `IndexService`, `StockAnalyzerApiClient` (replaced by Phase 1 service)
+- **DI Config**: `App.xaml.cs` line 63
+
+### Observable Properties (AC4)
+- **AsOfDate** (DateTime): Defaults to last business day of previous calendar month. User-configurable. Passed to service methods.
+- **SelectedEtfTicker** (string?): null or "(All)" = load all; specific ticker = load single ETF.
+- **AvailableEtfTickers** (ObservableCollection<string>): Populated from `ISharesConstituentService.EtfConfigs.Keys`, sorted. First entry "(All)" sentinel.
+- **CurrentEtfLabel** (string): Display text showing current ETF and progress (e.g., "Loading IVV (3 / 277)...").
+- **TotalEtfsToLoad** (int): Total ETF count in current batch.
+- **CurrentEtfIndex** (int): 1-based position of current ETF.
+- **Progress** (double): 0-100, tracking ETF-level progress (currentEtf / totalEtfs * 100).
+- **ProgressText** (string): Per-ETF statistics (e.g., "450 inserted, 50 skipped, 0 failed").
+- **IsLoading** (bool): True during IngestAllEtfsAsync or IngestEtfAsync.
+- **LogMessages** (ObservableCollection<string>): Timestamped activity log, newest-first, capped at 500 entries.
+
+### Removed Properties
+- **SelectedEnvironment**, **SelectedIndex**, **BackfillFromDate**, **BackfillToDate**: Environment switching and date range selection removed.
+- **ConstituentCount**, **ProcessedCount**, **ErrorCount**, **IsLoadingConstituents**: Per-index stats replaced by per-ETF progress.
+- **AvailableIndices**, **Constituents**, **Environments**: Removed; index/constituent tables no longer exposed.
+
+### Commands (AC4)
+1. **LoadAllCommand** → `LoadAllAsync()`:
+   - If `SelectedEtfTicker` is null or "(All)", calls `IngestAllEtfsAsync(AsOfDate, token)`.
+   - Otherwise calls `IngestEtfAsync(SelectedEtfTicker, AsOfDate, token)`.
+   - Sets `IsLoading = true`, subscribes to service events, restores on completion.
+
+2. **CancelCommand** → `Cancel()`:
+   - Calls `_cts.Cancel()` to request graceful cancellation.
+   - Logs "Cancellation requested — finishing current ETF...".
+
+3. **ClearLogCommand** → `ClearLog()`:
+   - Clears `LogMessages` collection.
+
+### Event Wiring (AC4)
+- **LogMessage event**: Raises when service has a log-worthy event. ViewModel subscribes and feeds to `Log()` helper.
+- **ProgressUpdated event**: Raises with `IngestProgress` model. ViewModel updates `CurrentEtfLabel`, `Progress`, `ProgressText`, `TotalEtfsToLoad`, `CurrentEtfIndex`.
+
+### Helper Methods
+- **GetLastMonthEnd()**: Calculates last business day of previous calendar month (e.g., today=2026-02-23 → 2026-01-31, skip weekend).
+- **PopulateAvailableEtfs()**: Populates `AvailableEtfTickers` from service config, inserts "(All)" sentinel at position 0.
+- **Log(string message)**: Prepends timestamp, inserts at position 0 (newest-first), caps at 500 entries. Handles null dispatcher for test context.
+
+### Dispatcher Handling
+- `Log()` checks `App.Current?.Dispatcher` before invoking. In test context (no App instance), falls back to direct collection manipulation.
+
+### Test Coverage (AC4)
+- **AC4.1**: LoadAllCommand with no ETF selected calls IngestAllEtfsAsync.
+- **AC4.2**: LoadAllCommand with specific ETF selected calls IngestEtfAsync.
+- **AC4.3**: AsOfDate defaults to last business day of previous month; user-changeable; passed to service.
+- **AC4.4**: LogMessage events captured and displayed newest-first with timestamps.
+- **AC4.5**: CancelCommand cancels via CancellationToken, logs cancellation message.
+- **AC4.6**: Service exceptions caught, logged, and don't crash ViewModel.
+- **All Tests**: 11 passing (xUnit + Moq).
+
+### Version History
+- **Phase 2 (2026-02-23)**: ViewModel refactor for iShares constituent loading (AC4.1-AC4.6).

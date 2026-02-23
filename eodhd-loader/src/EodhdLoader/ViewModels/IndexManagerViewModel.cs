@@ -1,37 +1,38 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using EodhdLoader.Models;
 using EodhdLoader.Services;
 
 namespace EodhdLoader.ViewModels;
 
+/// <summary>
+/// ViewModel for iShares constituent loading (Phase 2).
+/// Manages ETF selection, loading, and progress tracking.
+/// </summary>
 public partial class IndexManagerViewModel : ViewModelBase
 {
-    private readonly IndexService _indexService;
-    private readonly StockAnalyzerApiClient _apiClient;
+    private readonly IISharesConstituentService _constituentService;
     private readonly ConfigurationService _config;
     private CancellationTokenSource? _cts;
 
     [ObservableProperty]
-    private TargetEnvironment _selectedEnvironment = TargetEnvironment.Local;
+    private DateTime _asOfDate;
 
     [ObservableProperty]
-    private IndexDefinition? _selectedIndex;
+    private string? _selectedEtfTicker;
 
     [ObservableProperty]
-    private DateTime _backfillFromDate = DateTime.Today.AddYears(-5);
+    private ObservableCollection<string> _availableEtfTickers = [];
 
     [ObservableProperty]
-    private DateTime _backfillToDate = DateTime.Today;
+    private string _currentEtfLabel = string.Empty;
 
     [ObservableProperty]
-    private int _constituentCount;
+    private int _totalEtfsToLoad;
 
     [ObservableProperty]
-    private int _processedCount;
-
-    [ObservableProperty]
-    private int _errorCount;
+    private int _currentEtfIndex;
 
     [ObservableProperty]
     private double _progress;
@@ -43,163 +44,97 @@ public partial class IndexManagerViewModel : ViewModelBase
     private bool _isLoading;
 
     [ObservableProperty]
-    private bool _isLoadingConstituents;
-
-    [ObservableProperty]
-    private ObservableCollection<IndexDefinition> _availableIndices = [];
-
-    [ObservableProperty]
-    private ObservableCollection<IndexConstituent> _constituents = [];
-
-    [ObservableProperty]
     private ObservableCollection<string> _logMessages = [];
 
-    public string[] Environments { get; } = ["Local", "Production"];
-
     public IndexManagerViewModel(
-        IndexService indexService,
-        StockAnalyzerApiClient apiClient,
+        IISharesConstituentService constituentService,
         ConfigurationService config)
     {
-        _indexService = indexService;
-        _apiClient = apiClient;
+        _constituentService = constituentService;
         _config = config;
 
-        LoadAvailableIndices();
+        // Initialize AsOfDate to last business day of previous month
+        _asOfDate = GetLastMonthEnd();
+
+        // Populate available ETF tickers from service config
+        PopulateAvailableEtfs();
     }
 
-    partial void OnSelectedEnvironmentChanged(TargetEnvironment value)
+    private void PopulateAvailableEtfs()
     {
-        _apiClient.CurrentEnvironment = value;
-        Log($"Environment switched to: {value}");
+        var tickers = new List<string> { "(All)" };
+        tickers.AddRange(_constituentService.EtfConfigs.Keys.OrderBy(k => k));
+
+        AvailableEtfTickers = new ObservableCollection<string>(tickers);
+        SelectedEtfTicker = "(All)";
     }
 
-    private void LoadAvailableIndices()
+    private static DateTime GetLastMonthEnd()
     {
-        var indices = _indexService.GetMajorIndices();
-        AvailableIndices = new ObservableCollection<IndexDefinition>(indices);
+        var today = DateTime.Today;
+        var firstOfMonth = new DateTime(today.Year, today.Month, 1);
+        var lastOfPrevMonth = firstOfMonth.AddDays(-1);
 
-        if (AvailableIndices.Count > 0)
-            SelectedIndex = AvailableIndices[0];
-    }
+        // Walk back to last business day (skip weekends)
+        while (lastOfPrevMonth.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)
+            lastOfPrevMonth = lastOfPrevMonth.AddDays(-1);
 
-    [RelayCommand]
-    private async Task LoadConstituentsAsync()
-    {
-        if (SelectedIndex == null || IsLoadingConstituents) return;
-
-        IsLoadingConstituents = true;
-        IsBusy = true;
-
-        try
-        {
-            Log($"Fetching constituents for {SelectedIndex.Name} ({SelectedIndex.Symbol})...");
-
-            var response = await _indexService.GetConstituentsAsync(SelectedIndex.Symbol);
-
-            Constituents.Clear();
-            foreach (var constituent in response.Constituents)
-            {
-                Constituents.Add(constituent);
-            }
-
-            ConstituentCount = Constituents.Count;
-            Log($"Loaded {ConstituentCount} constituents from {SelectedIndex.Name}");
-        }
-        catch (Exception ex)
-        {
-            Log($"ERROR loading constituents: {ex.Message}");
-        }
-        finally
-        {
-            IsLoadingConstituents = false;
-            IsBusy = false;
-        }
+        return lastOfPrevMonth;
     }
 
     [RelayCommand]
-    private async Task StartBackfillAsync()
+    private async Task LoadAllAsync()
     {
-        if (SelectedIndex == null || Constituents.Count == 0 || IsLoading) return;
-
-        // Production confirmation
-        if (SelectedEnvironment == TargetEnvironment.Production)
-        {
-            var result = System.Windows.MessageBox.Show(
-                $"You are about to backfill {ConstituentCount} securities to PRODUCTION.\n\n" +
-                $"Index: {SelectedIndex.Name}\n" +
-                $"Date Range: {BackfillFromDate:yyyy-MM-dd} to {BackfillToDate:yyyy-MM-dd}\n" +
-                $"Target: {_config.GetApiUrl(TargetEnvironment.Production)}\n\n" +
-                "Continue?",
-                "Production Backfill Confirmation",
-                System.Windows.MessageBoxButton.YesNo,
-                System.Windows.MessageBoxImage.Warning);
-
-            if (result != System.Windows.MessageBoxResult.Yes)
-            {
-                Log("Production backfill cancelled by user");
-                return;
-            }
-        }
+        if (IsLoading)
+            return;
 
         IsLoading = true;
         IsBusy = true;
         _cts = new CancellationTokenSource();
 
-        ProcessedCount = 0;
-        ErrorCount = 0;
         Progress = 0;
-
-        Log($"Starting backfill for {SelectedIndex.Name} - {ConstituentCount} tickers");
-        Log($"Environment: {SelectedEnvironment}");
-        Log($"Date range: {BackfillFromDate:yyyy-MM-dd} to {BackfillToDate:yyyy-MM-dd}");
+        ProgressText = "Starting load...";
 
         try
         {
-            // Get ticker list
-            var tickers = Constituents.Select(c => c.Ticker).ToList();
+            // Wire up event handlers
+            _constituentService.LogMessage += OnServiceLogMessage;
+            _constituentService.ProgressUpdated += OnServiceProgressUpdated;
 
-            // Call API to backfill
-            ProgressText = $"Sending backfill request for {tickers.Count} tickers...";
+            Log($"Loading iShares ETF constituents as of {AsOfDate:yyyy-MM-dd}");
 
-            var result = await _apiClient.LoadTickersAsync(
-                tickers,
-                BackfillFromDate,
-                BackfillToDate,
-                _cts.Token);
-
-            if (result.Success && result.Data != null)
+            // Determine which ETF(s) to load
+            if (string.IsNullOrEmpty(SelectedEtfTicker) || SelectedEtfTicker == "(All)")
             {
-                ProcessedCount = result.Data.TickersProcessed;
-                ErrorCount = result.Data.Errors.Count;
-                Progress = 100;
-                ProgressText = "Complete!";
-
-                Log($"Backfill complete! Tickers: {result.Data.TickersProcessed}, Records: {result.Data.RecordsInserted}, Errors: {result.Data.Errors.Count}");
-
-                if (result.Data.Errors.Count > 0)
-                {
-                    Log($"Errors: {string.Join(", ", result.Data.Errors)}");
-                }
+                Log("Loading all configured ETFs...");
+                await _constituentService.IngestAllEtfsAsync(AsOfDate, _cts.Token);
             }
             else
             {
-                Log($"ERROR: {result.Error ?? "Unknown error"}");
-                ProgressText = "Error - see log";
+                Log($"Loading specific ETF: {SelectedEtfTicker}");
+                await _constituentService.IngestEtfAsync(SelectedEtfTicker, AsOfDate, _cts.Token);
             }
+
+            Progress = 100;
+            ProgressText = "Complete!";
+            Log("Load operation completed successfully");
         }
         catch (OperationCanceledException)
         {
-            Log("Backfill cancelled");
+            Log("Load cancelled by user");
             ProgressText = "Cancelled";
         }
         catch (Exception ex)
         {
-            Log($"ERROR: {ex.Message}");
+            Log($"ERROR during load: {ex.Message}");
             ProgressText = "Error - see log";
         }
         finally
         {
+            // Unsubscribe from event handlers
+            _constituentService.LogMessage -= OnServiceLogMessage;
+            _constituentService.ProgressUpdated -= OnServiceProgressUpdated;
+
             IsLoading = false;
             IsBusy = false;
             _cts?.Dispose();
@@ -208,11 +143,11 @@ public partial class IndexManagerViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void CancelBackfill()
+    private void Cancel()
     {
         if (_cts != null && !_cts.IsCancellationRequested)
         {
-            Log("Cancellation requested...");
+            Log("Cancellation requested — finishing current ETF...");
             _cts.Cancel();
         }
     }
@@ -223,44 +158,42 @@ public partial class IndexManagerViewModel : ViewModelBase
         LogMessages.Clear();
     }
 
-    [RelayCommand]
-    private async Task TestConnectionAsync()
+    private void OnServiceLogMessage(string message)
     {
-        IsBusy = true;
+        Log(message);
+    }
 
-        try
-        {
-            Log($"Testing connection to {_config.GetApiUrl(SelectedEnvironment)}...");
+    private void OnServiceProgressUpdated(IngestProgress progress)
+    {
+        CurrentEtfLabel = $"Loading {progress.EtfTicker} ({progress.CurrentEtf} / {progress.TotalEtfs})...";
+        Progress = (double)progress.CurrentEtf / progress.TotalEtfs * 100;
+        ProgressText = $"{progress.Stats.Inserted} inserted, {progress.Stats.SkippedExisting} skipped, {progress.Stats.Failed} failed";
 
-            var success = await _apiClient.TestConnectionAsync();
-
-            if (success)
-            {
-                Log("✓ Connection successful");
-            }
-            else
-            {
-                Log("✗ Connection failed");
-            }
-        }
-        catch (Exception ex)
-        {
-            Log($"ERROR testing connection: {ex.Message}");
-        }
-        finally
-        {
-            IsBusy = false;
-        }
+        TotalEtfsToLoad = progress.TotalEtfs;
+        CurrentEtfIndex = progress.CurrentEtf;
     }
 
     private void Log(string message)
     {
         var timestamp = DateTime.Now.ToString("HH:mm:ss");
-        App.Current.Dispatcher.Invoke(() =>
+        var formattedMessage = $"[{timestamp}] {message}";
+
+        // Handle test context where App.Current might be null
+        if (App.Current?.Dispatcher != null)
         {
-            LogMessages.Insert(0, $"[{timestamp}] {message}");
+            App.Current.Dispatcher.Invoke(() =>
+            {
+                LogMessages.Insert(0, formattedMessage);
+                if (LogMessages.Count > 500)
+                    LogMessages.RemoveAt(LogMessages.Count - 1);
+            });
+        }
+        else
+        {
+            // For tests or when running outside WPF context
+            LogMessages.Insert(0, formattedMessage);
             if (LogMessages.Count > 500)
                 LogMessages.RemoveAt(LogMessages.Count - 1);
-        });
+        }
     }
 }
