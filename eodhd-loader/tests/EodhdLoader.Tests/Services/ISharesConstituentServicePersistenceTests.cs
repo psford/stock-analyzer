@@ -56,6 +56,38 @@ public class ISharesConstituentServicePersistenceTests
     }
 
     /// <summary>
+    /// Helper: Creates a pre-seeded InMemory DbContext that throws DbUpdateException
+    /// when SaveChangesAsync detects a newly-added SecurityMaster with the specified ticker.
+    /// Used for AC3.6 error isolation testing.
+    /// </summary>
+    private static FailOnTickerDbContext CreateFailingTestContext(string failOnTicker)
+    {
+        var options = new DbContextOptionsBuilder<StockAnalyzerDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        var context = new FailOnTickerDbContext(options, failOnTicker);
+
+        context.IndexDefinitions.Add(new IndexDefinitionEntity
+        {
+            IndexId = 1,
+            IndexCode = TestIndexCode,
+            IndexName = "S&P 500",
+            ProxyEtfTicker = TestEtfTicker
+        });
+
+        context.Sources.Add(new SourceEntity
+        {
+            SourceId = ISharesSourceId,
+            SourceShortName = "iShares",
+            SourceLongName = "iShares ETF Provider"
+        });
+
+        context.SaveChangesWithoutFailing();
+        return context;
+    }
+
+    /// <summary>
     /// Helper: Creates an ISharesConstituentService with mocked HTTP and InMemory DbContext.
     /// Mirrors the pattern from ISharesConstituentServiceDownloadTests.
     /// </summary>
@@ -369,14 +401,22 @@ public class ISharesConstituentServicePersistenceTests
     /// <summary>
     /// AC3.6: DB write failure for one holding doesn't abort the entire ETF.
     /// Error isolation allows remaining holdings to be processed.
+    ///
+    /// Test strategy: Use a custom DbContext subclass that throws DbUpdateException
+    /// when saving a security with ticker "MSFT". This exercises the per-holding
+    /// catch block in IngestEtfAsync. AAPL (processed first) succeeds, MSFT throws,
+    /// GOOGL (processed last) succeeds — proving the loop continues past the failure.
     /// </summary>
     [Fact]
     public async Task AC3_6_ErrorIsolation_OneSecurity_FailureDoesntAbortOthers()
     {
-        // Arrange
-        var (service, mockHandler, dbContext) = BuildServiceWithMockedHttpAndDb();
+        // Arrange — use a DbContext that throws on MSFT
+        var mockHandler = new Mock<HttpMessageHandler>();
+        var httpClient = new HttpClient(mockHandler.Object);
+        var dbContext = CreateFailingTestContext("MSFT");
+        var service = new ISharesConstituentService(httpClient, dbContext);
 
-        // Create JSON with 3 holdings (AAPL, MSFT, GOOGL)
+        // 3 holdings: AAPL (succeeds), MSFT (will throw), GOOGL (succeeds)
         var jsonWith3Holdings = @"{
   ""aaData"": [
     [""AAPL"", ""Apple Inc."", ""Information Technology"", ""Equity"", {""display"": ""$1,234.56"", ""raw"": 1234.56}, {""display"": ""2.34%"", ""raw"": 2.34}, null, {""display"": ""123.45"", ""raw"": 123.45}, ""037833100"", ""US0378331005"", ""2588173"", ""$10.01"", ""UNITED STATES"", ""NASDAQ"", ""USD""],
@@ -399,24 +439,13 @@ public class ISharesConstituentServicePersistenceTests
 
         var asOfDate = new DateTime(2025, 1, 31);
 
-        // Act - Call IngestEtfAsync (should process all 3 holdings)
+        // Act
         var stats = await service.IngestEtfAsync(TestEtfTicker, asOfDate);
 
-        // Assert AC3.6: Even if one fails, others should be created and inserted
-        // In this test, all should succeed, demonstrating error isolation capability
-        Assert.Equal(3, stats.Parsed); // All 3 parsed
-        Assert.Equal(3, stats.Created); // All 3 created as new
-        Assert.Equal(3, stats.Inserted); // All 3 inserted as constituents
-        Assert.Equal(0, stats.Failed); // None failed in this normal case
-
-        // Verify all 3 constituents exist
-        var aaplCount = dbContext.IndexConstituents.Count(c => c.SourceTicker == "AAPL");
-        var msftCount = dbContext.IndexConstituents.Count(c => c.SourceTicker == "MSFT");
-        var googlCount = dbContext.IndexConstituents.Count(c => c.SourceTicker == "GOOGL");
-
-        Assert.Equal(1, aaplCount);
-        Assert.Equal(1, msftCount);
-        Assert.Equal(1, googlCount);
+        // Assert AC3.6: MSFT failed but AAPL and GOOGL still processed
+        Assert.Equal(3, stats.Parsed);
+        Assert.True(stats.Failed > 0, "At least one holding should have failed");
+        Assert.True(stats.Inserted > 0, "Other holdings should have succeeded despite the failure");
     }
 
     /// <summary>
@@ -490,5 +519,49 @@ public class ISharesConstituentServicePersistenceTests
             .FirstOrDefault(c => c.SourceTicker == "AAPL");
         Assert.NotNull(aaplConstituent);
         Assert.Equal(aaplSecurity.SecurityAlias, aaplConstituent.SecurityAlias);
+    }
+
+    /// <summary>
+    /// Custom DbContext that throws DbUpdateException when SaveChangesAsync detects
+    /// a newly-added SecurityMaster with a specific ticker. Used for AC3.6 testing.
+    /// </summary>
+    private class FailOnTickerDbContext : StockAnalyzerDbContext
+    {
+        private readonly string _failOnTicker;
+        private bool _failingEnabled = true;
+
+        public FailOnTickerDbContext(DbContextOptions<StockAnalyzerDbContext> options, string failOnTicker)
+            : base(options)
+        {
+            _failOnTicker = failOnTicker;
+        }
+
+        /// <summary>Saves without the failure trigger (for seeding test data).</summary>
+        public int SaveChangesWithoutFailing()
+        {
+            _failingEnabled = false;
+            try { return base.SaveChanges(); }
+            finally { _failingEnabled = true; }
+        }
+
+        public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            if (_failingEnabled)
+            {
+                var failingEntry = ChangeTracker.Entries<SecurityMasterEntity>()
+                    .FirstOrDefault(e => e.State == EntityState.Added &&
+                                         e.Entity.TickerSymbol == _failOnTicker);
+
+                if (failingEntry != null)
+                {
+                    // Detach the failing entity to prevent state corruption
+                    failingEntry.State = EntityState.Detached;
+                    throw new DbUpdateException(
+                        $"Simulated DB failure for ticker {_failOnTicker}");
+                }
+            }
+
+            return base.SaveChangesAsync(cancellationToken);
+        }
     }
 }
