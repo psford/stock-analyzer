@@ -8,6 +8,8 @@
     <UseWPF>true</UseWPF>
     <!-- Allow building Windows project on non-Windows CI (CodeQL scans) -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- Required for pre-release WPF packages (LiveChartsCore.SkiaSharpView.WPF) -->
+    <IncludePackageReferencesDuringMarkupCompilation>true</IncludePackageReferencesDuringMarkupCompilation>
     <ApplicationIcon>spider.ico</ApplicationIcon>
     <Title>EODHD Data Loader</Title>
     <Description>Standalone tool for loading EODHD price data and migrating to Azure SQL</Description>
@@ -22,6 +24,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="WebAssets\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\ishares_etf_configs.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
     <PackageReference Include="DotNetEnv" Version="3.1.1" />
     <PackageReference Include="LiveChartsCore.SkiaSharpView.WPF" Version="2.0.0-rc6.1" />
@@ -29,6 +40,7 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.1" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.1" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
   </ItemGroup>
 
 </Project>

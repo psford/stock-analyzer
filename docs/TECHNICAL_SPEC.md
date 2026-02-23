@@ -1,7 +1,7 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.49
-**Last Updated:** 2026-02-23
+**Version:** 2.50
+**Last Updated:** 2026-02-22
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
 
@@ -2643,6 +2643,31 @@ WPF desktop application (.NET 8, `net8.0-windows10.0.19041`) for managing price 
 | Ripple timing | `RipplePeriod = 6π` (~4.2s cycle), quadratic alpha fade, thinning stroke |
 | Hover | Semi-transparent white overlay with tooltip (tracked/untracked counts) |
 | Refresh | 30fps `DispatcherTimer` for animation; data refreshed from API after each security load |
+
+**iShares Constituent Loader (Phase 1 - Core Service):**
+
+`IISharesConstituentService` and `ISharesConstituentService` in EODHD Loader handle downloading and ingesting iShares ETF holdings data. Part of index attribution pipeline for tracking ETF composition changes.
+
+**Implementation Details:**
+- Downloads iShares holdings JSON from `https://www.ishares.com/us/products/{product_id}/{slug}/1467271812596.ajax` with user-agent and 60s timeout
+- Auto-detects Format A (17 cols, IVV-style) vs Format B (19 cols, IJK-style) column layouts
+- Strips UTF-8 BOM prefix before JSON parsing (AC1.2)
+- Filters non-equity holdings (Cash, Futures, Money Market) — keeps equities only (AC2.3)
+- 3-level security matching: (1) ticker lookup, (2) CUSIP lookup, (3) ISIN lookup (AC3.2)
+- Creates new securities in SecurityMaster if no match found (AC3.1)
+- Upserts SecurityIdentifier with SCD Type 2 history — changed values snapshot old record with date range (AC3.3)
+- Idempotent constituent insertion via composite unique constraint `(IndexId, SecurityAlias, EffectiveDate, SourceId)` (AC3.5)
+- Error isolation per holding — one failure doesn't abort ETF (AC3.6)
+- Rate limiting: 2s gap between ETF downloads (AC6.1, constant `RequestDelayMs`)
+- iShares Source ID: 10
+
+**Configuration:**
+- ETF tickers and metadata loaded from bundled `Resources/ishares_etf_configs.json` at startup
+- Keys: product_id, slug, index_code per ticker
+
+**Progress Events:**
+- `LogMessage` event for status/error logging
+- `ProgressUpdated` event for UI progress bar (ETF counter, holdings processed)
 
 #### Infrastructure as Code
 
