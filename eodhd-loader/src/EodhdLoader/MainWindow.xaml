@@ -26,7 +26,7 @@
         <TabItem Header="📦 Bulk Fill">
             <views:BulkFillView DataContext="{Binding BulkFill}"/>
         </TabItem>
-        <TabItem Header="Index Manager">
+        <TabItem Header="iShares Loader">
             <views:IndexManagerView DataContext="{Binding IndexManager}"/>
         </TabItem>
         <TabItem Header="Dashboard">
