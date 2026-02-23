@@ -29,6 +29,7 @@ public partial class App : Application
         // Local services
         services.AddSingleton<DataAnalysisService>();
         services.AddHttpClient<IndexService>();
+        services.AddHttpClient<IISharesConstituentService, ISharesConstituentService>();
 
         // These services use IHttpClientFactory directly so they can switch environments
         services.AddHttpClient();
