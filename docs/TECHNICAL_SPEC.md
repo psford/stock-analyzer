@@ -2578,12 +2578,19 @@ Maintains the historical price database with automatic daily updates.
 **Importance Score Calculation (`/api/admin/securities/calculate-importance`):**
 - Calculates importance scores (1-10, 10=most important) for all active securities
 - Used to prioritize gap-filling order and as Y-axis for the coverage heatmap
-- Scoring algorithm (base score: 5):
-  - **Security Type:** Common Stock +2, ETF +1, Preferred/Warrant/Right -2, OTC indicators -3
-  - **Exchange:** NYSE/NASDAQ +2, ARCA/BATS +1, OTC/PINK/GREY -2, Unknown -1
-  - **Ticker Length:** 1-3 chars +1, 5+ chars -1
-  - **Name Patterns:** Inc/Corp/Ltd +1, Warrant/Right/Unit -2, Liquidating/Bankrupt -3
-- Run on-demand after adding new securities; scores are persisted in SecurityMaster.ImportanceScore
+- Primary signal: **index membership** from IndexConstituent data (which indices, how many)
+- Secondary signals: security type, exchange quality
+- Pre-loads all index membership via efficient CTE+JOIN query with `NOLOCK` (DTU-safe)
+- Falls back gracefully when IndexConstituent table is empty (all securities get attribute-based scores only)
+- Scoring algorithm (base score: 1):
+  - **Index membership (primary, 0-6 pts):** Tier 1 x2+ → +6, Tier 1 x1 → +5, Tier 2 x2+ → +4, Tier 2 x1 → +3, 3+ other → +2, 1-2 other → +1
+  - **Index tiers:** Tier 1 = SP500, R1000, R2000, R3000, MSCI_ACWI, MSCI_EAFE, MSCI_EM; Tier 2 = IJH, IJR, OEF, ITOT, IDEV, IEMG, IEFA, IXUS
+  - **Breadth bonus (0-1 pts):** In 8+ distinct indices → +1
+  - **Security Type (0-1 pts):** Common Stock → +1
+  - **Exchange (0-1 pts):** NYSE or NASDAQ → +1
+  - **Penalties:** OTC/Pink/Grey exchange -2, Preferred/Warrant/Right type -2, OTC type -2, Warrant/Right/Unit name -2, Liquidating/Bankrupt name -3
+- Response includes `indexDataAvailable` flag and `securitiesWithIndexMembership` count for diagnostics
+- Run on-demand after adding new securities or loading index constituents; scores persisted in SecurityMaster.ImportanceScore
 
 **Bulk Load Flow:**
 1. Call `/api/admin/prices/sync-securities` to populate SecurityMaster
