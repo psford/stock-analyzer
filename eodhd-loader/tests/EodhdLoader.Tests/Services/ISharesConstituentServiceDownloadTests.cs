@@ -29,17 +29,12 @@ public class ISharesConstituentServiceDownloadTests
         var mockHandler = new Mock<HttpMessageHandler>();
         var httpClient = new HttpClient(mockHandler.Object);
 
-        var factory = new Mock<IHttpClientFactory>();
-        factory
-            .Setup(x => x.CreateClient(It.IsAny<string>()))
-            .Returns(httpClient);
-
         var options = new DbContextOptionsBuilder<StockAnalyzerDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
         var dbContext = new StockAnalyzerDbContext(options);
-        var service = new ISharesConstituentService(factory.Object, dbContext);
+        var service = new ISharesConstituentService(httpClient, dbContext);
 
         return (service, mockHandler);
     }

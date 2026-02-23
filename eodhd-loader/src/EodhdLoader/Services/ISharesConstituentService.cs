@@ -3,6 +3,7 @@ namespace EodhdLoader.Services;
 using System;
 using System.IO;
 using System.Net.Http;
+using System.Security;
 using System.Text.Json;
 using EodhdLoader.Models;
 using Microsoft.EntityFrameworkCore;
@@ -41,12 +42,14 @@ public class ISharesConstituentService : IISharesConstituentService
     /// <summary>
     /// Creates a new ISharesConstituentService instance.
     /// </summary>
-    /// <param name="httpClientFactory">DI-provided HTTP client factory</param>
+    /// <param name="httpClient">Typed HttpClient injected by DI with AddHttpClient<></param>
     /// <param name="dbContext">EF Core database context</param>
-    public ISharesConstituentService(IHttpClientFactory httpClientFactory, StockAnalyzerDbContext dbContext)
+    public ISharesConstituentService(HttpClient httpClient, StockAnalyzerDbContext dbContext)
     {
-        _httpClient = httpClientFactory.CreateClient();
+        _httpClient = httpClient;
         _httpClient.Timeout = TimeSpan.FromSeconds(60); // AC1.4: 60-second timeout
+        // Set User-Agent header on the client instance for all requests
+        _httpClient.DefaultRequestHeaders.Add("User-Agent", UserAgent);
         _dbContext = dbContext;
 
         // Load ETF configs from bundled JSON resource
@@ -84,7 +87,11 @@ public class ISharesConstituentService : IISharesConstituentService
         }
 
         // Parse holdings
-        var holdings = ParseHoldings(data.Value);
+        var (holdings, skippedRows) = ParseHoldings(data.Value);
+        if (skippedRows > 0)
+        {
+            LogMessage?.Invoke($"{etfTicker}: {skippedRows} rows skipped due to parse errors");
+        }
         if (holdings.Count == 0)
         {
             LogMessage?.Invoke($"{etfTicker}: No equity holdings found");
@@ -126,7 +133,8 @@ public class ISharesConstituentService : IISharesConstituentService
                     stats = stats with { Matched = stats.Matched + 1 };
 
                 // Upsert identifiers with SCD Type 2
-                await UpsertSecurityIdentifiersAsync(securityResult.SecurityAlias, holding, ct);
+                int identifiersSet = await UpsertSecurityIdentifiersAsync(securityResult.SecurityAlias, holding, ct);
+                stats = stats with { IdentifiersSet = stats.IdentifiersSet + identifiersSet };
 
                 // Check if constituent already exists (idempotent)
                 var exists = await _dbContext.IndexConstituents
@@ -222,12 +230,13 @@ public class ISharesConstituentService : IISharesConstituentService
 
         var latestDateTime = (DateTime)latestDate;
 
-        // Find the last business day of the previous month-end
+        // Compute the last business day of the PREVIOUS month-end
         var today = DateTime.UtcNow.Date;
-        var monthEnd = new DateTime(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month));
-        var lastBusinessDay = AdjustToLastBusinessDay(monthEnd);
+        var firstOfMonth = new DateTime(today.Year, today.Month, 1);
+        var previousMonthEnd = firstOfMonth.AddDays(-1); // Last day of previous month
+        var lastBusinessDay = AdjustToLastBusinessDay(previousMonthEnd);
 
-        // If latest data is before last business day, consider stale
+        // If latest data is before last business day of previous month, consider stale
         if (latestDateTime.Date < lastBusinessDay)
         {
             return EtfConfigs.Select(kvp => (kvp.Key, kvp.Value.IndexCode)).ToList();
@@ -298,9 +307,11 @@ public class ISharesConstituentService : IISharesConstituentService
 
     /// <summary>
     /// Upserts security identifiers with SCD Type 2 history tracking.
+    /// Returns the count of identifiers set/updated.
     /// </summary>
-    private async Task UpsertSecurityIdentifiersAsync(int securityAlias, ISharesHolding holding, CancellationToken ct)
+    private async Task<int> UpsertSecurityIdentifiersAsync(int securityAlias, ISharesHolding holding, CancellationToken ct)
     {
+        int identifiersSet = 0;
         var identifiersToUpsert = new[]
         {
             ("CUSIP", holding.Cusip),
@@ -338,6 +349,7 @@ public class ISharesConstituentService : IISharesConstituentService
                 existing.SourceId = ISharesSourceId;
                 existing.UpdatedAt = DateTime.UtcNow;
                 existing.UpdatedBy = "ishares-ingest";
+                identifiersSet++;
             }
             else
             {
@@ -352,10 +364,12 @@ public class ISharesConstituentService : IISharesConstituentService
                     UpdatedAt = DateTime.UtcNow
                 };
                 _dbContext.SecurityIdentifiers.Add(newIdentifier);
+                identifiersSet++;
             }
         }
 
         await _dbContext.SaveChangesAsync(ct);
+        return identifiersSet;
     }
 
     /// <summary>
@@ -478,10 +492,9 @@ public class ISharesConstituentService : IISharesConstituentService
                         break;
                     }
                 }
-                catch
-                {
-                    // Continue to next path
-                }
+                catch (IOException) { /* Path is invalid or file is inaccessible, try next */ }
+                catch (SecurityException) { /* Insufficient permissions, try next */ }
+                catch (UnauthorizedAccessException) { /* Access denied, try next */ }
             }
 
             if (foundPath != null && File.Exists(foundPath))
@@ -529,21 +542,22 @@ public class ISharesConstituentService : IISharesConstituentService
     /// Internal so tests can access via InternalsVisibleTo.
     /// </summary>
     /// <param name="data">JSON element with aaData array</param>
-    /// <returns>List of parsed holdings (equity only, non-equity rows filtered)</returns>
-    internal static List<ISharesHolding> ParseHoldings(JsonElement data)
+    /// <returns>Tuple of (holdings list, count of rows skipped due to parse errors)</returns>
+    internal static (List<ISharesHolding> Holdings, int SkippedRows) ParseHoldings(JsonElement data)
     {
         var holdings = new List<ISharesHolding>();
+        int skippedRows = 0;
 
         // Extract aaData array from JSON
         if (!data.TryGetProperty("aaData", out var aaDataElement) || aaDataElement.ValueKind != JsonValueKind.Array)
         {
-            return holdings; // AC2.4: Malformed JSON returns empty list
+            return (holdings, 0); // AC2.4: Malformed JSON returns empty list
         }
 
         var rows = aaDataElement.EnumerateArray().ToList();
         if (rows.Count == 0)
         {
-            return holdings;
+            return (holdings, 0);
         }
 
         // Detect format (Format A vs Format B)
@@ -589,12 +603,12 @@ public class ISharesConstituentService : IISharesConstituentService
             }
             catch
             {
-                // AC2.4: Skip malformed rows, continue processing
-                continue;
+                // AC2.4: Skip malformed rows, track count for diagnostics, continue processing
+                skippedRows++;
             }
         }
 
-        return holdings;
+        return (holdings, skippedRows);
     }
 
     /// <summary>
@@ -680,10 +694,14 @@ public class ISharesConstituentService : IISharesConstituentService
 
     /// <summary>
     /// Checks if asset class should be filtered (non-equity).
+    /// Only filter known non-equity classes. If asset class is null/empty, include the row (return false).
     /// </summary>
     private static bool IsNonEquityAssetClass(string? assetClass)
     {
-        return string.IsNullOrWhiteSpace(assetClass) || NonEquityAssetClasses.Contains(assetClass);
+        if (string.IsNullOrWhiteSpace(assetClass))
+            return false; // Don't filter rows with missing asset class
+
+        return NonEquityAssetClasses.Contains(assetClass);
     }
 
     /// <summary>

@@ -23,7 +23,7 @@ public class ISharesConstituentServiceParsingTests
         var data = doc.RootElement.Clone();
 
         // Act
-        var holdings = ISharesConstituentService.ParseHoldings(data);
+        var (holdings, skippedRows) = ISharesConstituentService.ParseHoldings(data);
 
         // Assert
         // Format A has 3 equity rows (AAPL, MSFT, JPM) + 1 Cash (filtered) + 1 DUMMY (included despite missing values)
@@ -69,7 +69,7 @@ public class ISharesConstituentServiceParsingTests
         var data = doc.RootElement.Clone();
 
         // Act
-        var holdings = ISharesConstituentService.ParseHoldings(data);
+        var (holdings, skippedRows) = ISharesConstituentService.ParseHoldings(data);
 
         // Assert
         // Format B has 3 equity rows (AAPL, MSFT, JPM) + 1 Futures (filtered) + 1 DUMMY (included)
@@ -110,7 +110,7 @@ public class ISharesConstituentServiceParsingTests
         var data = doc.RootElement.Clone();
 
         // Act
-        var holdings = ISharesConstituentService.ParseHoldings(data);
+        var (holdings, skippedRows) = ISharesConstituentService.ParseHoldings(data);
 
         // Assert
         // CASH row (with asset_class="Cash") should NOT be in holdings
@@ -130,7 +130,7 @@ public class ISharesConstituentServiceParsingTests
         var data = doc.RootElement.Clone();
 
         // Act
-        var holdings = ISharesConstituentService.ParseHoldings(data);
+        var (holdings, skippedRows) = ISharesConstituentService.ParseHoldings(data);
 
         // Assert
         // FUT1 row (with asset_class="Futures") should NOT be in holdings
@@ -149,7 +149,7 @@ public class ISharesConstituentServiceParsingTests
         var data = doc.RootElement.Clone();
 
         // Act
-        var holdings = ISharesConstituentService.ParseHoldings(data);
+        var (holdings, skippedRows) = ISharesConstituentService.ParseHoldings(data);
 
         // Assert
         Assert.Empty(holdings);
@@ -166,7 +166,7 @@ public class ISharesConstituentServiceParsingTests
         var data = doc.RootElement.Clone();
 
         // Act
-        var holdings = ISharesConstituentService.ParseHoldings(data);
+        var (holdings, skippedRows) = ISharesConstituentService.ParseHoldings(data);
 
         // Assert
         Assert.Empty(holdings);
@@ -184,7 +184,7 @@ public class ISharesConstituentServiceParsingTests
         var data = doc.RootElement.Clone();
 
         // Act
-        var holdings = ISharesConstituentService.ParseHoldings(data);
+        var (holdings, skippedRows) = ISharesConstituentService.ParseHoldings(data);
 
         // Assert
         // DUMMY holding should be present but with null weight and market value
@@ -207,7 +207,7 @@ public class ISharesConstituentServiceParsingTests
         var data = doc.RootElement.Clone();
 
         // Act
-        var holdings = ISharesConstituentService.ParseHoldings(data);
+        var (holdings, skippedRows) = ISharesConstituentService.ParseHoldings(data);
 
         // Assert
         // DUMMY holding should be present but with null weight and market value
