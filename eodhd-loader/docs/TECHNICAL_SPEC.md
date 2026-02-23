@@ -56,9 +56,9 @@
 - **External Reference**: `CrawlerViewModel` references this constant instead of hardcoding
 
 ### Test Coverage
-- **Download Tests**: 6 tests covering AC1 (success, BOM, unknown ETF, timeout, date adjustment)
-- **Parsing Tests**: 12 tests covering AC2 (Format A/B, filtering, malformed, null values)
-- **Persistence Tests**: 8 tests covering AC3 (matching, SCD Type 2, idempotency, error isolation)
+- **Download Tests**: 11 tests covering AC1 (success, BOM, unknown ETF, timeout, date adjustment)
+- **Parsing Tests**: 8 tests covering AC2 (Format A/B, filtering, malformed, null values)
+- **Persistence Tests**: 7 tests covering AC3 (matching, SCD Type 2, idempotency, error isolation)
 - **Test Framework**: xUnit + Moq + EF Core InMemory provider
 - **All Tests**: 26 passing
 

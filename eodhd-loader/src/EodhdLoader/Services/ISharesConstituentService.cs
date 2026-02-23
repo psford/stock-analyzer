@@ -401,11 +401,8 @@ public class ISharesConstituentService : IISharesConstituentService
         {
             LogMessage?.Invoke($"Downloading {etfTicker} as of {adjustedDate:yyyy-MM-dd}");
 
-            // Create request with User-Agent header
-            using var request = new HttpRequestMessage(HttpMethod.Get, url);
-            request.Headers.Add("User-Agent", UserAgent);
-
-            var response = await _httpClient.SendAsync(request, ct);
+            // User-Agent header already set in DefaultRequestHeaders in constructor
+            var response = await _httpClient.GetAsync(url, ct);
 
             // AC1.4: Network timeout or non-200 status returns null
             if (!response.IsSuccessStatusCode)
@@ -517,9 +514,17 @@ public class ISharesConstituentService : IISharesConstituentService
                 LogMessage?.Invoke($"Warning: ishares_etf_configs.json not found in any expected location");
             }
         }
-        catch (Exception ex)
+        catch (IOException ex)
         {
-            LogMessage?.Invoke($"Error loading ETF configs: {ex.Message}");
+            LogMessage?.Invoke($"Error reading ETF config file: {ex.Message}");
+        }
+        catch (JsonException ex)
+        {
+            LogMessage?.Invoke($"Error parsing ETF config JSON: {ex.Message}");
+        }
+        catch (SecurityException ex)
+        {
+            LogMessage?.Invoke($"Permission error loading ETF configs: {ex.Message}");
         }
 
         return configs;
