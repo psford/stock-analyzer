@@ -165,6 +165,7 @@ public class ISharesConstituentService : IISharesConstituentService
 
     /// <summary>
     /// Loads ETF configurations from bundled ishares_etf_configs.json resource.
+    /// Tries multiple paths: executing assembly, entry assembly, current directory.
     /// </summary>
     private Dictionary<string, EtfConfig> LoadEtfConfigs()
     {
@@ -172,14 +173,49 @@ public class ISharesConstituentService : IISharesConstituentService
 
         try
         {
-            // Construct path to bundled resource relative to executable
-            var assemblyLocation = System.Reflection.Assembly.GetExecutingAssembly().Location;
-            var assemblyDir = Path.GetDirectoryName(assemblyLocation);
-            var configPath = Path.Combine(assemblyDir ?? ".", "Resources", "ishares_etf_configs.json");
-
-            if (File.Exists(configPath))
+            // Try multiple paths to find the config file
+            var pathsToTry = new[]
             {
-                var json = File.ReadAllText(configPath);
+                // Path relative to executing assembly (ISharesConstituentService)
+                () =>
+                {
+                    var assemblyDir = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+                    return Path.Combine(assemblyDir ?? ".", "Resources", "ishares_etf_configs.json");
+                },
+                // Path relative to entry assembly (e.g., EodhdLoader.exe or test runner)
+                () =>
+                {
+                    var assemblyDir = Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly()?.Location ?? "");
+                    return Path.Combine(assemblyDir ?? ".", "Resources", "ishares_etf_configs.json");
+                },
+                // Path relative to current working directory
+                () => Path.Combine(".", "Resources", "ishares_etf_configs.json"),
+                // Absolute path up two levels (for running from bin\Debug or bin\Release)
+                () => Path.Combine("..", "..", "src", "EodhdLoader", "Resources", "ishares_etf_configs.json")
+            };
+
+            string? foundPath = null;
+            foreach (var pathFunc in pathsToTry)
+            {
+                try
+                {
+                    var path = pathFunc();
+                    if (File.Exists(path))
+                    {
+                        foundPath = path;
+                        break;
+                    }
+                }
+                catch
+                {
+                    // Continue to next path
+                }
+            }
+
+            if (foundPath != null && File.Exists(foundPath))
+            {
+                var json = File.ReadAllText(foundPath);
+                // PropertyNameCaseInsensitive handles snake_case to PascalCase mapping
                 var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
                 var parsed = JsonSerializer.Deserialize<Dictionary<string, EtfConfig>>(json, options);
 
@@ -193,7 +229,7 @@ public class ISharesConstituentService : IISharesConstituentService
             }
             else
             {
-                LogMessage?.Invoke($"Warning: ishares_etf_configs.json not found at {configPath}");
+                LogMessage?.Invoke($"Warning: ishares_etf_configs.json not found in any expected location");
             }
         }
         catch (Exception ex)
