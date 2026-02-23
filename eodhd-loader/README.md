@@ -186,19 +186,10 @@ eodhd-loader/
     └── Services/
         ├── ConfigurationService.cs       # Environment & connection config
         ├── StockAnalyzerApiClient.cs     # HTTP client for Stock Analyzer API
-        ├── IndexService.cs               # EODHD index constituent fetching
         ├── DataAnalysisService.cs        # Database statistics
-        └── BulkCopyService.cs            # SqlBulkCopy for migration
+        └── ISharesConstituentService.cs  # iShares ETF constituent fetching
 ```
 
-## Supported Indices
+## Supported ETFs
 
-- **S&P 500** (GSPC.INDX)
-- **Russell 3000** (RUA.INDX)
-- **Russell 2000** (RUT.INDX)
-- **Dow Jones Industrial Average** (DJI.INDX)
-- **NASDAQ Composite** (IXIC.INDX)
-- **FTSE 100** (FTSE.INDX)
-- **DAX** (GDAXI.INDX)
-- **CAC 40** (FCHI.INDX)
-- **Nikkei 225** (N225.INDX)
+The iShares Loader supports 277+ iShares ETFs configured in `EtfConfigs`. Use the UI to load all ETFs or select a specific one.
