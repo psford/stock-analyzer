@@ -2632,8 +2632,10 @@ app.MapPost("/api/admin/securities/reset-unavailable", async (IServiceProvider s
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status500InternalServerError);
 
-// POST /api/admin/securities/calculate-importance - Calculate importance scores for untracked securities
-// Scores are based on security type, exchange, ticker length, and name patterns (1-10 scale, 10=most important)
+// POST /api/admin/securities/calculate-importance - Calculate importance scores for all active securities
+// Primary signal: index membership (which indices a security belongs to, and how many)
+// Secondary signals: security type, exchange quality
+// Penalties: OTC/Pink, warrants/rights, distressed securities
 app.MapPost("/api/admin/securities/calculate-importance", async (IServiceProvider serviceProvider) =>
 {
     using var scope = serviceProvider.CreateScope();
@@ -2642,56 +2644,60 @@ app.MapPost("/api/admin/securities/calculate-importance", async (IServiceProvide
     if (context == null)
         return Results.BadRequest(new { error = "Database context not configured" });
 
-    // Local function to calculate importance score
-    int CalculateImportanceScore(SecurityMasterEntity sec)
-    {
-        var score = 5; // Base score
+    // Index tier classifications by IndexCode
+    // Tier 1: Major broad-market indices (S&P 500, Russell 1000/2000/3000, MSCI flagship)
+    var tier1Codes = new HashSet<string> { "SP500", "R1000", "R2000", "R3000", "MSCI_ACWI", "MSCI_EAFE", "MSCI_EM" };
+    // Tier 2: Core style/size indices (S&P MidCap/SmallCap, Total Market, Core International)
+    var tier2Codes = new HashSet<string> { "IJH", "IJR", "OEF", "ITOT", "IDEV", "IEMG", "IEFA", "IXUS" };
 
-        // Security Type scoring
+    // Local function to calculate importance score with index membership data
+    int CalculateImportanceScore(SecurityMasterEntity sec,
+        int tier1Count, int tier2Count, int totalIndexCount)
+    {
+        var score = 1; // Base score
+
+        // Primary signal: Index membership (0-6 points)
+        if (tier1Count >= 2)
+            score += 6;       // In multiple flagship indices (e.g., SP500 + R1000 + R3000)
+        else if (tier1Count == 1)
+            score += 5;       // In one flagship index (e.g., R2000 only)
+        else if (tier2Count >= 2)
+            score += 4;       // In multiple core indices
+        else if (tier2Count == 1)
+            score += 3;       // In one core index
+        else if (totalIndexCount >= 3)
+            score += 2;       // In several thematic/sector indices
+        else if (totalIndexCount >= 1)
+            score += 1;       // In at least one index
+
+        // Breadth bonus: held across many indices (0-1 points)
+        if (totalIndexCount >= 8)
+            score += 1;
+
+        // Secondary signal: Security type (0-1 points)
         var secType = sec.SecurityType?.ToUpperInvariant() ?? "";
         if (secType.Contains("COMMON STOCK"))
-            score += 2;
-        else if (secType.Contains("ETF") || secType.Contains("EXCHANGE TRADED"))
             score += 1;
-        else if (secType.Contains("PREFERRED") || secType.Contains("WARRANT") || secType.Contains("RIGHT"))
-            score -= 2;
-        // OTC indicators in security type
-        if (secType.Contains("OTC") || secType.Contains("PINK") || secType.Contains("GREY"))
-            score -= 3;
 
-        // Exchange scoring
+        // Secondary signal: Exchange quality (0-1 points)
         var exchange = sec.Exchange?.ToUpperInvariant() ?? "";
-        if (exchange.Contains("NYSE") && !exchange.Contains("ARCA"))
-            score += 2;
-        else if (exchange.Contains("NASDAQ"))
-            score += 2;
-        else if (exchange.Contains("ARCA") || exchange.Contains("BATS") || exchange.Contains("IEX"))
+        if (exchange.Contains("NYSE") || exchange.Contains("NASDAQ"))
             score += 1;
-        else if (exchange.Contains("OTC") || exchange.Contains("PINK") || exchange.Contains("GREY"))
+
+        // Penalties
+        if (exchange.Contains("OTC") || exchange.Contains("PINK") || exchange.Contains("GREY"))
             score -= 2;
-        else if (string.IsNullOrEmpty(exchange))
-            score -= 1;
+        if (secType.Contains("PREFERRED") || secType.Contains("WARRANT") || secType.Contains("RIGHT"))
+            score -= 2;
+        if (secType.Contains("OTC") || secType.Contains("PINK") || secType.Contains("GREY"))
+            score -= 2;
 
-        // Ticker length scoring (shorter = typically major exchanges)
-        var tickerLen = sec.TickerSymbol?.Length ?? 0;
-        if (tickerLen >= 1 && tickerLen <= 3)
-            score += 1;
-        else if (tickerLen >= 5)
-            score -= 1;
-
-        // Name pattern scoring
         var name = sec.IssueName?.ToUpperInvariant() ?? "";
-        // Positive patterns (established companies)
-        if (name.Contains(" INC") || name.Contains(" CORP") || name.Contains(" LTD") || name.Contains(" CO ") || name.Contains(" COMPANY"))
-            score += 1;
-        // Negative patterns (special securities)
         if (name.Contains("WARRANT") || name.Contains("RIGHT") || name.Contains(" UNIT") || name.Contains("UNITS"))
             score -= 2;
-        // Strong negative patterns (distressed/special situations)
         if (name.Contains("LIQUIDATING") || name.Contains("BANKRUPT") || name.Contains("LIQUIDATION"))
             score -= 3;
 
-        // Clamp to 1-10
         return Math.Clamp(score, 1, 10);
     }
 
@@ -2702,6 +2708,55 @@ app.MapPost("/api/admin/securities/calculate-importance", async (IServiceProvide
     try
     {
         Log.Information("Starting importance score calculation for all active securities");
+
+        // Pre-load index tier mappings: IndexId → tier (1, 2, or 3)
+        var indexTiers = new Dictionary<int, int>();
+        var indexDefs = await context.IndexDefinitions.AsNoTracking().ToListAsync();
+        foreach (var idx in indexDefs)
+        {
+            if (tier1Codes.Contains(idx.IndexCode))
+                indexTiers[idx.IndexId] = 1;
+            else if (tier2Codes.Contains(idx.IndexCode))
+                indexTiers[idx.IndexId] = 2;
+            else
+                indexTiers[idx.IndexId] = 3;
+        }
+
+        // Pre-load index membership: SecurityAlias → set of IndexIds (from latest snapshot per index)
+        // Single efficient query using raw SQL to avoid N+1 and minimize DTU usage
+        var indexMembership = new Dictionary<int, HashSet<int>>();
+        var hasIndexData = false;
+
+        if (indexDefs.Count > 0)
+        {
+            using var conn = context.Database.GetDbConnection();
+            await conn.OpenAsync();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                ;WITH LatestPerIndex AS (
+                    SELECT IndexId, MAX(EffectiveDate) AS MaxDate
+                    FROM data.IndexConstituent WITH (NOLOCK)
+                    GROUP BY IndexId
+                )
+                SELECT c.SecurityAlias, c.IndexId
+                FROM data.IndexConstituent c WITH (NOLOCK)
+                INNER JOIN LatestPerIndex l ON c.IndexId = l.IndexId AND c.EffectiveDate = l.MaxDate";
+            cmd.CommandTimeout = 60;
+
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var secAlias = reader.GetInt32(0);
+                var indexId = reader.GetInt32(1);
+                if (!indexMembership.ContainsKey(secAlias))
+                    indexMembership[secAlias] = new HashSet<int>();
+                indexMembership[secAlias].Add(indexId);
+                hasIndexData = true;
+            }
+        }
+
+        Log.Information("Loaded index membership for {Count} securities from {IndexCount} indices",
+            indexMembership.Count, indexDefs.Count);
 
         var scoreDistribution = new Dictionary<int, int>();
         var updated = 0;
@@ -2724,7 +2779,25 @@ app.MapPost("/api/admin/securities/calculate-importance", async (IServiceProvide
 
             foreach (var security in batch)
             {
-                var score = CalculateImportanceScore(security);
+                // Look up index membership for this security
+                var tier1Count = 0;
+                var tier2Count = 0;
+                var totalIndexCount = 0;
+
+                if (indexMembership.TryGetValue(security.SecurityAlias, out var indexIds))
+                {
+                    totalIndexCount = indexIds.Count;
+                    foreach (var indexId in indexIds)
+                    {
+                        if (indexTiers.TryGetValue(indexId, out var tier))
+                        {
+                            if (tier == 1) tier1Count++;
+                            else if (tier == 2) tier2Count++;
+                        }
+                    }
+                }
+
+                var score = CalculateImportanceScore(security, tier1Count, tier2Count, totalIndexCount);
 
                 if (security.ImportanceScore != score)
                 {
@@ -2744,7 +2817,8 @@ app.MapPost("/api/admin/securities/calculate-importance", async (IServiceProvide
             skip += pageSize;
         }
 
-        Log.Information("Updated importance scores for {Count} securities", updated);
+        Log.Information("Updated importance scores for {Count} securities (index data available: {HasIndex})",
+            updated, hasIndexData);
 
         return Results.Ok(new
         {
@@ -2752,6 +2826,8 @@ app.MapPost("/api/admin/securities/calculate-importance", async (IServiceProvide
             message = $"Calculated importance scores for {totalProcessed} active securities",
             totalProcessed,
             updated,
+            indexDataAvailable = hasIndexData,
+            securitiesWithIndexMembership = indexMembership.Count,
             distribution = scoreDistribution.OrderByDescending(x => x.Key).ToDictionary(x => x.Key, x => x.Value)
         });
     }

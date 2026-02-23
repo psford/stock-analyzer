@@ -1,0 +1,1387 @@
+{
+  "AAXJ": {
+    "product_id": 239601,
+    "slug": "ishares-msci-all-country-asia-ex-japan-etf",
+    "index_code": "AAXJ"
+  },
+  "ACWI": {
+    "product_id": 239600,
+    "slug": "ishares-msci-acwi-etf",
+    "index_code": "MSCI_ACWI"
+  },
+  "ACWV": {
+    "product_id": 239605,
+    "slug": "ishares-msci-all-country-world-minimum-volatility-etf",
+    "index_code": "ACWV"
+  },
+  "ACWX": {
+    "product_id": 239594,
+    "slug": "ishares-msci-acwi-ex-us-etf",
+    "index_code": "ACWX"
+  },
+  "AIA": {
+    "product_id": 239730,
+    "slug": "ishares-asia-50-etf",
+    "index_code": "AIA"
+  },
+  "AQLT": {
+    "product_id": 340396,
+    "slug": "ishares-msci-global-quality-factor-etf",
+    "index_code": "AQLT"
+  },
+  "ARTY": {
+    "product_id": 297905,
+    "slug": "ishares-future-ai-tech-etf",
+    "index_code": "ARTY"
+  },
+  "BAI": {
+    "product_id": 339081,
+    "slug": "ishares-a-i-innovation-and-tech-active-etf",
+    "index_code": "BAI"
+  },
+  "BDVL": {
+    "product_id": 345327,
+    "slug": "ishares-disciplined-volatility-equity-active-etf",
+    "index_code": "BDVL"
+  },
+  "BDYN": {
+    "product_id": 345325,
+    "slug": "ishares-dynamic-equity-active-etf",
+    "index_code": "BDYN"
+  },
+  "BELT": {
+    "product_id": 337476,
+    "slug": "ishares-u-s-select-equity-active-etf",
+    "index_code": "BELT"
+  },
+  "BGRO": {
+    "product_id": 337538,
+    "slug": "ishares-large-cap-growth-active-etf",
+    "index_code": "BGRO"
+  },
+  "BIDD": {
+    "product_id": 338863,
+    "slug": "ishares-international-dividend-active-etf",
+    "index_code": "BIDD"
+  },
+  "BILT": {
+    "product_id": 345073,
+    "slug": "ishares-infrastructure-active-etf",
+    "index_code": "BILT"
+  },
+  "BKF": {
+    "product_id": 239614,
+    "slug": "ishares-msci-bric-etf",
+    "index_code": "BKF"
+  },
+  "BLCR": {
+    "product_id": 333889,
+    "slug": "ishares-large-cap-core-active-etf",
+    "index_code": "BLCR"
+  },
+  "BLCV": {
+    "product_id": 331795,
+    "slug": "ishares-large-cap-value-active-etf",
+    "index_code": "BLCV"
+  },
+  "BMED": {
+    "product_id": 316007,
+    "slug": "ishares-health-innovation-active-etf",
+    "index_code": "BMED"
+  },
+  "BPAY": {
+    "product_id": 329128,
+    "slug": "ishares-fintech-active-etf",
+    "index_code": "BPAY"
+  },
+  "CNYA": {
+    "product_id": 273318,
+    "slug": "ishares-msci-china-a-etf",
+    "index_code": "CNYA"
+  },
+  "CORO": {
+    "product_id": 340366,
+    "slug": "ishares-international-country-rotation-active-etf",
+    "index_code": "CORO"
+  },
+  "CRBN": {
+    "product_id": 271054,
+    "slug": "ishares-msci-acwi-low-carbon-target-etf",
+    "index_code": "CRBN"
+  },
+  "DGRO": {
+    "product_id": 264623,
+    "slug": "ishares-core-dividend-growth-etf",
+    "index_code": "DGRO"
+  },
+  "DIVB": {
+    "product_id": 291387,
+    "slug": "ishares-core-dividend-etf",
+    "index_code": "DIVB"
+  },
+  "DMXF": {
+    "product_id": 314362,
+    "slug": "ishares-esg-advanced-msci-eafe-etf",
+    "index_code": "DMXF"
+  },
+  "DSI": {
+    "product_id": 239667,
+    "slug": "ishares-msci-kld-400-social-etf",
+    "index_code": "DSI"
+  },
+  "DVY": {
+    "product_id": 239500,
+    "slug": "ishares-select-dividend-etf",
+    "index_code": "DVY"
+  },
+  "DVYA": {
+    "product_id": 239443,
+    "slug": "ishares-asiapacific-dividend-etf",
+    "index_code": "DVYA"
+  },
+  "DVYE": {
+    "product_id": 239526,
+    "slug": "ishares-emerging-markets-dividend-etf",
+    "index_code": "DVYE"
+  },
+  "DYNF": {
+    "product_id": 307283,
+    "slug": "ishares-u-s-equity-factor-rotation-active-etf",
+    "index_code": "DYNF"
+  },
+  "ECH": {
+    "product_id": 239618,
+    "slug": "ishares-msci-chile-capped-etf",
+    "index_code": "ECH"
+  },
+  "ECNS": {
+    "product_id": 239620,
+    "slug": "ishares-msci-china-smallcap-etf",
+    "index_code": "ECNS"
+  },
+  "EDEN": {
+    "product_id": 239621,
+    "slug": "ishares-msci-denmark-capped-etf",
+    "index_code": "EDEN"
+  },
+  "EEM": {
+    "product_id": 239637,
+    "slug": "ishares-msci-emerging-markets-etf",
+    "index_code": "MSCI_EM"
+  },
+  "EEMA": {
+    "product_id": 239629,
+    "slug": "ishares-msci-emerging-markets-asia-etf",
+    "index_code": "EEMA"
+  },
+  "EEMS": {
+    "product_id": 239642,
+    "slug": "ishares-msci-emerging-markets-smallcap-etf",
+    "index_code": "EEMS"
+  },
+  "EEMV": {
+    "product_id": 239641,
+    "slug": "ishares-msci-emerging-markets-minimum-volatility-etf",
+    "index_code": "EEMV"
+  },
+  "EFA": {
+    "product_id": 239623,
+    "slug": "ishares-msci-eafe-etf",
+    "index_code": "MSCI_EAFE"
+  },
+  "EFAV": {
+    "product_id": 239626,
+    "slug": "ishares-msci-eafe-minimum-volatility-etf",
+    "index_code": "EFAV"
+  },
+  "EFG": {
+    "product_id": 239622,
+    "slug": "ishares-msci-eafe-growth-etf",
+    "index_code": "EFG"
+  },
+  "EFNL": {
+    "product_id": 239647,
+    "slug": "ishares-msci-finland-capped-etf",
+    "index_code": "EFNL"
+  },
+  "EFRA": {
+    "product_id": 330188,
+    "slug": "ishares-environmental-infrastructure-and-industrials-etf",
+    "index_code": "EFRA"
+  },
+  "EFV": {
+    "product_id": 239628,
+    "slug": "ishares-msci-eafe-value-etf",
+    "index_code": "EFV"
+  },
+  "EGUS": {
+    "product_id": 330808,
+    "slug": "ishares-esg-aware-msci-usa-growth-etf",
+    "index_code": "EGUS"
+  },
+  "EIDO": {
+    "product_id": 239661,
+    "slug": "ishares-msci-indonesia-etf",
+    "index_code": "EIDO"
+  },
+  "EIRL": {
+    "product_id": 239662,
+    "slug": "ishares-msci-ireland-capped-etf",
+    "index_code": "EIRL"
+  },
+  "EIS": {
+    "product_id": 239663,
+    "slug": "ishares-msci-israel-capped-etf",
+    "index_code": "EIS"
+  },
+  "EMGF": {
+    "product_id": 272820,
+    "slug": "ishares-msci-emerging-multi-factor-etf",
+    "index_code": "EMGF"
+  },
+  "EMIF": {
+    "product_id": 239735,
+    "slug": "ishares-emerging-markets-infrastructure-etf",
+    "index_code": "EMIF"
+  },
+  "EMXC": {
+    "product_id": 288504,
+    "slug": "ishares-msci-emerging-markets-ex-china-etf",
+    "index_code": "EMXC"
+  },
+  "EMXF": {
+    "product_id": 316020,
+    "slug": "ishares-esg-advanced-msci-em-etf",
+    "index_code": "EMXF"
+  },
+  "ENHU": {
+    "product_id": 346694,
+    "slug": "ishares-enhanced-large-cap-core-active-etf",
+    "index_code": "ENHU"
+  },
+  "ENOR": {
+    "product_id": 239673,
+    "slug": "ishares-msci-norway-capped-etf",
+    "index_code": "ENOR"
+  },
+  "ENZL": {
+    "product_id": 239672,
+    "slug": "ishares-msci-new-zealand-capped-etf",
+    "index_code": "ENZL"
+  },
+  "EPHE": {
+    "product_id": 239675,
+    "slug": "ishares-msci-philippines-etf",
+    "index_code": "EPHE"
+  },
+  "EPOL": {
+    "product_id": 239676,
+    "slug": "ishares-msci-poland-capped-etf",
+    "index_code": "EPOL"
+  },
+  "EPP": {
+    "product_id": 239674,
+    "slug": "ishares-msci-pacific-ex-japan-etf",
+    "index_code": "EPP"
+  },
+  "EPU": {
+    "product_id": 239606,
+    "slug": "ishares-msci-all-peru-capped-etf",
+    "index_code": "EPU"
+  },
+  "EQLT": {
+    "product_id": 338701,
+    "slug": "ishares-msci-emerging-markets-quality-factor-etf",
+    "index_code": "EQLT"
+  },
+  "ERET": {
+    "product_id": 329687,
+    "slug": "ishares-environmentally-aware-real-estate-etf",
+    "index_code": "ERET"
+  },
+  "ESGD": {
+    "product_id": 283778,
+    "slug": "ishares-esg-aware-msci-eafe-etf",
+    "index_code": "ESGD"
+  },
+  "ESGE": {
+    "product_id": 283777,
+    "slug": "ishares-esg-aware-msci-em-etf",
+    "index_code": "ESGE"
+  },
+  "ESGU": {
+    "product_id": 286007,
+    "slug": "ishares-esg-aware-msci-usa-etf",
+    "index_code": "ESGU"
+  },
+  "ESML": {
+    "product_id": 296644,
+    "slug": "ishares-esg-aware-msci-usa-small-cap-etf",
+    "index_code": "ESML"
+  },
+  "ESMV": {
+    "product_id": 321324,
+    "slug": "ishares-esg-optimized-msci-usa-min-vol-factor-etf",
+    "index_code": "ESMV"
+  },
+  "ETEC": {
+    "product_id": 331244,
+    "slug": "ishares-breakthrough-environmental-solutions-etf",
+    "index_code": "ETEC"
+  },
+  "EUFN": {
+    "product_id": 239645,
+    "slug": "ishares-msci-europe-financials-etf",
+    "index_code": "EUFN"
+  },
+  "EUSA": {
+    "product_id": 239693,
+    "slug": "ishares-msci-usa-etf",
+    "index_code": "EUSA"
+  },
+  "EVLU": {
+    "product_id": 338704,
+    "slug": "ishares-msci-emerging-markets-value-factor-etf",
+    "index_code": "EVLU"
+  },
+  "EVUS": {
+    "product_id": 330809,
+    "slug": "ishares-esg-aware-msci-usa-value-etf",
+    "index_code": "EVUS"
+  },
+  "EWA": {
+    "product_id": 239607,
+    "slug": "ishares-msci-australia-etf",
+    "index_code": "EWA"
+  },
+  "EWC": {
+    "product_id": 239615,
+    "slug": "ishares-msci-canada-etf",
+    "index_code": "EWC"
+  },
+  "EWD": {
+    "product_id": 239684,
+    "slug": "ishares-msci-sweden-etf",
+    "index_code": "EWD"
+  },
+  "EWG": {
+    "product_id": 239650,
+    "slug": "ishares-msci-germany-etf",
+    "index_code": "EWG"
+  },
+  "EWH": {
+    "product_id": 239657,
+    "slug": "ishares-msci-hong-kong-etf",
+    "index_code": "EWH"
+  },
+  "EWI": {
+    "product_id": 239664,
+    "slug": "ishares-msci-italy-capped-etf",
+    "index_code": "EWI"
+  },
+  "EWJ": {
+    "product_id": 239665,
+    "slug": "ishares-msci-japan-etf",
+    "index_code": "EWJ"
+  },
+  "EWJV": {
+    "product_id": 307263,
+    "slug": "ishares-msci-japan-value-etf",
+    "index_code": "EWJV"
+  },
+  "EWK": {
+    "product_id": 239610,
+    "slug": "ishares-msci-belgium-capped-etf",
+    "index_code": "EWK"
+  },
+  "EWL": {
+    "product_id": 239685,
+    "slug": "ishares-msci-switzerland-capped-etf",
+    "index_code": "EWL"
+  },
+  "EWM": {
+    "product_id": 239669,
+    "slug": "ishares-msci-malaysia-etf",
+    "index_code": "EWM"
+  },
+  "EWN": {
+    "product_id": 239671,
+    "slug": "ishares-msci-netherlands-etf",
+    "index_code": "EWN"
+  },
+  "EWO": {
+    "product_id": 239609,
+    "slug": "ishares-msci-austria-capped-etf",
+    "index_code": "EWO"
+  },
+  "EWP": {
+    "product_id": 239683,
+    "slug": "ishares-msci-spain-capped-etf",
+    "index_code": "EWP"
+  },
+  "EWQ": {
+    "product_id": 239648,
+    "slug": "ishares-msci-france-etf",
+    "index_code": "EWQ"
+  },
+  "EWS": {
+    "product_id": 239678,
+    "slug": "ishares-msci-singapore-capped-etf",
+    "index_code": "EWS"
+  },
+  "EWT": {
+    "product_id": 239686,
+    "slug": "ishares-msci-taiwan-etf",
+    "index_code": "EWT"
+  },
+  "EWU": {
+    "product_id": 239690,
+    "slug": "ishares-msci-united-kingdom-etf",
+    "index_code": "EWU"
+  },
+  "EWUS": {
+    "product_id": 239691,
+    "slug": "ishares-msci-united-kingdom-smallcap-etf",
+    "index_code": "EWUS"
+  },
+  "EWW": {
+    "product_id": 239670,
+    "slug": "ishares-msci-mexico-capped-etf",
+    "index_code": "EWW"
+  },
+  "EWY": {
+    "product_id": 239681,
+    "slug": "ishares-msci-south-korea-capped-etf",
+    "index_code": "EWY"
+  },
+  "EWZ": {
+    "product_id": 239612,
+    "slug": "ishares-msci-brazil-capped-etf",
+    "index_code": "EWZ"
+  },
+  "EWZS": {
+    "product_id": 239613,
+    "slug": "ishares-msci-brazil-smallcap-etf",
+    "index_code": "EWZS"
+  },
+  "EXI": {
+    "product_id": 239745,
+    "slug": "ishares-global-industrials-etf",
+    "index_code": "EXI"
+  },
+  "EZA": {
+    "product_id": 239680,
+    "slug": "ishares-msci-south-africa-etf",
+    "index_code": "EZA"
+  },
+  "EZU": {
+    "product_id": 239644,
+    "slug": "ishares-msci-emu-etf",
+    "index_code": "EZU"
+  },
+  "FXI": {
+    "product_id": 239536,
+    "slug": "ishares-china-largecap-etf",
+    "index_code": "FXI"
+  },
+  "GARP": {
+    "product_id": 312212,
+    "slug": "ishares-msci-usa-quality-garp-etf",
+    "index_code": "GARP"
+  },
+  "GLOF": {
+    "product_id": 272821,
+    "slug": "ishares-msci-global-multi-factor-etf",
+    "index_code": "GLOF"
+  },
+  "HAWX": {
+    "product_id": 273768,
+    "slug": "ishares-currency-hedged-msci-acwi-ex-us-etf",
+    "index_code": "HAWX"
+  },
+  "HDV": {
+    "product_id": 239563,
+    "slug": "ishares-high-dividend-etf",
+    "index_code": "HDV"
+  },
+  "HEEM": {
+    "product_id": 268704,
+    "slug": "ishares-currency-hedged-msci-emerging-markets",
+    "index_code": "HEEM"
+  },
+  "HEFA": {
+    "product_id": 259622,
+    "slug": "ishares-currency-hedged-msci-eafe-etf",
+    "index_code": "HEFA"
+  },
+  "HEWJ": {
+    "product_id": 259624,
+    "slug": "ishares-currency-hedged-msci-japan-etf",
+    "index_code": "HEWJ"
+  },
+  "HEZU": {
+    "product_id": 268708,
+    "slug": "ishares-currency-hedged-msci-emu-etf",
+    "index_code": "HEZU"
+  },
+  "HSCZ": {
+    "product_id": 273771,
+    "slug": "ishares-currency-hedged-msci-eafe-small-cap-etf",
+    "index_code": "HSCZ"
+  },
+  "IAI": {
+    "product_id": 239504,
+    "slug": "ishares-us-brokerdealers-etf",
+    "index_code": "IAI"
+  },
+  "IAK": {
+    "product_id": 239515,
+    "slug": "ishares-us-insurance-etf",
+    "index_code": "IAK"
+  },
+  "IAT": {
+    "product_id": 239521,
+    "slug": "ishares-us-regional-banks-etf",
+    "index_code": "IAT"
+  },
+  "IBAT": {
+    "product_id": 336296,
+    "slug": "ishares-energy-storage-materials-etf",
+    "index_code": "IBAT"
+  },
+  "IBB": {
+    "product_id": 239699,
+    "slug": "ishares-biotechnology-etf",
+    "index_code": "IBB"
+  },
+  "IBLC": {
+    "product_id": 326614,
+    "slug": "ishares-blockchain-and-tech-etf",
+    "index_code": "IBLC"
+  },
+  "IBRN": {
+    "product_id": 329137,
+    "slug": "ishares-neuroscience-and-healthcare-etf",
+    "index_code": "IBRN"
+  },
+  "ICF": {
+    "product_id": 239482,
+    "slug": "ishares-cohen-steers-reit-etf",
+    "index_code": "ICF"
+  },
+  "ICLN": {
+    "product_id": 239738,
+    "slug": "ishares-global-clean-energy-etf",
+    "index_code": "ICLN"
+  },
+  "ICOP": {
+    "product_id": 332280,
+    "slug": "ishares-copper-and-metals-mining-etf",
+    "index_code": "ICOP"
+  },
+  "IDEF": {
+    "product_id": 343529,
+    "slug": "ishares-defense-industrials-active-etf",
+    "index_code": "IDEF"
+  },
+  "IDEV": {
+    "product_id": 286762,
+    "slug": "ishares-core-msci-international-developed-markets-etf",
+    "index_code": "IDEV"
+  },
+  "IDGT": {
+    "product_id": 239770,
+    "slug": "ishares-north-american-techmultimedia-networking-etf",
+    "index_code": "IDGT"
+  },
+  "IDNA": {
+    "product_id": 308878,
+    "slug": "ishares-genomics-immunology-and-healthcare-etf",
+    "index_code": "IDNA"
+  },
+  "IDRV": {
+    "product_id": 307332,
+    "slug": "ishares-self-driving-ev-and-tech-etf",
+    "index_code": "IDRV"
+  },
+  "IDU": {
+    "product_id": 239524,
+    "slug": "ishares-us-utilities-etf",
+    "index_code": "IDU"
+  },
+  "IDV": {
+    "product_id": 239499,
+    "slug": "ishares-international-select-dividend-etf",
+    "index_code": "IDV"
+  },
+  "IDYN": {
+    "product_id": 345128,
+    "slug": "ishares-international-equity-factor-rotation-active-etf",
+    "index_code": "IDYN"
+  },
+  "IEDI": {
+    "product_id": 292414,
+    "slug": "ishares-u-s-consumer-focused-etf",
+    "index_code": "IEDI"
+  },
+  "IEFA": {
+    "product_id": 244049,
+    "slug": "ishares-core-msci-eafe-etf",
+    "index_code": "IEFA"
+  },
+  "IEMG": {
+    "product_id": 244050,
+    "slug": "ishares-core-msci-emerging-markets-etf",
+    "index_code": "IEMG"
+  },
+  "IEO": {
+    "product_id": 239517,
+    "slug": "ishares-us-oil-gas-exploration-production-etf",
+    "index_code": "IEO"
+  },
+  "IETC": {
+    "product_id": 292425,
+    "slug": "ishares-u-s-tech-independence-focused-etf",
+    "index_code": "IETC"
+  },
+  "IEUR": {
+    "product_id": 264617,
+    "slug": "ishares-core-msci-europe-etf",
+    "index_code": "IEUR"
+  },
+  "IEUS": {
+    "product_id": 239537,
+    "slug": "ishares-developed-smallcap-ex-north-america-etf",
+    "index_code": "IEUS"
+  },
+  "IEV": {
+    "product_id": 239736,
+    "slug": "ishares-europe-etf",
+    "index_code": "IEV"
+  },
+  "IEZ": {
+    "product_id": 239518,
+    "slug": "ishares-us-oil-equipment-services-etf",
+    "index_code": "IEZ"
+  },
+  "IFGL": {
+    "product_id": 239540,
+    "slug": "ishares-international-developed-real-estate-etf",
+    "index_code": "IFGL"
+  },
+  "IFRA": {
+    "product_id": 294315,
+    "slug": "ishares-u-s-infrastructure-etf",
+    "index_code": "IFRA"
+  },
+  "IGE": {
+    "product_id": 239768,
+    "slug": "ishares-north-american-natural-resources-etf",
+    "index_code": "IGE"
+  },
+  "IGF": {
+    "product_id": 239746,
+    "slug": "ishares-global-infrastructure-etf",
+    "index_code": "IGF"
+  },
+  "IGM": {
+    "product_id": 239769,
+    "slug": "ishares-north-american-tech-etf",
+    "index_code": "IGM"
+  },
+  "IGRO": {
+    "product_id": 283737,
+    "slug": "ishares-international-dividend-growth-etf",
+    "index_code": "IGRO"
+  },
+  "IGV": {
+    "product_id": 239771,
+    "slug": "ishares-north-american-techsoftware-etf",
+    "index_code": "IGV"
+  },
+  "IHAK": {
+    "product_id": 307352,
+    "slug": "ishares-cybersecurity-and-tech-etf",
+    "index_code": "IHAK"
+  },
+  "IHE": {
+    "product_id": 239519,
+    "slug": "ishares-us-pharmaceuticals-etf",
+    "index_code": "IHE"
+  },
+  "IHF": {
+    "product_id": 239510,
+    "slug": "ishares-us-healthcare-providers-etf",
+    "index_code": "IHF"
+  },
+  "IHI": {
+    "product_id": 239516,
+    "slug": "ishares-us-medical-devices-etf",
+    "index_code": "IHI"
+  },
+  "IJH": {
+    "product_id": 239763,
+    "slug": "ishares-core-sp-midcap-etf",
+    "index_code": "IJH"
+  },
+  "IJJ": {
+    "product_id": 239764,
+    "slug": "ishares-sp-midcap-400-value-etf",
+    "index_code": "IJJ"
+  },
+  "IJK": {
+    "product_id": 239762,
+    "slug": "ishares-sp-midcap-400-growth-etf",
+    "index_code": "IJK"
+  },
+  "IJR": {
+    "product_id": 239774,
+    "slug": "ishares-core-sp-smallcap-etf",
+    "index_code": "IJR"
+  },
+  "IJS": {
+    "product_id": 239775,
+    "slug": "ishares-sp-smallcap-600-value-etf",
+    "index_code": "IJS"
+  },
+  "IJT": {
+    "product_id": 239773,
+    "slug": "ishares-sp-smallcap-600-growth-etf",
+    "index_code": "IJT"
+  },
+  "ILCB": {
+    "product_id": 239579,
+    "slug": "ishares-morningstar-largecap-etf",
+    "index_code": "ILCB"
+  },
+  "ILCG": {
+    "product_id": 239580,
+    "slug": "ishares-morningstar-largecap-growth-etf",
+    "index_code": "ILCG"
+  },
+  "ILCV": {
+    "product_id": 239581,
+    "slug": "ishares-morningstar-largecap-value-etf",
+    "index_code": "ILCV"
+  },
+  "ILF": {
+    "product_id": 239761,
+    "slug": "ishares-latin-america-40-etf",
+    "index_code": "ILF"
+  },
+  "ILIT": {
+    "product_id": 332281,
+    "slug": "ishares-lithium-miners-and-producers-etf",
+    "index_code": "ILIT"
+  },
+  "IMCB": {
+    "product_id": 239582,
+    "slug": "ishares-morningstar-midcap-etf",
+    "index_code": "IMCB"
+  },
+  "IMCG": {
+    "product_id": 239583,
+    "slug": "ishares-morningstar-midcap-growth-etf",
+    "index_code": "IMCG"
+  },
+  "IMCV": {
+    "product_id": 239584,
+    "slug": "ishares-morningstar-midcap-value-etf",
+    "index_code": "IMCV"
+  },
+  "IMTM": {
+    "product_id": 271538,
+    "slug": "ishares-msci-international-developed-momentum-factor-etf",
+    "index_code": "IMTM"
+  },
+  "INDA": {
+    "product_id": 239659,
+    "slug": "ishares-msci-india-etf",
+    "index_code": "INDA"
+  },
+  "INDY": {
+    "product_id": 239758,
+    "slug": "ishares-india-50-etf",
+    "index_code": "INDY"
+  },
+  "INRO": {
+    "product_id": 336430,
+    "slug": "ishares-u-s-industry-rotation-active-etf",
+    "index_code": "INRO"
+  },
+  "INTF": {
+    "product_id": 272822,
+    "slug": "ishares-msci-international-multi-factor-etf",
+    "index_code": "INTF"
+  },
+  "IOO": {
+    "product_id": 239737,
+    "slug": "ishares-global-100-etf",
+    "index_code": "IOO"
+  },
+  "IPAC": {
+    "product_id": 264619,
+    "slug": "ishares-core-msci-pacific-etf",
+    "index_code": "IPAC"
+  },
+  "IQLT": {
+    "product_id": 271540,
+    "slug": "ishares-msci-international-developed-quality-factor-etf",
+    "index_code": "IQLT"
+  },
+  "ISCB": {
+    "product_id": 239586,
+    "slug": "ishares-morningstar-smallcap-etf",
+    "index_code": "ISCB"
+  },
+  "ISCF": {
+    "product_id": 272823,
+    "slug": "ishares-msci-international-small-cap-multi-factor-etf",
+    "index_code": "ISCF"
+  },
+  "ISCG": {
+    "product_id": 239587,
+    "slug": "ishares-morningstar-smallcap-growth-etf",
+    "index_code": "ISCG"
+  },
+  "ISCV": {
+    "product_id": 239588,
+    "slug": "ishares-morningstar-smallcap-value-etf",
+    "index_code": "ISCV"
+  },
+  "ISVL": {
+    "product_id": 317548,
+    "slug": "ishares-international-developed-small-cap-value-factor-etf",
+    "index_code": "ISVL"
+  },
+  "ITA": {
+    "product_id": 239502,
+    "slug": "ishares-us-aerospace-defense-etf",
+    "index_code": "ITA"
+  },
+  "ITB": {
+    "product_id": 239512,
+    "slug": "ishares-us-home-construction-etf",
+    "index_code": "ITB"
+  },
+  "ITOT": {
+    "product_id": 239724,
+    "slug": "ishares-core-sp-total-us-stock-market-etf",
+    "index_code": "ITOT"
+  },
+  "IUSG": {
+    "product_id": 239713,
+    "slug": "ishares-core-sp-us-growth-etf",
+    "index_code": "IUSG"
+  },
+  "IUSV": {
+    "product_id": 239715,
+    "slug": "ishares-core-sp-us-value-etf",
+    "index_code": "IUSV"
+  },
+  "IVE": {
+    "product_id": 239728,
+    "slug": "ishares-sp-500-value-etf",
+    "index_code": "IVE"
+  },
+  "IVLU": {
+    "product_id": 275382,
+    "slug": "ishares-msci-international-developed-value-factor-etf",
+    "index_code": "IVLU"
+  },
+  "IVV": {
+    "product_id": 239726,
+    "slug": "ishares-core-sp-500-etf",
+    "index_code": "SP500"
+  },
+  "IVW": {
+    "product_id": 239725,
+    "slug": "ishares-sp-500-growth-etf",
+    "index_code": "IVW"
+  },
+  "IWB": {
+    "product_id": 239707,
+    "slug": "ishares-russell-1000-etf",
+    "index_code": "R1000"
+  },
+  "IWC": {
+    "product_id": 239716,
+    "slug": "ishares-microcap-etf",
+    "index_code": "IWC"
+  },
+  "IWD": {
+    "product_id": 239708,
+    "slug": "ishares-russell-1000-value-etf",
+    "index_code": "IWD"
+  },
+  "IWF": {
+    "product_id": 239706,
+    "slug": "ishares-russell-1000-growth-etf",
+    "index_code": "IWF"
+  },
+  "IWL": {
+    "product_id": 239721,
+    "slug": "ishares-russell-top-200-etf",
+    "index_code": "IWL"
+  },
+  "IWM": {
+    "product_id": 239710,
+    "slug": "ishares-russell-2000-etf",
+    "index_code": "R2000"
+  },
+  "IWN": {
+    "product_id": 239712,
+    "slug": "ishares-russell-2000-value-etf",
+    "index_code": "IWN"
+  },
+  "IWO": {
+    "product_id": 239709,
+    "slug": "ishares-russell-2000-growth-etf",
+    "index_code": "IWO"
+  },
+  "IWP": {
+    "product_id": 239717,
+    "slug": "ishares-russell-midcap-growth-etf",
+    "index_code": "IWP"
+  },
+  "IWR": {
+    "product_id": 239718,
+    "slug": "ishares-russell-midcap-etf",
+    "index_code": "IWR"
+  },
+  "IWS": {
+    "product_id": 239719,
+    "slug": "ishares-russell-midcap-value-etf",
+    "index_code": "IWS"
+  },
+  "IWV": {
+    "product_id": 239714,
+    "slug": "ishares-russell-3000-etf",
+    "index_code": "R3000"
+  },
+  "IWX": {
+    "product_id": 239722,
+    "slug": "ishares-russell-top-200-value-etf",
+    "index_code": "IWX"
+  },
+  "IWY": {
+    "product_id": 239720,
+    "slug": "ishares-russell-top-200-growth-etf",
+    "index_code": "IWY"
+  },
+  "IXC": {
+    "product_id": 239741,
+    "slug": "ishares-global-energy-etf",
+    "index_code": "IXC"
+  },
+  "IXG": {
+    "product_id": 239742,
+    "slug": "ishares-global-financials-etf",
+    "index_code": "IXG"
+  },
+  "IXJ": {
+    "product_id": 239744,
+    "slug": "ishares-global-healthcare-etf",
+    "index_code": "IXJ"
+  },
+  "IXN": {
+    "product_id": 239750,
+    "slug": "ishares-global-tech-etf",
+    "index_code": "IXN"
+  },
+  "IXP": {
+    "product_id": 239751,
+    "slug": "ishares-global-telecom-etf",
+    "index_code": "IXP"
+  },
+  "IXUS": {
+    "product_id": 244048,
+    "slug": "ishares-core-msci-total-international-stock-etf",
+    "index_code": "IXUS"
+  },
+  "IYC": {
+    "product_id": 239506,
+    "slug": "ishares-us-consumer-discretionary-etf",
+    "index_code": "IYC"
+  },
+  "IYE": {
+    "product_id": 239507,
+    "slug": "ishares-us-energy-etf",
+    "index_code": "IYE"
+  },
+  "IYF": {
+    "product_id": 239508,
+    "slug": "ishares-us-financials-etf",
+    "index_code": "IYF"
+  },
+  "IYG": {
+    "product_id": 239509,
+    "slug": "ishares-us-financial-services-etf",
+    "index_code": "IYG"
+  },
+  "IYH": {
+    "product_id": 239511,
+    "slug": "ishares-us-healthcare-etf",
+    "index_code": "IYH"
+  },
+  "IYJ": {
+    "product_id": 239514,
+    "slug": "ishares-us-industrials-etf",
+    "index_code": "IYJ"
+  },
+  "IYK": {
+    "product_id": 239505,
+    "slug": "ishares-us-consumer-staples-etf",
+    "index_code": "IYK"
+  },
+  "IYM": {
+    "product_id": 239503,
+    "slug": "ishares-us-basic-materials-etf",
+    "index_code": "IYM"
+  },
+  "IYR": {
+    "product_id": 239520,
+    "slug": "ishares-us-real-estate-etf",
+    "index_code": "IYR"
+  },
+  "IYT": {
+    "product_id": 239501,
+    "slug": "ishares-transportation-average-etf",
+    "index_code": "IYT"
+  },
+  "IYW": {
+    "product_id": 239522,
+    "slug": "ishares-us-technology-etf",
+    "index_code": "IYW"
+  },
+  "IYY": {
+    "product_id": 239513,
+    "slug": "ishares-dow-jones-us-etf",
+    "index_code": "IYY"
+  },
+  "JPXN": {
+    "product_id": 239831,
+    "slug": "ishares-japan-largecap-etf",
+    "index_code": "JPXN"
+  },
+  "JXI": {
+    "product_id": 239753,
+    "slug": "ishares-global-utilities-etf",
+    "index_code": "JXI"
+  },
+  "KSA": {
+    "product_id": 271542,
+    "slug": "ishares-msci-saudi-arabia-capped-etf",
+    "index_code": "KSA"
+  },
+  "KWT": {
+    "product_id": 312763,
+    "slug": "ishares-msci-kuwait-etf",
+    "index_code": "KWT"
+  },
+  "KXI": {
+    "product_id": 239740,
+    "slug": "ishares-global-consumer-staples-etf",
+    "index_code": "KXI"
+  },
+  "LCTD": {
+    "product_id": 318216,
+    "slug": "ishares-world-ex-u-s-carbon-transition-readiness-aware-active-etf",
+    "index_code": "LCTD"
+  },
+  "LCTU": {
+    "product_id": 318215,
+    "slug": "ishares-u-s-carbon-transition-readiness-aware-active-etf",
+    "index_code": "LCTU"
+  },
+  "LDEM": {
+    "product_id": 312222,
+    "slug": "ishares-esg-msci-em-leaders-etf",
+    "index_code": "LDEM"
+  },
+  "LRGF": {
+    "product_id": 272824,
+    "slug": "ishares-msci-usa-multi-factor-etf",
+    "index_code": "LRGF"
+  },
+  "MADE": {
+    "product_id": 337989,
+    "slug": "ishares-u-s-manufacturing-etf",
+    "index_code": "MADE"
+  },
+  "MCHI": {
+    "product_id": 239619,
+    "slug": "ishares-msci-china-etf",
+    "index_code": "MCHI"
+  },
+  "MTUM": {
+    "product_id": 251614,
+    "slug": "ishares-msci-usa-momentum-factor-etf",
+    "index_code": "MTUM"
+  },
+  "MXI": {
+    "product_id": 239748,
+    "slug": "ishares-global-materials-etf",
+    "index_code": "MXI"
+  },
+  "OEF": {
+    "product_id": 239723,
+    "slug": "ishares-sp-100-etf",
+    "index_code": "OEF"
+  },
+  "PABD": {
+    "product_id": 335054,
+    "slug": "ishares-paris-aligned-climate-optimized-msci-world-ex-usa-etf",
+    "index_code": "PABD"
+  },
+  "PABU": {
+    "product_id": 325725,
+    "slug": "ishares-paris-aligned-climate-optimized-msci-usa-etf",
+    "index_code": "PABU"
+  },
+  "PICK": {
+    "product_id": 239655,
+    "slug": "ishares-msci-global-metals-mining-producers-etf",
+    "index_code": "PICK"
+  },
+  "POWR": {
+    "product_id": 239653,
+    "slug": "ishares-msci-global-energy-producers-etf",
+    "index_code": "POWR"
+  },
+  "QAT": {
+    "product_id": 264273,
+    "slug": "ishares-msci-qatar-capped-etf",
+    "index_code": "QAT"
+  },
+  "QNXT": {
+    "product_id": 339694,
+    "slug": "ishares-nasdaq-100-ex-top-30-etf",
+    "index_code": "QNXT"
+  },
+  "QTOP": {
+    "product_id": 339775,
+    "slug": "ishares-nasdaq-top-30-stocks-etf",
+    "index_code": "QTOP"
+  },
+  "QUAL": {
+    "product_id": 256101,
+    "slug": "ishares-msci-usa-quality-factor-etf",
+    "index_code": "QUAL"
+  },
+  "REET": {
+    "product_id": 268752,
+    "slug": "ishares-global-reit-etf",
+    "index_code": "REET"
+  },
+  "REZ": {
+    "product_id": 239545,
+    "slug": "ishares-residential-real-estate-capped-etf",
+    "index_code": "REZ"
+  },
+  "RING": {
+    "product_id": 239654,
+    "slug": "ishares-msci-global-gold-miners-etf",
+    "index_code": "RING"
+  },
+  "RXI": {
+    "product_id": 239739,
+    "slug": "ishares-global-consumer-discretionary-etf",
+    "index_code": "RXI"
+  },
+  "SCJ": {
+    "product_id": 239666,
+    "slug": "ishares-msci-japan-smallcap-etf",
+    "index_code": "SCJ"
+  },
+  "SCZ": {
+    "product_id": 239627,
+    "slug": "ishares-msci-eafe-smallcap-etf",
+    "index_code": "SCZ"
+  },
+  "SDG": {
+    "product_id": 283378,
+    "slug": "ishares-msci-global-sustainable-development-goals-etf",
+    "index_code": "SDG"
+  },
+  "SIZE": {
+    "product_id": 251465,
+    "slug": "ishares-msci-usa-size-factor-etf",
+    "index_code": "SIZE"
+  },
+  "SLVP": {
+    "product_id": 239656,
+    "slug": "ishares-msci-global-silver-miners-etf",
+    "index_code": "SLVP"
+  },
+  "SMIN": {
+    "product_id": 239660,
+    "slug": "ishares-msci-india-smallcap-etf",
+    "index_code": "SMIN"
+  },
+  "SMLF": {
+    "product_id": 272825,
+    "slug": "ishares-msci-usa-small-cap-multi-factor-etf",
+    "index_code": "SMLF"
+  },
+  "SMMD": {
+    "product_id": 288024,
+    "slug": "ishares-russell-2500-etf",
+    "index_code": "SMMD"
+  },
+  "SMMV": {
+    "product_id": 284609,
+    "slug": "ishares-msci-usa-small-cap-min-vol-factor-etf",
+    "index_code": "SMMV"
+  },
+  "SOXX": {
+    "product_id": 239705,
+    "slug": "ishares-semiconductor-etf",
+    "index_code": "SOXX"
+  },
+  "SUSA": {
+    "product_id": 239692,
+    "slug": "ishares-msci-usa-esg-select-etf",
+    "index_code": "SUSA"
+  },
+  "SUSL": {
+    "product_id": 308574,
+    "slug": "ishares-esg-msci-usa-leaders-etf",
+    "index_code": "SUSL"
+  },
+  "SVAL": {
+    "product_id": 316394,
+    "slug": "ishares-us-small-cap-value-factor-etf",
+    "index_code": "SVAL"
+  },
+  "TCHI": {
+    "product_id": 325390,
+    "slug": "ishares-msci-china-multisector-tech-etf",
+    "index_code": "TCHI"
+  },
+  "TECB": {
+    "product_id": 312046,
+    "slug": "ishares-u-s-tech-breakthrough-multisector-etf",
+    "index_code": "TECB"
+  },
+  "TEK": {
+    "product_id": 339083,
+    "slug": "ishares-technology-opportunities-active-etf",
+    "index_code": "TEK"
+  },
+  "TEXN": {
+    "product_id": 344021,
+    "slug": "ishares-texas-equity-etf",
+    "index_code": "TEXN"
+  },
+  "THD": {
+    "product_id": 239688,
+    "slug": "ishares-msci-thailand-capped-etf",
+    "index_code": "THD"
+  },
+  "THRO": {
+    "product_id": 325384,
+    "slug": "ishares-u-s-thematic-rotation-active-etf",
+    "index_code": "THRO"
+  },
+  "TMET": {
+    "product_id": 333404,
+    "slug": "ishares-transition-enabling-metals-etf",
+    "index_code": "TMET"
+  },
+  "TOK": {
+    "product_id": 239668,
+    "slug": "ishares-msci-kokusai-etf",
+    "index_code": "TOK"
+  },
+  "TOPC": {
+    "product_id": 342676,
+    "slug": "ishares-s-p-500-3-capped-etf",
+    "index_code": "TOPC"
+  },
+  "TOPT": {
+    "product_id": 339779,
+    "slug": "ishares-top-20-u-s-stocks-etf",
+    "index_code": "TOPT"
+  },
+  "TUR": {
+    "product_id": 239689,
+    "slug": "ishares-msci-turkey-etf",
+    "index_code": "TUR"
+  },
+  "UAE": {
+    "product_id": 264275,
+    "slug": "ishares-msci-uae-capped-etf",
+    "index_code": "UAE"
+  },
+  "URTH": {
+    "product_id": 239696,
+    "slug": "ishares-msci-world-etf",
+    "index_code": "URTH"
+  },
+  "USCL": {
+    "product_id": 332075,
+    "slug": "ishares-climate-conscious-transition-msci-usa-etf",
+    "index_code": "USCL"
+  },
+  "USMV": {
+    "product_id": 239695,
+    "slug": "ishares-msci-usa-minimum-volatility-etf",
+    "index_code": "USMV"
+  },
+  "USRT": {
+    "product_id": 239544,
+    "slug": "ishares-real-estate-50-etf",
+    "index_code": "USRT"
+  },
+  "USXF": {
+    "product_id": 314365,
+    "slug": "ishares-esg-advanced-msci-usa-etf",
+    "index_code": "USXF"
+  },
+  "VEGI": {
+    "product_id": 239652,
+    "slug": "ishares-msci-global-agriculture-producers-etf",
+    "index_code": "VEGI"
+  },
+  "VLUE": {
+    "product_id": 251616,
+    "slug": "ishares-msci-usa-value-factor-etf",
+    "index_code": "VLUE"
+  },
+  "WOOD": {
+    "product_id": 239752,
+    "slug": "ishares-global-timber-forestry-etf",
+    "index_code": "WOOD"
+  },
+  "WSML": {
+    "product_id": 342357,
+    "slug": "ishares-msci-world-small-cap-etf",
+    "index_code": "WSML"
+  },
+  "XJH": {
+    "product_id": 315914,
+    "slug": "ishares-esg-select-screened-s-p-mid-cap-etf",
+    "index_code": "XJH"
+  },
+  "XJR": {
+    "product_id": 315920,
+    "slug": "ishares-esg-select-screened-s-p-small-cap-etf",
+    "index_code": "XJR"
+  },
+  "XOEF": {
+    "product_id": 344551,
+    "slug": "ishares-s-p-500-ex-s-p-100-etf",
+    "index_code": "XOEF"
+  },
+  "XT": {
+    "product_id": 272532,
+    "slug": "ishares-exponential-technologies-etf",
+    "index_code": "XT"
+  },
+  "XVV": {
+    "product_id": 315917,
+    "slug": "ishares-esg-select-screened-s-p-500-etf",
+    "index_code": "XVV"
+  }
+}

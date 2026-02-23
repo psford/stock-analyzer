@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using EodhdLoader.Services;
 using SkiaSharp;
@@ -70,7 +71,7 @@ public class CoverageHeatmapControl : UserControl
     private const float BottomMargin = 55f;
     private const float TopMargin = 10f;
     private const float RightMargin = 180f;
-    private const float CellPadding = 1f;
+    private const float CellPadding = 2f;
 
     // Pre-computed data for rendering
     private Dictionary<(int year, int score), HeatmapCell>? _cellLookup;
@@ -80,6 +81,10 @@ public class CoverageHeatmapControl : UserControl
     // Hover state
     private int _hoverYear = -1;
     private int _hoverScore = -1;
+
+    // Cached surface dimensions from last paint (used by HitTest to avoid DPI mismatch)
+    private int _lastSurfaceWidth;
+    private int _lastSurfaceHeight;
 
     // Pulse animation state
     private readonly DispatcherTimer _pulseTimer;
@@ -93,6 +98,10 @@ public class CoverageHeatmapControl : UserControl
     {
         _skElement = new SKElement();
         _skElement.PaintSurface += OnPaintSurface;
+
+        // Prevent WPF bilinear filtering from blending adjacent cell colors —
+        // the heatmap is pixel-art style and needs crisp cell boundaries
+        RenderOptions.SetBitmapScalingMode(_skElement, BitmapScalingMode.NearestNeighbor);
 
         _tooltip = new ToolTip
         {
@@ -178,6 +187,11 @@ public class CoverageHeatmapControl : UserControl
     {
         var canvas = e.Surface.Canvas;
         var info = e.Info;
+
+        // Cache surface dimensions so HitTest uses the exact same values as rendering
+        _lastSurfaceWidth = info.Width;
+        _lastSurfaceHeight = info.Height;
+
         canvas.Clear(DarkBg);
 
         if (IsLoading)
@@ -530,24 +544,21 @@ public class CoverageHeatmapControl : UserControl
 
     private (int year, int score) HitTest(double mouseX, double mouseY)
     {
-        if (_cellLookup == null) return (-1, -1);
+        if (_cellLookup == null || _lastSurfaceWidth == 0) return (-1, -1);
 
-        // Convert WPF coordinates to pixel coordinates (account for DPI)
-        var source = PresentationSource.FromVisual(_skElement);
-        double dpiScaleX = source?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
-        double dpiScaleY = source?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
+        // Convert WPF logical coordinates to SkiaSharp pixel coordinates
+        // using the cached surface dimensions (same values used during rendering)
+        double scaleX = _lastSurfaceWidth / _skElement.ActualWidth;
+        double scaleY = _lastSurfaceHeight / _skElement.ActualHeight;
 
-        float px = (float)(mouseX * dpiScaleX);
-        float py = (float)(mouseY * dpiScaleY);
+        float px = (float)(mouseX * scaleX);
+        float py = (float)(mouseY * scaleY);
 
         int yearSpan = _maxYear - _minYear + 1;
         int scoreCount = 10;
 
-        float actualWidth = (float)(_skElement.ActualWidth * dpiScaleX);
-        float actualHeight = (float)(_skElement.ActualHeight * dpiScaleY);
-
-        float gridWidth = actualWidth - LeftMargin - RightMargin;
-        float gridHeight = actualHeight - TopMargin - BottomMargin;
+        float gridWidth = _lastSurfaceWidth - LeftMargin - RightMargin;
+        float gridHeight = _lastSurfaceHeight - TopMargin - BottomMargin;
 
         float cellWidth = (gridWidth - (yearSpan - 1) * CellPadding) / yearSpan;
         float cellHeight = (gridHeight - (scoreCount - 1) * CellPadding) / scoreCount;

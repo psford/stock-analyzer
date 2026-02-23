@@ -1,7 +1,7 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.47
-**Last Updated:** 2026-02-05
+**Version:** 2.50
+**Last Updated:** 2026-02-22
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
 
@@ -2385,12 +2385,26 @@ CREATE INDEX IX_PriceStaging_Ticker_EffectiveDate ON staging.PriceStaging(Ticker
 **Files:**
 - `Data/Entities/SecurityMasterEntity.cs` - Security master entity
 - `Data/Entities/PriceEntity.cs` - Price entity
+- `Data/Entities/IndexDefinitionEntity.cs` - Index definition entity (iShares)
+- `Data/Entities/IndexConstituentEntity.cs` - Index constituent snapshot entity (iShares)
+- `Data/Entities/SecurityIdentifierEntity.cs` - Security identifier mapping (CUSIP, ISIN, SEDOL)
+- `Data/Entities/SecurityIdentifierHistEntity.cs` - Security identifier history (SCD Type 2)
 - `Services/ISecurityMasterRepository.cs` - Interface + DTOs
 - `Services/IPriceRepository.cs` - Interface + DTOs
 - `Data/SqlSecurityMasterRepository.cs` - SQL implementation
 - `Data/SqlPriceRepository.cs` - SQL implementation
 - `scripts/001_CreateDataSchema.sql` - Schema creation script
 - `scripts/002_AddSecurityMasterAndPrices.sql` - Migration script
+- `Migrations/20260223034707_MapIndexAttributionTables.cs` - Baseline migration (empty Up/Down, tables created by Python pipeline)
+- `Migrations/20260223034707_MapIndexAttributionTables.Designer.cs` - Migration snapshot metadata
+- `Data/StockAnalyzerDbContext.cs` - DbContext with Fluent API configuration for all entities
+
+**DbContext Configuration:**
+- IndexDefinitionEntity: Composite index on `(IndexCode)` unique
+- IndexConstituentEntity: `Id` is `long` (maps to `bigint` PK); composite unique index on `(IndexId, SecurityAlias, EffectiveDate, SourceId)` prevents duplicates
+- SecurityIdentifierEntity: Composite PK on `(SecurityAlias, IdentifierType)` enables 1:N identifiers per security
+- SecurityIdentifierHistEntity: `Id` is `long` (maps to `bigint` PK); tracks historical identifier changes using SCD Type 2 with effective date ranges
+- Schema validation integration test (`SchemaValidationTests.cs`) compares all EF Core entity CLR types against actual SQL Server column types via `INFORMATION_SCHEMA.COLUMNS` to catch int/bigint drift
 
 #### EODHD Integration (Historical Price Data)
 
@@ -2564,12 +2578,19 @@ Maintains the historical price database with automatic daily updates.
 **Importance Score Calculation (`/api/admin/securities/calculate-importance`):**
 - Calculates importance scores (1-10, 10=most important) for all active securities
 - Used to prioritize gap-filling order and as Y-axis for the coverage heatmap
-- Scoring algorithm (base score: 5):
-  - **Security Type:** Common Stock +2, ETF +1, Preferred/Warrant/Right -2, OTC indicators -3
-  - **Exchange:** NYSE/NASDAQ +2, ARCA/BATS +1, OTC/PINK/GREY -2, Unknown -1
-  - **Ticker Length:** 1-3 chars +1, 5+ chars -1
-  - **Name Patterns:** Inc/Corp/Ltd +1, Warrant/Right/Unit -2, Liquidating/Bankrupt -3
-- Run on-demand after adding new securities; scores are persisted in SecurityMaster.ImportanceScore
+- Primary signal: **index membership** from IndexConstituent data (which indices, how many)
+- Secondary signals: security type, exchange quality
+- Pre-loads all index membership via efficient CTE+JOIN query with `NOLOCK` (DTU-safe)
+- Falls back gracefully when IndexConstituent table is empty (all securities get attribute-based scores only)
+- Scoring algorithm (base score: 1):
+  - **Index membership (primary, 0-6 pts):** Tier 1 x2+ → +6, Tier 1 x1 → +5, Tier 2 x2+ → +4, Tier 2 x1 → +3, 3+ other → +2, 1-2 other → +1
+  - **Index tiers:** Tier 1 = SP500, R1000, R2000, R3000, MSCI_ACWI, MSCI_EAFE, MSCI_EM; Tier 2 = IJH, IJR, OEF, ITOT, IDEV, IEMG, IEFA, IXUS
+  - **Breadth bonus (0-1 pts):** In 8+ distinct indices → +1
+  - **Security Type (0-1 pts):** Common Stock → +1
+  - **Exchange (0-1 pts):** NYSE or NASDAQ → +1
+  - **Penalties:** OTC/Pink/Grey exchange -2, Preferred/Warrant/Right type -2, OTC type -2, Warrant/Right/Unit name -2, Liquidating/Bankrupt name -3
+- Response includes `indexDataAvailable` flag and `securitiesWithIndexMembership` count for diagnostics
+- Run on-demand after adding new securities or loading index constituents; scores persisted in SecurityMaster.ImportanceScore
 
 **Bulk Load Flow:**
 1. Call `/api/admin/prices/sync-securities` to populate SecurityMaster
@@ -2588,7 +2609,7 @@ WPF desktop application (.NET 8, `net8.0-windows10.0.19041`) for managing price 
 | Boris | `BorisView` | `BorisViewModel` | Single-ticker price loading |
 | Crawler | `CrawlerView` | `CrawlerViewModel` | Autonomous gap-filling agent (Data Load Monitor) — 3-tier metric dashboard |
 | Bulk Fill | `BulkFillView` | `BulkFillViewModel` | Batch historical data loading |
-| Index Manager | `IndexManagerView` | `IndexManagerViewModel` | Index composition management |
+| Index Manager | `IndexManagerView` | `IndexManagerViewModel` | Index composition management — ETF dropdown shows "TICKER - Name" with acronym handling (MSCI, ESG, EAFE, etc.) |
 | Dashboard | `DashboardView` | `DashboardViewModel` | Coverage stats and charts |
 
 **Crawler — 3-Tier Metric Dashboard:**
@@ -2615,6 +2636,10 @@ WPF desktop application (.NET 8, `net8.0-windows10.0.19041`) for managing price 
 5. When nothing left to promote → "All securities processed!" (truly done)
 - Auto-promotion triggers at 3 code points: startup (no initial gaps), mid-crawl (queue empty), and skip-set exhaustion (all remaining in skip set)
 
+**Crawler — Constituent Pre-Step Logging:**
+- `CrawlerViewModel.CheckAndLoadConstituentsAsync` subscribes to `ISharesConstituentService.LogMessage` during constituent refresh so detailed status (download progress, "no equity holdings found", format detection, etc.) appears in the activity log instead of silent 0/0 summaries
+- Event wired with try/finally to ensure unsubscription after the loop completes
+
 **Heatmap V2 (SkiaSharp Custom Control):**
 
 `HeatmapV2Control.cs` — bivariate Year × ImportanceScore coverage visualization.
@@ -2630,6 +2655,34 @@ WPF desktop application (.NET 8, `net8.0-windows10.0.19041`) for managing price 
 | Ripple timing | `RipplePeriod = 6π` (~4.2s cycle), quadratic alpha fade, thinning stroke |
 | Hover | Semi-transparent white overlay with tooltip (tracked/untracked counts) |
 | Refresh | 30fps `DispatcherTimer` for animation; data refreshed from API after each security load |
+| Bitmap scaling | `BitmapScalingMode.NearestNeighbor` prevents WPF bilinear filtering from blending adjacent cell colors |
+| Cell padding | 2px gap between cells for visible boundaries between data-rich and empty cells |
+| Hit-test DPI | Cached `_lastSurfaceWidth`/`_lastSurfaceHeight` from `OnPaintSurface` — HitTest uses cached dims instead of re-deriving via `PresentationSource` DPI to avoid mismatch |
+
+**iShares Constituent Loader (Phase 1 - Core Service):**
+
+`IISharesConstituentService` and `ISharesConstituentService` in EODHD Loader handle downloading and ingesting iShares ETF holdings data. Part of index attribution pipeline for tracking ETF composition changes.
+
+**Implementation Details:**
+- Downloads iShares holdings JSON from `https://www.ishares.com/us/products/{product_id}/{slug}/1467271812596.ajax` with user-agent and 60s timeout
+- Auto-detects three iShares JSON formats: Format A (17 cols, IVV-style), Format B (19 cols, IJK-style), Format C (18-19 cols, active/thematic ETFs like IDEF, ICLN where col[5] is an object shifting subsequent column indices +1)
+- Strips UTF-8 BOM prefix before JSON parsing (AC1.2)
+- Filters non-equity holdings (Cash, Futures, Money Market) — keeps equities only (AC2.3)
+- 3-level security matching: (1) ticker lookup, (2) CUSIP lookup, (3) ISIN lookup (AC3.2)
+- Creates new securities in SecurityMaster if no match found (AC3.1)
+- Upserts SecurityIdentifier with SCD Type 2 history — changed values snapshot old record with date range (AC3.3)
+- Idempotent constituent insertion via composite unique constraint `(IndexId, SecurityAlias, EffectiveDate, SourceId)` (AC3.5)
+- Error isolation per holding — one failure doesn't abort ETF (AC3.6); failed entities detached from change tracker to prevent poison cascade
+- Rate limiting: 2s gap between ETF downloads (AC6.1, constant `RequestDelayMs`)
+- iShares Source ID: 10
+
+**Configuration:**
+- ETF tickers and metadata loaded from bundled `Resources/ishares_etf_configs.json` at startup
+- Keys: product_id, slug, index_code per ticker
+
+**Progress Events:**
+- `LogMessage` event for status/error logging
+- `ProgressUpdated` event for UI progress bar (ETF counter, holdings processed)
 
 #### Infrastructure as Code
 
@@ -3104,6 +3157,14 @@ const newsPromise = API.getAggregatedNews(ticker, 30, 10);
 | 1.2 | 2026-01-16 | Added unit test documentation (Section 8), SRI for Plotly.js (Section 12.5) |
 | 1.1 | 2026-01-16 | Added image caching system, Dog CEO API, CSP configuration |
 | 1.0 | 2026-01-16 | Initial .NET technical specification |
+
+---
+
+## 14.1 Bluesky Feed Filter (separate repo)
+
+Moved to its own repository: [psford/bsky-feed-filter](https://github.com/psford/bsky-feed-filter)
+
+Custom Bluesky feed generator that filters out self-reposts of recent posts. Deployed on Synology NAS via Docker + Cloudflare Tunnel.
 
 ---
 
