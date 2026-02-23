@@ -14,7 +14,7 @@ using Xunit;
 public class SchemaValidationTests
 {
     private const string ConnectionString =
-        @"Server=.\SQLEXPRESS;Database=StockAnalyzer;Trusted_Connection=True;TrustServerCertificate=True";
+        @"Server=.\SQLEXPRESS;Database=StockAnalyzer;Trusted_Connection=True;Encrypt=True;TrustServerCertificate=True";
 
     /// <summary>
     /// Maps SQL Server data types to their expected CLR types.
