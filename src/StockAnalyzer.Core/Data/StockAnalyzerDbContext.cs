@@ -29,6 +29,10 @@ public class StockAnalyzerDbContext : DbContext
     public DbSet<BusinessCalendarEntity> BusinessCalendar => Set<BusinessCalendarEntity>();
     public DbSet<TrackedSecurityEntity> TrackedSecurities => Set<TrackedSecurityEntity>();
     public DbSet<CompanyBioEntity> CompanyBios => Set<CompanyBioEntity>();
+    public DbSet<IndexDefinitionEntity> IndexDefinitions => Set<IndexDefinitionEntity>();
+    public DbSet<IndexConstituentEntity> IndexConstituents => Set<IndexConstituentEntity>();
+    public DbSet<SecurityIdentifierEntity> SecurityIdentifiers => Set<SecurityIdentifierEntity>();
+    public DbSet<SecurityIdentifierHistEntity> SecurityIdentifierHistory => Set<SecurityIdentifierHistEntity>();
 
     // Aggregation tables (data schema)
     public DbSet<CoverageSummaryEntity> CoverageSummary => Set<CoverageSummaryEntity>();
@@ -311,6 +315,115 @@ public class StockAnalyzerDbContext : DbContext
                 .WithOne()
                 .HasForeignKey<CompanyBioEntity>(e => e.SecurityAlias)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // IndexDefinition configuration
+        modelBuilder.Entity<IndexDefinitionEntity>(entity =>
+        {
+            entity.ToTable("IndexDefinition", "data");
+            entity.HasKey(e => e.IndexId);
+            entity.Property(e => e.IndexId).UseIdentityColumn();
+            entity.Property(e => e.IndexCode).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.IndexName).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.IndexFamily).HasMaxLength(50);
+            entity.Property(e => e.WeightingMethod).HasMaxLength(50);
+            entity.Property(e => e.Region).HasMaxLength(100);
+            entity.Property(e => e.ProxyEtfTicker).HasMaxLength(20);
+
+            // Unique index on IndexCode
+            entity.HasIndex(e => e.IndexCode)
+                .IsUnique()
+                .HasDatabaseName("IX_IndexDefinition_IndexCode");
+
+            // One-to-many: IndexDefinition -> IndexConstituent
+            entity.HasMany(e => e.Constituents)
+                .WithOne(c => c.IndexDefinition)
+                .HasForeignKey(c => c.IndexId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // IndexConstituent configuration
+        modelBuilder.Entity<IndexConstituentEntity>(entity =>
+        {
+            entity.ToTable("IndexConstituent", "data");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).UseIdentityColumn();
+            entity.Property(e => e.EffectiveDate).HasColumnType("date");
+            entity.Property(e => e.Weight).HasPrecision(18, 8);
+            entity.Property(e => e.MarketValue).HasPrecision(18, 2);
+            entity.Property(e => e.Shares).HasPrecision(18, 4);
+            entity.Property(e => e.Sector).HasMaxLength(100);
+            entity.Property(e => e.Location).HasMaxLength(100);
+            entity.Property(e => e.Currency).HasMaxLength(10);
+            entity.Property(e => e.SourceTicker).HasMaxLength(20);
+
+            // Composite unique index: prevent duplicate constituent records
+            entity.HasIndex(e => new { e.IndexId, e.SecurityAlias, e.EffectiveDate, e.SourceId })
+                .IsUnique()
+                .HasDatabaseName("IX_IndexConstituent_Unique");
+
+            // Index for efficient queries by index and date range
+            entity.HasIndex(e => new { e.IndexId, e.EffectiveDate })
+                .HasDatabaseName("IX_IndexConstituent_IndexDate");
+
+            // Foreign keys to related tables
+            entity.HasOne(e => e.IndexDefinition)
+                .WithMany(i => i.Constituents)
+                .HasForeignKey(e => e.IndexId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.Security)
+                .WithMany()
+                .HasForeignKey(e => e.SecurityAlias)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.Source)
+                .WithMany()
+                .HasForeignKey(e => e.SourceId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // SecurityIdentifier configuration
+        modelBuilder.Entity<SecurityIdentifierEntity>(entity =>
+        {
+            entity.ToTable("SecurityIdentifier", "data");
+            entity.HasKey(e => new { e.SecurityAlias, e.IdentifierType });
+            entity.Property(e => e.IdentifierType).HasMaxLength(20);
+            entity.Property(e => e.IdentifierValue).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.UpdatedBy).HasMaxLength(100);
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+            // Index for reverse lookup by identifier type and value
+            entity.HasIndex(e => new { e.IdentifierType, e.IdentifierValue })
+                .HasDatabaseName("IX_SecurityIdentifier_TypeValue");
+
+            // Foreign key to SecurityMaster
+            entity.HasOne(e => e.Security)
+                .WithMany()
+                .HasForeignKey(e => e.SecurityAlias)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // SecurityIdentifierHist configuration
+        modelBuilder.Entity<SecurityIdentifierHistEntity>(entity =>
+        {
+            entity.ToTable("SecurityIdentifierHist", "data");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).UseIdentityColumn();
+            entity.Property(e => e.IdentifierType).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.IdentifierValue).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.EffectiveFrom).HasColumnType("date");
+            entity.Property(e => e.EffectiveTo).HasColumnType("date");
+
+            // Index for efficient history lookups by security and identifier type
+            entity.HasIndex(e => new { e.SecurityAlias, e.IdentifierType })
+                .HasDatabaseName("IX_SecurityIdentifierHist_AliasType");
+
+            // Foreign key to SecurityMaster
+            entity.HasOne(e => e.Security)
+                .WithMany()
+                .HasForeignKey(e => e.SecurityAlias)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         // CoverageSummary configuration (pre-aggregated heatmap data)

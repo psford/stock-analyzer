@@ -2396,6 +2396,13 @@ CREATE INDEX IX_PriceStaging_Ticker_EffectiveDate ON staging.PriceStaging(Ticker
 - `scripts/001_CreateDataSchema.sql` - Schema creation script
 - `scripts/002_AddSecurityMasterAndPrices.sql` - Migration script
 - `Migrations/20260223034707_MapIndexAttributionTables.cs` - Baseline migration (empty, tables exist)
+- `Data/StockAnalyzerDbContext.cs` - DbContext with Fluent API configuration for all entities
+
+**DbContext Configuration:**
+- IndexDefinitionEntity: Composite index on `(IndexCode)` unique
+- IndexConstituentEntity: Composite unique index on `(IndexId, SecurityAlias, EffectiveDate, SourceId)` prevents duplicates
+- SecurityIdentifierEntity: Composite PK on `(SecurityAlias, IdentifierType)` enables 1:N identifiers per security
+- SecurityIdentifierHistEntity: Tracks historical identifier changes using SCD Type 2 with effective date ranges
 
 #### EODHD Integration (Historical Price Data)
 
