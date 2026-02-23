@@ -2710,53 +2710,68 @@ app.MapPost("/api/admin/securities/calculate-importance", async (IServiceProvide
         Log.Information("Starting importance score calculation for all active securities");
 
         // Pre-load index tier mappings: IndexId → tier (1, 2, or 3)
+        // Wrapped in try/catch: if index tables don't exist yet (pending migration),
+        // falls back to heuristic-only scoring (no index membership data)
         var indexTiers = new Dictionary<int, int>();
-        var indexDefs = await context.IndexDefinitions.AsNoTracking().ToListAsync();
-        foreach (var idx in indexDefs)
-        {
-            if (tier1Codes.Contains(idx.IndexCode))
-                indexTiers[idx.IndexId] = 1;
-            else if (tier2Codes.Contains(idx.IndexCode))
-                indexTiers[idx.IndexId] = 2;
-            else
-                indexTiers[idx.IndexId] = 3;
-        }
-
-        // Pre-load index membership: SecurityAlias → set of IndexIds (from latest snapshot per index)
-        // Single efficient query using raw SQL to avoid N+1 and minimize DTU usage
         var indexMembership = new Dictionary<int, HashSet<int>>();
         var hasIndexData = false;
+        var indexDefCount = 0;
 
-        if (indexDefs.Count > 0)
+        try
         {
-            using var conn = context.Database.GetDbConnection();
-            await conn.OpenAsync();
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = @"
-                ;WITH LatestPerIndex AS (
-                    SELECT IndexId, MAX(EffectiveDate) AS MaxDate
-                    FROM data.IndexConstituent WITH (NOLOCK)
-                    GROUP BY IndexId
-                )
-                SELECT c.SecurityAlias, c.IndexId
-                FROM data.IndexConstituent c WITH (NOLOCK)
-                INNER JOIN LatestPerIndex l ON c.IndexId = l.IndexId AND c.EffectiveDate = l.MaxDate";
-            cmd.CommandTimeout = 60;
-
-            using var reader = await cmd.ExecuteReaderAsync();
-            while (await reader.ReadAsync())
+            var indexDefs = await context.IndexDefinitions.AsNoTracking().ToListAsync();
+            indexDefCount = indexDefs.Count;
+            foreach (var idx in indexDefs)
             {
-                var secAlias = reader.GetInt32(0);
-                var indexId = reader.GetInt32(1);
-                if (!indexMembership.ContainsKey(secAlias))
-                    indexMembership[secAlias] = new HashSet<int>();
-                indexMembership[secAlias].Add(indexId);
-                hasIndexData = true;
+                if (tier1Codes.Contains(idx.IndexCode))
+                    indexTiers[idx.IndexId] = 1;
+                else if (tier2Codes.Contains(idx.IndexCode))
+                    indexTiers[idx.IndexId] = 2;
+                else
+                    indexTiers[idx.IndexId] = 3;
             }
+
+            // Pre-load index membership: SecurityAlias → set of IndexIds (from latest snapshot per index)
+            // Single efficient query using raw SQL to avoid N+1 and minimize DTU usage
+            if (indexDefs.Count > 0)
+            {
+                using var conn = context.Database.GetDbConnection();
+                await conn.OpenAsync();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    ;WITH LatestPerIndex AS (
+                        SELECT IndexId, MAX(EffectiveDate) AS MaxDate
+                        FROM data.IndexConstituent WITH (NOLOCK)
+                        GROUP BY IndexId
+                    )
+                    SELECT c.SecurityAlias, c.IndexId
+                    FROM data.IndexConstituent c WITH (NOLOCK)
+                    INNER JOIN LatestPerIndex l ON c.IndexId = l.IndexId AND c.EffectiveDate = l.MaxDate";
+                cmd.CommandTimeout = 60;
+
+                using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    var secAlias = reader.GetInt32(0);
+                    var indexId = reader.GetInt32(1);
+                    if (!indexMembership.ContainsKey(secAlias))
+                        indexMembership[secAlias] = new HashSet<int>();
+                    indexMembership[secAlias].Add(indexId);
+                    hasIndexData = true;
+                }
+            }
+        }
+        catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Message.Contains("Invalid object name"))
+        {
+            Log.Warning("Index tables not found in database — falling back to heuristic-only scoring");
+            indexTiers.Clear();
+            indexMembership.Clear();
+            hasIndexData = false;
+            indexDefCount = 0;
         }
 
         Log.Information("Loaded index membership for {Count} securities from {IndexCount} indices",
-            indexMembership.Count, indexDefs.Count);
+            indexMembership.Count, indexDefCount);
 
         var scoreDistribution = new Dictionary<int, int>();
         var updated = 0;
