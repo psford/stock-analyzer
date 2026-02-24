@@ -1,7 +1,7 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.50
-**Last Updated:** 2026-02-22
+**Version:** 2.52
+**Last Updated:** 2026-02-24
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
 
@@ -2398,6 +2398,9 @@ CREATE INDEX IX_PriceStaging_Ticker_EffectiveDate ON staging.PriceStaging(Ticker
 - `Migrations/20260223034707_MapIndexAttributionTables.cs` - Baseline migration (empty Up/Down, tables created by Python pipeline)
 - `Migrations/20260223034707_MapIndexAttributionTables.Designer.cs` - Migration snapshot metadata
 - `Migrations/20260223232008_CreateIndexTablesIfNotExist.cs` - Idempotent migration: creates IndexDefinition, IndexConstituent, SecurityIdentifier, SecurityIdentifierHist tables with `IF NOT EXISTS` guards (safe for both local and production)
+- `Migrations/20260224051341_CreateCoverageTablesIfNotExist.cs` - Idempotent migration: creates SecurityPriceCoverage and SecurityPriceCoverageByYear pre-aggregation tables with `IF NOT EXISTS` guards (safe for both local and production)
+- `Data/Entities/SecurityPriceCoverageEntity.cs` - Per-security coverage metadata entity
+- `Data/Entities/SecurityPriceCoverageByYearEntity.cs` - Per-security-per-year coverage metadata entity
 - `Data/StockAnalyzerDbContext.cs` - DbContext with Fluent API configuration for all entities
 
 **DbContext Configuration:**
@@ -2405,7 +2408,90 @@ CREATE INDEX IX_PriceStaging_Ticker_EffectiveDate ON staging.PriceStaging(Ticker
 - IndexConstituentEntity: `Id` is `long` (maps to `bigint` PK); composite unique index on `(IndexId, SecurityAlias, EffectiveDate, SourceId)` prevents duplicates
 - SecurityIdentifierEntity: Composite PK on `(SecurityAlias, IdentifierType)` enables 1:N identifiers per security
 - SecurityIdentifierHistEntity: `Id` is `long` (maps to `bigint` PK); tracks historical identifier changes using SCD Type 2 with effective date ranges
+- SecurityPriceCoverageEntity: PK on `SecurityAlias` (FK to SecurityMaster); tracks overall price coverage including computed `GapDays` column (ISNULL(ExpectedCount, 0) - PriceCount), eliminates expensive full-table scans on Prices table
+- SecurityPriceCoverageByYearEntity: Composite PK on `(SecurityAlias, Year)`; tracks per-year coverage metadata for CoverageSummary pre-aggregation (replaces costly GROUP BY YEAR aggregations on 43M+ row Prices table)
 - Schema validation integration test (`SchemaValidationTests.cs`) compares all EF Core entity CLR types against actual SQL Server column types via `INFORMATION_SCHEMA.COLUMNS` to catch int/bigint drift
+
+**Security Price Coverage Tables (Pre-Aggregation):**
+
+Both tables use idempotent migration (IF NOT EXISTS guards) for safe application to local and production databases.
+
+| Table | Purpose | Key Columns | Relationships |
+|-------|---------|-------------|----------------|
+| `data.SecurityPriceCoverage` | Per-security summary of price data coverage | SecurityAlias (PK), PriceCount, FirstDate, LastDate, ExpectedCount (from BusinessCalendar), GapDays (computed persisted) | 1:1 FK to SecurityMaster, OnDelete Cascade |
+| `data.SecurityPriceCoverageByYear` | Per-security-per-year coverage breakdown | SecurityAlias + Year (composite PK), PriceCount, LastUpdatedAt | N:1 FK to SecurityMaster, OnDelete Cascade |
+
+**Coverage Update Strategy:**
+- Tables updated via delta arithmetic during price loads (PriceRefreshService)
+- GapDays computed column: ISNULL(ExpectedCount, 0) - PriceCount (positive = gaps, zero = fully covered)
+- Both tables provide instant analytics without scanning 43M+ row Prices table
+- Critical for Azure SQL Basic tier (5 DTU limit) where full-table scans cause timeouts
+
+**CoverageDelta Model and Computation:**
+
+The `CoverageDelta` record (`SqlPriceRepository.cs`) represents the per-security price delta inserted in a single batch:
+
+```csharp
+internal record CoverageDelta(
+    int SecurityAlias,
+    int InsertedCount,          // Number of prices inserted for this security
+    DateTime MinDate,           // Earliest date (date only, no time)
+    DateTime MaxDate,           // Latest date (date only, no time)
+    Dictionary<int, int> YearCounts);  // Prices per calendar year
+```
+
+The static method `ComputeCoverageDeltas(List<PriceCreateDto> newPrices)` performs in-memory delta arithmetic on newly inserted prices:
+
+- **Grouping:** Partitions input prices by `SecurityAlias`
+- **Count:** Tallies total inserted prices per security
+- **Date Range:** Computes MIN/MAX dates from `EffectiveDate.Date` (strips time component)
+- **Year Partition:** Aggregates price counts by calendar year via `EffectiveDate.Year`
+- **Zero DTU Cost:** Pure C# computation — no database access
+
+**Usage:**
+
+During `BulkInsertAsync` batch processing, after each 1000-row batch successfully completes `SaveChangesAsync()`:
+
+```csharp
+var deltas = ComputeCoverageDeltas(newPrices);
+await UpdateCoverageAsync(deltas);
+```
+
+**UpdateCoverageAsync Implementation:**
+
+The private async method `UpdateCoverageAsync(List<CoverageDelta> deltas)` in `SqlPriceRepository.cs` executes atomic MERGE statements against both coverage tables:
+
+**SecurityPriceCoverage MERGE:**
+- **WHEN MATCHED:** Increments `PriceCount` by `InsertedCount`; widens `FirstDate`/`LastDate` to include new boundaries (MIN/MAX); recomputes `ExpectedCount` via correlated subquery against `data.BusinessCalendar` (SourceId = 1, IsBusinessDay = 1, date range = widened boundaries)
+- **WHEN NOT MATCHED:** Inserts new row with SecurityAlias, InsertedCount → PriceCount, MinDate → FirstDate, MaxDate → LastDate, computed ExpectedCount, LastUpdatedAt = GETUTCDATE()
+- **HOLDLOCK:** Applied to prevent race conditions on concurrent batch processing
+
+**SecurityPriceCoverageByYear MERGE (per year in YearCounts):**
+- **WHEN MATCHED:** Increments `PriceCount` by count for that year
+- **WHEN NOT MATCHED:** Inserts new row with SecurityAlias, Year, count → PriceCount, LastUpdatedAt = GETUTCDATE()
+- **HOLDLOCK:** Applied to prevent race conditions
+
+**Parameterization & Error Handling:**
+- All SQL values passed as parameters (@SecurityAlias, @InsertedCount, @MinDate, @MaxDate, @Year, @Count) — no string concatenation
+- Per-delta try/catch: logs `LogWarning` on failure, continues to next delta
+- Coverage updates are eventually consistent per design — a failure does NOT block price insertion
+
+**Test Coverage:**
+
+Unit tests in `SqlPriceRepositoryCoverageTests.cs` verify delta computation:
+- Empty input → empty list
+- Single price → single delta with correct boundaries and year count
+- Multiple prices per security → correct aggregated InsertedCount and date range
+- Multiple securities → separate deltas with independent counts and date ranges
+- Dates spanning calendar years → correct YearCounts partition across years
+- Min/MaxDate stripped to `.Date` (no time component)
+
+Integration tests in `CoverageIntegrationTests.cs` verify MERGE behavior against SQL Express:
+- **AC1.5:** First-ever price insert creates new SecurityPriceCoverage row with correct PriceCount, FirstDate = min date, LastDate = max date
+- **AC1.2:** Inserting prices before existing FirstDate widens FirstDate; inserting after existing LastDate widens LastDate; opposite boundary unchanged
+- **AC1.3:** ExpectedCount matches actual business day count from BusinessCalendar (SourceId = 1) between FirstDate and LastDate
+- **AC1.1 (incremental):** Multiple security insertions in one batch update each security's coverage independently
+- **AC1.6 (multi-year):** Prices spanning multiple calendar years increment each year's coverage in SecurityPriceCoverageByYear
 
 #### EODHD Integration (Historical Price Data)
 
@@ -2454,6 +2540,7 @@ Maintains the historical price database with automatic daily updates.
 | `POST /api/admin/prices/refresh-date` | Fetch prices for specific date (body: `{Date: "yyyy-MM-dd"}`) |
 | `POST /api/admin/prices/load-tickers` | Load historical prices for specific tickers (body: `{Tickers[], StartDate, EndDate}`) |
 | `POST /api/admin/prices/backfill` | Parallel backfill for multiple tickers (body: `{Tickers[], StartDate, EndDate}`, 10 concurrent) |
+| `POST /api/admin/prices/backfill-coverage` | Backfill SecurityPriceCoverage and SecurityPriceCoverageByYear from existing Prices data (one-time bootstrap, 600s timeout, MERGE idempotent) |
 | `POST /api/admin/prices/bulk-load` | Start bulk historical load (body: `{StartDate, EndDate}`) |
 | `POST /api/admin/securities/calculate-importance` | Calculate importance scores for all active securities |
 | `POST /api/admin/securities/promote-untracked` | Promote untracked securities to tracked (query: `count`, default 500, max 500) |
@@ -2489,9 +2576,9 @@ Maintains the historical price database with automatic daily updates.
 - ~230 cells (47 years × ~5 populated scores)
 
 **Refresh Summary (`/api/admin/dashboard/refresh-summary`):**
-- Runs the expensive aggregation query on `data.Prices` × `data.SecurityMaster` and writes results to `data.CoverageSummary`
-- **5-minute timeout** — designed for infrequent execution (post-deploy, post-crawl)
-- SQL: `GROUP BY YEAR(p.EffectiveDate), sm.ImportanceScore` with tracked/untracked splits, COUNT(DISTINCT) for securities, COUNT(DISTINCT EffectiveDate) for trading days
+- Aggregates pre-computed coverage metadata from `data.SecurityPriceCoverageByYear` × `data.SecurityMaster` and writes results to `data.CoverageSummary`
+- **30-second timeout** — fast operation that queries ~60K pre-aggregated coverage rows instead of 43M+ Prices rows
+- SQL: `GROUP BY cy.[Year], sm.ImportanceScore` with tracked/untracked splits via SUM of PriceCount, SUM of 1 for securities count, correlated BusinessCalendar subquery for TradingDays (expected business days per year from SourceId=1, decoupled from data completeness)
 - Invalidates both `dashboard:heatmap` and `dashboard:stats` cache keys on completion
 - Returns: `{ success, message, cellCount }`
 - **When to call:** After deployment, after running calculate-importance, after crawl sessions
@@ -2503,6 +2590,34 @@ Maintains the historical price database with automatic daily updates.
 - **Purpose:** Avoids expensive full-table scans on the 7M+ row Prices table; critical for Azure SQL Basic tier (5 DTU)
 - Populated by `POST /api/admin/dashboard/refresh-summary`; consumed by heatmap and stats endpoints
 - Also consumed by: `/api/admin/data/prices/summary`, `/api/admin/data/prices/monitor`, `GetTotalCountAsync()`, `AnalyzeHolidaysAsync()`
+
+**SecurityPriceCoverage Table (`data.SecurityPriceCoverage`):**
+- Per-security price coverage metadata. One row per security.
+- Tracks actual price count, date range, expected count, and gap days to replace expensive full-table scans on the Prices table.
+- Columns: SecurityAlias (PK, FK to SecurityMaster), PriceCount, FirstDate (date), LastDate (date), ExpectedCount, GapDays (computed persisted: `ISNULL(ExpectedCount, 0) - PriceCount`), LastUpdatedAt
+- Updated incrementally during price loads via delta arithmetic (no Prices table scan)
+- **Purpose:** Replaces the 4-CTE gap query that scanned the entire Prices table; enables gap detection from a ~30K row table instead of 43M+ rows
+
+**SecurityPriceCoverageByYear Table (`data.SecurityPriceCoverageByYear`):**
+- Per-security-per-year price coverage metadata. One row per security per year.
+- Composite PK: (SecurityAlias, Year), FK to SecurityMaster on SecurityAlias
+- Columns: SecurityAlias, Year, PriceCount, LastUpdatedAt
+- Updated incrementally during price loads via delta arithmetic (no Prices table scan)
+- **Purpose:** Supports CoverageSummary aggregation from ~60K rows instead of scanning 43M+ Prices rows; replaces the expensive refresh-summary GROUP BY query
+
+**Backfill Coverage (`/api/admin/prices/backfill-coverage`):**
+- **Purpose:** One-time bootstrap operation to populate SecurityPriceCoverage and SecurityPriceCoverageByYear tables from existing Prices data
+- **When to use:** After initial database setup or migration from legacy data; after manual Prices table edits
+- **Operational note:** Run during off-hours or when EODHD crawler is idle. While MERGE statements are idempotent, concurrent runs with `BulkInsertAsync` (price delta updates) could transiently corrupt coverage counts. A subsequent backfill run will correct any inconsistencies.
+- **Timeout:** 600 seconds (10 minutes) — intentionally generous for full Prices table scan on large databases; critical for Azure SQL Basic (5 DTU) which may exhaust DTU during intensive full-table operations
+- **Idempotency:** Uses MERGE (not INSERT), safe to re-run multiple times
+- **Semaphore:** Guarded by `SemaphoreSlim(1,1)` — prevents concurrent backfill runs; returns HTTP 409 Conflict if already running
+- **SQL Operations:**
+  1. **SecurityPriceCoverage MERGE:** Groups all Prices rows by SecurityAlias with `WITH (NOLOCK)`, computes COUNT(*), MIN(EffectiveDate), MAX(EffectiveDate). WHEN MATCHED: updates PriceCount, FirstDate, LastDate, and recomputes ExpectedCount from BusinessCalendar. WHEN NOT MATCHED: inserts new row.
+  2. **SecurityPriceCoverageByYear MERGE:** Groups all Prices rows by SecurityAlias + YEAR(EffectiveDate) with `WITH (NOLOCK)`, computes COUNT(*) per year. WHEN MATCHED: updates PriceCount. WHEN NOT MATCHED: inserts new row.
+- **Response:** HTTP 200 with `{ success: true, message, coverageRowsUpdated, coverageByYearRowsUpdated }`
+- **Failure:** HTTP 400/500 with error details; semaphore released in finally block
+- **Verification:** After backfill, coverage row counts should match number of distinct securities in Prices table; PriceCount should exactly match COUNT(*) per security (no deltas)
 
 **DTU-Optimized Query Patterns (Azure SQL Basic, 5 DTU):**
 - **No full-table scans on Prices** — the 7M+ row table will exhaust 5 DTU / 60 worker limits
@@ -2551,12 +2666,15 @@ Maintains the historical price database with automatic daily updates.
 - Returns only tracked securities (`IsTracked = 1`) with price gaps
 - Response includes `isTracked` flag and `importanceScore` per security, plus summary counts
 - Used by EODHD Loader crawler for single-loop gap filling with batch promotion
-- **Ordering:** Priority → ImportanceScore DESC → SecurityType → TickerLength → MissingDays DESC
-- **Date capping:** `LastDate` is capped at `GETDATE()` to exclude future price data; `ActualPriceCount` excludes future dates
-- **Query Structure (2 sources combined via UNION ALL):**
-  1. **TrackedWithGaps:** Tracked securities with existing prices that have internal gaps (expected > actual in date range). Pre-computes `SecuritiesWithPrices` CTE using `GROUP BY` for O(n) scan
-  2. **TrackedNoPrices:** Tracked securities with zero price records (uses `NOT EXISTS` index seek on `Prices(SecurityAlias)`, efficient since tracked securities are a small subset)
-- **Separate gap count query:** Computes true totals independently of LIMIT parameter
+- **Ordering:** Priority → MissingDays DESC → TickerSymbol
+- **Query Architecture (Phase 3 — DTU optimized):**
+  - Reads from `SecurityPriceCoverage` table (~30K rows, indexed) instead of scanning 43M+ row Prices table
+  - Joins: `SecurityMaster LEFT JOIN SecurityPriceCoverage LEFT JOIN TrackedSecurities`
+  - Includes securities with `GapDays > 0` (have prices but missing days) OR `SecurityAlias IS NULL` (zero prices loaded)
+  - Excludes fully covered securities (`GapDays = 0`)
+  - For securities with no coverage row: `FirstDate = NOW() - 2 years`, `LastDate = TODAY`, `ExpectedCount = business days over 2 years`, `GapDays = ExpectedCount`
+  - Command timeout: 30 seconds (reduced from 300 seconds)
+- **Summary stats:** Now pulls `SecuritiesWithData` (count from SecurityPriceCoverage) and `TotalPriceRecords` (sum of PriceCount from coverage table)
 
 **Promote Untracked (`/api/admin/securities/promote-untracked`):**
 - Selects top N untracked securities ordered by `ImportanceScore DESC`, then by `TickerSymbol`
@@ -3091,6 +3209,8 @@ const newsPromise = API.getAggregatedNews(ticker, 30, 10);
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.52 | 2026-02-24 | **Pipeline DTU Fix (5 Phases):** Complete replacement of all Prices table full-scans with pre-aggregated coverage metadata. **Phase 1:** Two new EF Core entities (`SecurityPriceCoverageEntity`, `SecurityPriceCoverageByYearEntity`) with idempotent migration. **Phase 2:** `ComputeCoverageDeltas` pure function + `UpdateCoverageAsync` MERGE SQL wired into `BulkInsertAsync` for incremental coverage updates during price loads (no Prices scan). 10 unit tests + 6 integration tests. **Phase 3:** Gap endpoint 4-CTE query replaced with 3-table coverage join (timeout 300s→30s). **Phase 4:** Refresh-summary Prices scan replaced with CoverageByYear aggregation (timeout 300s→30s). TradingDays now from BusinessCalendar (expected days, not actual). **Phase 5:** New `POST /api/admin/prices/backfill-coverage` endpoint for one-time bootstrap via MERGE (600s timeout, semaphore-guarded, idempotent). All operations now within 5 DTU budget on Azure SQL Basic. |
+| 2.51 | 2026-02-24 | **SecurityPriceCoverage DbContext Registration (Pipeline DTU Fix Phase 1):** Registered `SecurityPriceCoverageEntity` and `SecurityPriceCoverageByYearEntity` in `StockAnalyzerDbContext.cs` with Fluent API configuration. Tables: `data.SecurityPriceCoverage` (PK: SecurityAlias, 1:1 FK to SecurityMaster) and `data.SecurityPriceCoverageByYear` (PK: SecurityAlias+Year, N:1 FK to SecurityMaster). GapDays configured as persisted computed column `ISNULL(ExpectedCount, 0) - PriceCount`. Foundation for Phase 2–5 DTU optimization (pre-aggregated coverage metadata replaces expensive full-table Prices scans). |
 | 2.48 | 2026-02-05 | **Theme Editor Security Hardening:** Comprehensive anti-abuse system for theme generator. **Sanitization:** `sanitize_prompt()` enforces 2000-char max, strips control characters (CWE-117), removes null bytes. Frontend: character counters, `maxlength` attributes. **Scope Enforcement:** `is_theme_related()` rejects off-topic prompts; system prompt hardened to ONLY output theme JSON; `validate_theme_response()` verifies valid CSS variables in response. **Jailbreak Detection:** IP-based violation tracking with escalating blocks — 2s rate limit, 3 violations → 5-min soft block, 5 violations → 60-min hard block (escalates on repeat). Detects evasion patterns: encoding tricks, multi-language, instruction overrides, theme word stuffing. `enforce_access_control()` integrates all checks. HTTP 429 responses for blocked clients. |
 | 2.47 | 2026-02-05 | **JSON Theme System with AI Generation:** Complete theme system overhaul. New `ThemeLoader.js` with 94+ CSS custom properties, theme inheritance (`extends` property), deep merge with circular detection. Background image support with overlay and blur. Theme audio parameters (key, mode, chordProgression, texture, tempo) for procedural music synthesis. Visual effects: scanlines, vignette, bloom, rain, CRT flicker. New `ThemePreview.js` mini-app component for live preview. New `ThemeEditor.js` with AI-powered generation via Python FastAPI service. New `ThemeAudio.js` for theme-driven audio. Theme Generator (`helpers/theme_generator.py`): mock mode (keyword-matched themes, no API cost) and live mode (Claude API). New Grimdark Space Opera theme (Warhammer 40K inspired, blood red + imperial gold). Hotdog Stand mock theme. Theme manifest with icons. ThemeLoader localhost priority for dev workflow. Watchlist.js refactored to use semantic CSS classes (Tailwind removal). Section 6.3 rewritten to document JSON theme architecture. |
 | 2.46 | 2026-02-03 | **Watchlist as GridStack Tile:** Converted fixed-position `<aside id="watchlist-sidebar">` into 7th GridStack tile (`tile-watchlist`, 4w×5h, min-w 3, min-h 3). Chart tile narrowed from 12w to 8w; watchlist fills right side of top row. LAYOUT_VERSION bumped from 6 to 7 (clears saved layouts). **Watchlist toggle:** Star button (`#watchlist-toggle-btn`) in page header toggles tile visibility with `.watchlist-toggle-active` yellow highlight state. On reopen, calls `Watchlist.loadWatchlists()` to re-bind events. **Horizontal expansion on tile close:** New `expandRowNeighbor()` function — when any tile is closed, its horizontal neighbor on the same row expands to fill the gap. State tracked in `tileExpansions` object (`{ neighborId, origW, origX }`). On reopen, neighbor shrinks back and tile restores to original position. General-purpose: works for any adjacent tile pair. **Dead code removed:** `initMobileSidebar()` (~37 lines), `bindMobileWatchlistEvents()` (~57 lines), mobile-watchlist-drawer handlers (~50 lines) from app.js. Sidebar DOM references removed from watchlist.js (2 lines). `<aside>`, `<div id="sidebar-overlay">`, and `mobile-watchlist-toggle` button removed from index.html. **CSS:** `#tile-watchlist-body` flex column layout with internal scroll; `.watchlist-toggle-active` yellow star styles (light + dark mode). All watchlist element IDs preserved — no changes to watchlist.js business logic. |

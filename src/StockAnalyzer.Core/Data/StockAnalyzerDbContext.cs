@@ -36,6 +36,8 @@ public class StockAnalyzerDbContext : DbContext
 
     // Aggregation tables (data schema)
     public DbSet<CoverageSummaryEntity> CoverageSummary => Set<CoverageSummaryEntity>();
+    public DbSet<SecurityPriceCoverageEntity> SecurityPriceCoverage => Set<SecurityPriceCoverageEntity>();
+    public DbSet<SecurityPriceCoverageByYearEntity> SecurityPriceCoverageByYear => Set<SecurityPriceCoverageByYearEntity>();
 
     // Staging tables (staging schema)
     public DbSet<PriceStagingEntity> PriceStaging => Set<PriceStagingEntity>();
@@ -438,6 +440,35 @@ public class StockAnalyzerDbContext : DbContext
             entity.HasIndex(e => new { e.Year, e.ImportanceScore })
                 .IsUnique()
                 .HasDatabaseName("IX_CoverageSummary_Year_Score");
+        });
+
+        // SecurityPriceCoverage configuration (pre-aggregation metadata table)
+        modelBuilder.Entity<SecurityPriceCoverageEntity>(entity =>
+        {
+            entity.ToTable("SecurityPriceCoverage", "data");
+            entity.HasKey(e => e.SecurityAlias);
+            entity.Property(e => e.SecurityAlias).ValueGeneratedNever();
+            entity.Property(e => e.FirstDate).HasColumnType("date");
+            entity.Property(e => e.LastDate).HasColumnType("date");
+            entity.Property(e => e.GapDays)
+                .HasComputedColumnSql("(ISNULL([ExpectedCount], 0) - [PriceCount])", stored: true);
+            entity.Property(e => e.LastUpdatedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.HasOne(e => e.Security)
+                .WithOne()
+                .HasForeignKey<SecurityPriceCoverageEntity>(e => e.SecurityAlias)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // SecurityPriceCoverageByYear configuration (pre-aggregation metadata table)
+        modelBuilder.Entity<SecurityPriceCoverageByYearEntity>(entity =>
+        {
+            entity.ToTable("SecurityPriceCoverageByYear", "data");
+            entity.HasKey(e => new { e.SecurityAlias, e.Year });
+            entity.Property(e => e.LastUpdatedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.HasOne(e => e.Security)
+                .WithMany()
+                .HasForeignKey(e => e.SecurityAlias)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // ========================================================================

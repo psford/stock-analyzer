@@ -7,6 +7,7 @@ using Serilog;
 using Serilog.Events;
 using StockAnalyzer.Core.Data;
 using StockAnalyzer.Core.Data.Entities;
+using StockAnalyzer.Core.Helpers;
 using StockAnalyzer.Core.Models;
 using StockAnalyzer.Core.Services;
 
@@ -383,6 +384,7 @@ var refreshSummarySemaphore = new SemaphoreSlim(1, 1);
 var bulkLoadSemaphore = new SemaphoreSlim(1, 1);
 var calculateImportanceSemaphore = new SemaphoreSlim(1, 1);
 var autoTrackSemaphore = new SemaphoreSlim(3, 3);
+var backfillCoverageSemaphore = new SemaphoreSlim(1, 1);
 #pragma warning restore CA2000
 
 // Ticker validation helper - allows 1-10 alphanumeric chars plus dots, dashes, carets (e.g., BRK.B, BRK-B, ^GSPC)
@@ -1405,6 +1407,145 @@ app.MapPost("/api/admin/prices/backfill", async (
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status500InternalServerError);
 
+// POST /api/admin/prices/backfill-coverage - Backfill SecurityPriceCoverage from existing Prices data
+// One-time bootstrap operation to populate coverage tables from full Prices scan.
+// Safe to re-run (MERGE is idempotent). Extended timeout for full table scan.
+app.MapPost("/api/admin/prices/backfill-coverage", async (IServiceProvider serviceProvider) =>
+{
+    using var scope = serviceProvider.CreateScope();
+    var context = scope.ServiceProvider.GetService<StockAnalyzerDbContext>();
+
+    if (context == null)
+        return Results.BadRequest(new { error = "Database context not configured" });
+
+    // Semaphore guard: prevent concurrent backfill runs
+    if (!await backfillCoverageSemaphore.WaitAsync(0))
+        return Results.Conflict(new { error = "Coverage backfill already in progress." });
+
+    var connection = context.Database.GetDbConnection();
+    var connectionWasOpen = connection.State == System.Data.ConnectionState.Open;
+
+    try
+    {
+        if (!connectionWasOpen)
+            await connection.OpenAsync();
+
+        Log.Information("Starting SecurityPriceCoverage backfill from Prices table");
+
+        int coverageRows = 0;
+        int byYearRows = 0;
+
+        // MERGE SecurityPriceCoverage: aggregate all Prices by SecurityAlias
+        // Include ExpectedCount calculation from BusinessCalendar for the date range
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = @"
+MERGE INTO data.SecurityPriceCoverage WITH (HOLDLOCK) AS target
+USING (
+    SELECT
+        p.SecurityAlias,
+        COUNT(*) AS PriceCount,
+        MIN(p.EffectiveDate) AS FirstDate,
+        MAX(p.EffectiveDate) AS LastDate
+    FROM data.Prices p WITH (NOLOCK)
+    GROUP BY p.SecurityAlias
+) AS source
+ON target.SecurityAlias = source.SecurityAlias
+WHEN MATCHED THEN
+    UPDATE SET
+        PriceCount = source.PriceCount,
+        FirstDate = source.FirstDate,
+        LastDate = source.LastDate,
+        ExpectedCount = (
+            SELECT COUNT(*)
+            FROM data.BusinessCalendar bc WITH (NOLOCK)
+            WHERE bc.SourceId = 1
+              AND bc.IsBusinessDay = 1
+              AND bc.EffectiveDate >= source.FirstDate
+              AND bc.EffectiveDate <= source.LastDate
+        ),
+        LastUpdatedAt = GETUTCDATE()
+WHEN NOT MATCHED THEN
+    INSERT (SecurityAlias, PriceCount, FirstDate, LastDate, ExpectedCount, LastUpdatedAt)
+    VALUES (
+        source.SecurityAlias,
+        source.PriceCount,
+        source.FirstDate,
+        source.LastDate,
+        (
+            SELECT COUNT(*)
+            FROM data.BusinessCalendar bc WITH (NOLOCK)
+            WHERE bc.SourceId = 1
+              AND bc.IsBusinessDay = 1
+              AND bc.EffectiveDate >= source.FirstDate
+              AND bc.EffectiveDate <= source.LastDate
+        ),
+        GETUTCDATE()
+    );
+
+SELECT @@ROWCOUNT";
+            cmd.CommandTimeout = 600; // 10 minutes - intentionally expensive one-time scan
+            coverageRows = (int)(await cmd.ExecuteScalarAsync() ?? 0);
+        }
+
+        Log.Information("SecurityPriceCoverage backfill complete: {Rows} rows affected", LogSanitizer.Sanitize(coverageRows.ToString()));
+
+        // MERGE SecurityPriceCoverageByYear: aggregate all Prices by SecurityAlias + YEAR
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = @"
+MERGE INTO data.SecurityPriceCoverageByYear WITH (HOLDLOCK) AS target
+USING (
+    SELECT
+        p.SecurityAlias,
+        YEAR(p.EffectiveDate) AS [Year],
+        COUNT(*) AS PriceCount
+    FROM data.Prices p WITH (NOLOCK)
+    GROUP BY p.SecurityAlias, YEAR(p.EffectiveDate)
+) AS source
+ON target.SecurityAlias = source.SecurityAlias AND target.[Year] = source.[Year]
+WHEN MATCHED THEN
+    UPDATE SET
+        PriceCount = source.PriceCount,
+        LastUpdatedAt = GETUTCDATE()
+WHEN NOT MATCHED THEN
+    INSERT (SecurityAlias, [Year], PriceCount, LastUpdatedAt)
+    VALUES (source.SecurityAlias, source.[Year], source.PriceCount, GETUTCDATE());
+
+SELECT @@ROWCOUNT";
+            cmd.CommandTimeout = 600;
+            byYearRows = (int)(await cmd.ExecuteScalarAsync() ?? 0);
+        }
+
+        Log.Information("SecurityPriceCoverageByYear backfill complete: {Rows} rows affected", LogSanitizer.Sanitize(byYearRows.ToString()));
+
+        return Results.Ok(new
+        {
+            success = true,
+            message = $"Backfilled {coverageRows} coverage rows and {byYearRows} by-year rows",
+            coverageRowsUpdated = coverageRows,
+            coverageByYearRowsUpdated = byYearRows
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Backfill coverage failed");
+        return Results.Problem($"Backfill coverage failed: {LogSanitizer.Sanitize(ex.Message)}");
+    }
+    finally
+    {
+        backfillCoverageSemaphore.Release();
+        if (!connectionWasOpen && connection.State == System.Data.ConnectionState.Open)
+            connection.Close();
+    }
+})
+.WithName("BackfillPriceCoverage")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status409Conflict)
+.Produces(StatusCodes.Status500InternalServerError);
+
 // ============================================================================
 // Data Export Endpoints (for syncing production data to local development)
 // ============================================================================
@@ -1997,63 +2138,33 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
         using var cmd = connection.CreateCommand();
 
         cmd.CommandText = @"
-                WITH TwoYearBusinessDays AS (
-                    SELECT COUNT(*) AS DayCount
-                    FROM data.BusinessCalendar bc WITH (NOLOCK)
-                    WHERE bc.IsBusinessDay = 1
-                      AND bc.EffectiveDate >= DATEADD(YEAR, -2, GETDATE())
-                      AND bc.EffectiveDate <= GETDATE()
-                ),
-                SecurityDateRange AS (
-                    SELECT
-                        sm.SecurityAlias, sm.TickerSymbol, sm.IsTracked, sm.SecurityType,
-                        sm.ImportanceScore, COALESCE(ts.Priority, 999) AS Priority,
-                        MIN(p.EffectiveDate) AS FirstDate,
-                        CASE WHEN MAX(p.EffectiveDate) > CAST(GETDATE() AS DATE)
-                             THEN CAST(GETDATE() AS DATE) ELSE MAX(p.EffectiveDate) END AS LastDate,
-                        COUNT(CASE WHEN p.EffectiveDate <= CAST(GETDATE() AS DATE) THEN 1 END) AS ActualPriceCount
-                    FROM data.SecurityMaster sm WITH (NOLOCK)
-                    INNER JOIN data.Prices p WITH (NOLOCK) ON p.SecurityAlias = sm.SecurityAlias
-                    LEFT JOIN data.TrackedSecurities ts WITH (NOLOCK) ON ts.SecurityAlias = sm.SecurityAlias
-                    WHERE sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0 AND sm.IsEodhdComplete = 0 AND sm.IsTracked = 1
-                    GROUP BY sm.SecurityAlias, sm.TickerSymbol, sm.IsTracked, sm.SecurityType, sm.ImportanceScore, ts.Priority
-                ),
-                ExpectedCounts AS (
-                    SELECT sdr.*, (SELECT COUNT(*) FROM data.BusinessCalendar bc WITH (NOLOCK)
-                         WHERE bc.IsBusinessDay = 1 AND bc.EffectiveDate >= sdr.FirstDate
-                           AND bc.EffectiveDate <= sdr.LastDate) AS ExpectedPriceCount
-                    FROM SecurityDateRange sdr
-                ),
-                TrackedWithGaps AS (
-                    SELECT SecurityAlias, TickerSymbol, IsTracked, SecurityType, ImportanceScore,
-                           Priority, FirstDate, LastDate, ActualPriceCount, ExpectedPriceCount,
-                           (ExpectedPriceCount - ActualPriceCount) AS MissingDays
-                    FROM ExpectedCounts WHERE ExpectedPriceCount > ActualPriceCount
-                ),
-                TrackedNoPrices AS (
-                    SELECT sm.SecurityAlias, sm.TickerSymbol, CAST(1 AS BIT) AS IsTracked, sm.SecurityType,
-                           sm.ImportanceScore, COALESCE(ts.Priority, 999) AS Priority,
-                           CAST(DATEADD(YEAR, -2, GETDATE()) AS DATE) AS FirstDate,
-                           CAST(GETDATE() AS DATE) AS LastDate,
-                           0 AS ActualPriceCount,
-                           (SELECT DayCount FROM TwoYearBusinessDays) AS ExpectedPriceCount,
-                           (SELECT DayCount FROM TwoYearBusinessDays) AS MissingDays
-                    FROM data.SecurityMaster sm WITH (NOLOCK)
-                    LEFT JOIN data.TrackedSecurities ts WITH (NOLOCK) ON ts.SecurityAlias = sm.SecurityAlias
-                    WHERE sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0 AND sm.IsEodhdComplete = 0 AND sm.IsTracked = 1
-                      AND NOT EXISTS (SELECT 1 FROM data.Prices p WITH (NOLOCK) WHERE p.SecurityAlias = sm.SecurityAlias)
-                ),
-                AllTrackedGaps AS (
-                    SELECT * FROM TrackedWithGaps
-                    UNION ALL
-                    SELECT * FROM TrackedNoPrices
-                )
-                SELECT SecurityAlias, TickerSymbol, IsTracked, FirstDate, LastDate,
-                    ActualPriceCount, ExpectedPriceCount, MissingDays, ImportanceScore, Priority
-                FROM AllTrackedGaps
+                SELECT
+                    sm.SecurityAlias,
+                    sm.TickerSymbol,
+                    sm.IsTracked,
+                    COALESCE(pc.FirstDate, CAST(DATEADD(YEAR, -2, GETDATE()) AS DATE)) AS FirstDate,
+                    COALESCE(pc.LastDate, CAST(GETDATE() AS DATE)) AS LastDate,
+                    ISNULL(pc.PriceCount, 0) AS ActualPriceCount,
+                    COALESCE(pc.ExpectedCount,
+                        (SELECT COUNT(*) FROM data.BusinessCalendar bc WITH (NOLOCK)
+                         WHERE bc.IsBusinessDay = 1 AND bc.SourceId = 1
+                           AND bc.EffectiveDate >= DATEADD(YEAR, -2, GETDATE())
+                           AND bc.EffectiveDate <= GETDATE())) AS ExpectedPriceCount,
+                    COALESCE(pc.GapDays,
+                        (SELECT COUNT(*) FROM data.BusinessCalendar bc WITH (NOLOCK)
+                         WHERE bc.IsBusinessDay = 1 AND bc.SourceId = 1
+                           AND bc.EffectiveDate >= DATEADD(YEAR, -2, GETDATE())
+                           AND bc.EffectiveDate <= GETDATE())) AS MissingDays,
+                    sm.ImportanceScore,
+                    COALESCE(ts.Priority, 999) AS Priority
+                FROM data.SecurityMaster sm WITH (NOLOCK)
+                LEFT JOIN data.SecurityPriceCoverage pc WITH (NOLOCK) ON pc.SecurityAlias = sm.SecurityAlias
+                LEFT JOIN data.TrackedSecurities ts WITH (NOLOCK) ON ts.SecurityAlias = sm.SecurityAlias
+                WHERE sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0 AND sm.IsEodhdComplete = 0 AND sm.IsTracked = 1
+                  AND (pc.SecurityAlias IS NULL OR pc.GapDays > 0)
                 ORDER BY Priority, MissingDays DESC, TickerSymbol";
 
-        cmd.CommandTimeout = 300; // 5 min — Azure SQL Basic (5 DTU) is variable under load
+        cmd.CommandTimeout = 30; // 30 sec — lightweight coverage table join, no Prices table scan
 
         // Read ALL gaps (typically <500 rows for tracked securities), count in C#
         var allGaps = new List<(int securityAlias, string ticker, bool isTracked, DateTime firstDate,
@@ -2080,14 +2191,19 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
         int totalTrackedSecurities = 0;
         int totalUntrackedSecurities = 0;
 
+        int securitiesWithData = 0;
+        int totalPriceRecords = 0;
+
         using (var statsCmd = connection.CreateCommand())
         {
             statsCmd.CommandText = @"
                     SELECT
                         (SELECT COUNT(*) FROM data.SecurityMaster WITH (NOLOCK)
-                         WHERE IsActive = 1 AND IsEodhdUnavailable = 0 AND IsTracked = 1) AS TotalTracked,
+                         WHERE IsActive = 1 AND IsTracked = 1) AS TotalTracked,
                         (SELECT COUNT(*) FROM data.SecurityMaster WITH (NOLOCK)
-                         WHERE IsActive = 1 AND IsEodhdUnavailable = 0 AND IsTracked = 0) AS TotalUntracked";
+                         WHERE IsActive = 1 AND IsTracked = 0) AS TotalUntracked,
+                        (SELECT COUNT(*) FROM data.SecurityPriceCoverage WITH (NOLOCK)) AS SecuritiesWithData,
+                        (SELECT ISNULL(SUM(PriceCount), 0) FROM data.SecurityPriceCoverage WITH (NOLOCK)) AS TotalPriceRecords";
 
             statsCmd.CommandTimeout = 30;
 
@@ -2096,11 +2212,13 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
             {
                 totalTrackedSecurities = statsReader.GetInt32(0);
                 totalUntrackedSecurities = statsReader.GetInt32(1);
+                securitiesWithData = statsReader.GetInt32(2);
+                totalPriceRecords = statsReader.GetInt32(3);
             }
         }
 
         var totalSecurities = totalTrackedSecurities;
-        var securitiesWithData = totalTrackedSecurities - allGaps.Count(g => g.actualDays == 0);
+        // securitiesWithData is now populated from stats query (SecurityPriceCoverage count)
         var securitiesComplete = totalSecurities - totalTrackedWithGaps;
 
         // Return limited subset for the crawler, but with accurate total counts
@@ -2132,7 +2250,7 @@ app.MapGet("/api/admin/prices/gaps", async (IServiceProvider serviceProvider, st
                 trackedWithGaps = totalTrackedWithGaps,
                 untrackedWithGaps = 0,
                 securitiesComplete,
-                totalPriceRecords = 0, // removed: was scanning 5M+ Prices table; use /dashboard/stats instead
+                totalPriceRecords,
                 totalMissingDays = totalAllMissingDays
             },
             completionPercent = totalSecurities > 0
@@ -3272,21 +3390,21 @@ app.MapPost("/api/admin/dashboard/refresh-summary", async (IServiceProvider serv
         using var cmd = connection.CreateCommand();
         cmd.CommandText = @"
             SELECT
-                YEAR(p.EffectiveDate) AS [Year],
+                cy.[Year],
                 sm.ImportanceScore AS Score,
-                SUM(CASE WHEN sm.IsTracked = 1 THEN 1 ELSE 0 END) AS TrackedRecords,
-                SUM(CASE WHEN sm.IsTracked = 0 THEN 1 ELSE 0 END) AS UntrackedRecords,
-                COUNT(DISTINCT CASE WHEN sm.IsTracked = 1 THEN sm.SecurityAlias END) AS TrackedSecurities,
-                COUNT(DISTINCT CASE WHEN sm.IsTracked = 0 THEN sm.SecurityAlias END) AS UntrackedSecurities,
-                COUNT(DISTINCT p.EffectiveDate) AS TradingDays
-            FROM data.Prices p WITH (NOLOCK)
+                SUM(CASE WHEN sm.IsTracked = 1 THEN cy.PriceCount ELSE 0 END) AS TrackedRecords,
+                SUM(CASE WHEN sm.IsTracked = 0 THEN cy.PriceCount ELSE 0 END) AS UntrackedRecords,
+                SUM(CASE WHEN sm.IsTracked = 1 THEN 1 ELSE 0 END) AS TrackedSecurities,
+                SUM(CASE WHEN sm.IsTracked = 0 THEN 1 ELSE 0 END) AS UntrackedSecurities,
+                (SELECT COUNT(*) FROM data.BusinessCalendar bc WITH (NOLOCK) WHERE bc.SourceId = 1 AND bc.IsBusinessDay = 1 AND YEAR(bc.EffectiveDate) = cy.[Year]) AS TradingDays
+            FROM data.SecurityPriceCoverageByYear cy WITH (NOLOCK)
             INNER JOIN data.SecurityMaster sm WITH (NOLOCK)
-                ON p.SecurityAlias = sm.SecurityAlias
+                ON cy.SecurityAlias = sm.SecurityAlias
             WHERE sm.IsActive = 1
-            GROUP BY YEAR(p.EffectiveDate), sm.ImportanceScore
+            GROUP BY cy.[Year], sm.ImportanceScore
             ORDER BY [Year], Score;
         ";
-        cmd.CommandTimeout = 300; // 5 min — this is the expensive query, runs infrequently
+        cmd.CommandTimeout = 30; // 30 sec — reduced from 300 sec, now aggregates from pre-computed coverage metadata instead of 43M+ Prices rows
 
         var rows = new List<CoverageSummaryEntity>();
         using var reader = await cmd.ExecuteReaderAsync();
