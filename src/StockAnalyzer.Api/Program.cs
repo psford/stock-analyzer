@@ -3255,7 +3255,7 @@ app.MapPost("/api/admin/dashboard/refresh-summary", async (IServiceProvider serv
                 SUM(CASE WHEN sm.IsTracked = 0 THEN cy.PriceCount ELSE 0 END) AS UntrackedRecords,
                 SUM(CASE WHEN sm.IsTracked = 1 THEN 1 ELSE 0 END) AS TrackedSecurities,
                 SUM(CASE WHEN sm.IsTracked = 0 THEN 1 ELSE 0 END) AS UntrackedSecurities,
-                (SELECT COUNT(DISTINCT bc.EffectiveDate) FROM data.BusinessCalendar bc WITH (NOLOCK) WHERE bc.IsBusinessDay = 1 AND YEAR(bc.EffectiveDate) = cy.[Year]) AS TradingDays
+                (SELECT COUNT(*) FROM data.BusinessCalendar bc WITH (NOLOCK) WHERE bc.SourceId = 1 AND bc.IsBusinessDay = 1 AND YEAR(bc.EffectiveDate) = cy.[Year]) AS TradingDays
             FROM data.SecurityPriceCoverageByYear cy WITH (NOLOCK)
             INNER JOIN data.SecurityMaster sm WITH (NOLOCK)
                 ON cy.SecurityAlias = sm.SecurityAlias
