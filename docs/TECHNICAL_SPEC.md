@@ -2398,6 +2398,7 @@ CREATE INDEX IX_PriceStaging_Ticker_EffectiveDate ON staging.PriceStaging(Ticker
 - `Migrations/20260223034707_MapIndexAttributionTables.cs` - Baseline migration (empty Up/Down, tables created by Python pipeline)
 - `Migrations/20260223034707_MapIndexAttributionTables.Designer.cs` - Migration snapshot metadata
 - `Migrations/20260223232008_CreateIndexTablesIfNotExist.cs` - Idempotent migration: creates IndexDefinition, IndexConstituent, SecurityIdentifier, SecurityIdentifierHist tables with `IF NOT EXISTS` guards (safe for both local and production)
+- `Migrations/20260224051341_CreateCoverageTablesIfNotExist.cs` - Idempotent migration: creates SecurityPriceCoverage and SecurityPriceCoverageByYear pre-aggregation tables with `IF NOT EXISTS` guards (safe for both local and production)
 - `Data/Entities/SecurityPriceCoverageEntity.cs` - Per-security coverage metadata entity
 - `Data/Entities/SecurityPriceCoverageByYearEntity.cs` - Per-security-per-year coverage metadata entity
 - `Data/StockAnalyzerDbContext.cs` - DbContext with Fluent API configuration for all entities
@@ -2407,7 +2408,24 @@ CREATE INDEX IX_PriceStaging_Ticker_EffectiveDate ON staging.PriceStaging(Ticker
 - IndexConstituentEntity: `Id` is `long` (maps to `bigint` PK); composite unique index on `(IndexId, SecurityAlias, EffectiveDate, SourceId)` prevents duplicates
 - SecurityIdentifierEntity: Composite PK on `(SecurityAlias, IdentifierType)` enables 1:N identifiers per security
 - SecurityIdentifierHistEntity: `Id` is `long` (maps to `bigint` PK); tracks historical identifier changes using SCD Type 2 with effective date ranges
+- SecurityPriceCoverageEntity: PK on `SecurityAlias` (FK to SecurityMaster); tracks overall price coverage including computed `GapDays` column (ISNULL(ExpectedCount, 0) - PriceCount), eliminates expensive full-table scans on Prices table
+- SecurityPriceCoverageByYearEntity: Composite PK on `(SecurityAlias, Year)`; tracks per-year coverage metadata for CoverageSummary pre-aggregation (replaces costly GROUP BY YEAR aggregations on 43M+ row Prices table)
 - Schema validation integration test (`SchemaValidationTests.cs`) compares all EF Core entity CLR types against actual SQL Server column types via `INFORMATION_SCHEMA.COLUMNS` to catch int/bigint drift
+
+**Security Price Coverage Tables (Pre-Aggregation):**
+
+Both tables use idempotent migration (IF NOT EXISTS guards) for safe application to local and production databases.
+
+| Table | Purpose | Key Columns | Relationships |
+|-------|---------|-------------|----------------|
+| `data.SecurityPriceCoverage` | Per-security summary of price data coverage | SecurityAlias (PK), PriceCount, FirstDate, LastDate, ExpectedCount (from BusinessCalendar), GapDays (computed persisted) | 1:1 FK to SecurityMaster, OnDelete Cascade |
+| `data.SecurityPriceCoverageByYear` | Per-security-per-year coverage breakdown | SecurityAlias + Year (composite PK), PriceCount, LastUpdatedAt | N:1 FK to SecurityMaster, OnDelete Cascade |
+
+**Coverage Update Strategy:**
+- Tables updated via delta arithmetic during price loads (PriceRefreshService)
+- GapDays computed column: ISNULL(ExpectedCount, 0) - PriceCount (positive = gaps, zero = fully covered)
+- Both tables provide instant analytics without scanning 43M+ row Prices table
+- Critical for Azure SQL Basic tier (5 DTU limit) where full-table scans cause timeouts
 
 #### EODHD Integration (Historical Price Data)
 
