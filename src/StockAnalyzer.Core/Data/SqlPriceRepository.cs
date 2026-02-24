@@ -135,6 +135,180 @@ public class SqlPriceRepository : IPriceRepository
         return entity;
     }
 
+    /// <summary>
+    /// Update coverage metadata for securities in a batch after prices are inserted.
+    /// Executes MERGE statements against both SecurityPriceCoverage and SecurityPriceCoverageByYear.
+    /// Uses parameterized queries and HOLDLOCK to prevent race conditions.
+    /// Failures log warnings and continue — coverage is eventually consistent per design.
+    /// </summary>
+    private async Task UpdateCoverageAsync(List<CoverageDelta> deltas)
+    {
+        if (deltas.Count == 0)
+            return;
+
+        var connection = _context.Database.GetDbConnection();
+        var connectionWasOpen = connection.State == ConnectionState.Open;
+        if (!connectionWasOpen)
+            await connection.OpenAsync();
+
+        try
+        {
+            foreach (var delta in deltas)
+            {
+                try
+                {
+                    // MERGE into SecurityPriceCoverage
+                    // WHEN MATCHED: increment PriceCount, widen FirstDate/LastDate, recompute ExpectedCount
+                    // WHEN NOT MATCHED: insert new row with all fields
+                    var coverageSql = @"
+                        MERGE data.SecurityPriceCoverage WITH (HOLDLOCK) AS target
+                        USING (
+                            SELECT @SecurityAlias AS SecurityAlias,
+                                   @InsertedCount AS InsertedCount,
+                                   @MinDate AS MinDate,
+                                   @MaxDate AS MaxDate
+                        ) AS source
+                        ON target.SecurityAlias = source.SecurityAlias
+                        WHEN MATCHED THEN
+                            UPDATE SET
+                                target.PriceCount = target.PriceCount + source.InsertedCount,
+                                target.FirstDate = CASE
+                                    WHEN source.MinDate < target.FirstDate THEN source.MinDate
+                                    ELSE target.FirstDate
+                                END,
+                                target.LastDate = CASE
+                                    WHEN source.MaxDate > target.LastDate THEN source.MaxDate
+                                    ELSE target.LastDate
+                                END,
+                                target.ExpectedCount = (
+                                    SELECT COUNT(*)
+                                    FROM data.BusinessCalendar WITH (NOLOCK)
+                                    WHERE SourceId = 1
+                                        AND IsBusinessDay = 1
+                                        AND EffectiveDate >= CASE
+                                            WHEN source.MinDate < target.FirstDate THEN source.MinDate
+                                            ELSE target.FirstDate
+                                        END
+                                        AND EffectiveDate <= CASE
+                                            WHEN source.MaxDate > target.LastDate THEN source.MaxDate
+                                            ELSE target.LastDate
+                                        END
+                                ),
+                                target.LastUpdatedAt = GETUTCDATE()
+                        WHEN NOT MATCHED THEN
+                            INSERT (SecurityAlias, PriceCount, FirstDate, LastDate, ExpectedCount, LastUpdatedAt)
+                            VALUES (
+                                source.SecurityAlias,
+                                source.InsertedCount,
+                                source.MinDate,
+                                source.MaxDate,
+                                (SELECT COUNT(*)
+                                 FROM data.BusinessCalendar WITH (NOLOCK)
+                                 WHERE SourceId = 1
+                                     AND IsBusinessDay = 1
+                                     AND EffectiveDate >= source.MinDate
+                                     AND EffectiveDate <= source.MaxDate),
+                                GETUTCDATE()
+                            );";
+
+                    using (var command = connection.CreateCommand())
+                    {
+#pragma warning disable CA2100 // Parameters are from computed deltas, not user input
+                        command.CommandText = coverageSql;
+#pragma warning restore CA2100
+                        command.CommandTimeout = 120;
+
+                        var securityAliasParam = command.CreateParameter();
+                        securityAliasParam.ParameterName = "@SecurityAlias";
+                        securityAliasParam.Value = delta.SecurityAlias;
+                        command.Parameters.Add(securityAliasParam);
+
+                        var insertedCountParam = command.CreateParameter();
+                        insertedCountParam.ParameterName = "@InsertedCount";
+                        insertedCountParam.Value = delta.InsertedCount;
+                        command.Parameters.Add(insertedCountParam);
+
+                        var minDateParam = command.CreateParameter();
+                        minDateParam.ParameterName = "@MinDate";
+                        minDateParam.Value = delta.MinDate;
+                        command.Parameters.Add(minDateParam);
+
+                        var maxDateParam = command.CreateParameter();
+                        maxDateParam.ParameterName = "@MaxDate";
+                        maxDateParam.Value = delta.MaxDate;
+                        command.Parameters.Add(maxDateParam);
+
+                        if (_context.Database.CurrentTransaction != null)
+                            command.Transaction = _context.Database.CurrentTransaction.GetDbTransaction();
+
+                        await command.ExecuteNonQueryAsync();
+                    }
+
+                    // MERGE into SecurityPriceCoverageByYear for each (SecurityAlias, Year) in delta
+                    foreach (var (year, count) in delta.YearCounts)
+                    {
+                        var yearSql = @"
+                            MERGE data.SecurityPriceCoverageByYear WITH (HOLDLOCK) AS target
+                            USING (
+                                SELECT @SecurityAlias AS SecurityAlias,
+                                       @Year AS Year,
+                                       @Count AS Count
+                            ) AS source
+                            ON target.SecurityAlias = source.SecurityAlias
+                                AND target.Year = source.Year
+                            WHEN MATCHED THEN
+                                UPDATE SET
+                                    target.PriceCount = target.PriceCount + source.Count,
+                                    target.LastUpdatedAt = GETUTCDATE()
+                            WHEN NOT MATCHED THEN
+                                INSERT (SecurityAlias, Year, PriceCount, LastUpdatedAt)
+                                VALUES (source.SecurityAlias, source.Year, source.Count, GETUTCDATE());";
+
+                        using (var command = connection.CreateCommand())
+                        {
+#pragma warning disable CA2100 // Parameters are from computed deltas, not user input
+                            command.CommandText = yearSql;
+#pragma warning restore CA2100
+                            command.CommandTimeout = 120;
+
+                            var securityAliasParam = command.CreateParameter();
+                            securityAliasParam.ParameterName = "@SecurityAlias";
+                            securityAliasParam.Value = delta.SecurityAlias;
+                            command.Parameters.Add(securityAliasParam);
+
+                            var yearParam = command.CreateParameter();
+                            yearParam.ParameterName = "@Year";
+                            yearParam.Value = year;
+                            command.Parameters.Add(yearParam);
+
+                            var countParam = command.CreateParameter();
+                            countParam.ParameterName = "@Count";
+                            countParam.Value = count;
+                            command.Parameters.Add(countParam);
+
+                            if (_context.Database.CurrentTransaction != null)
+                                command.Transaction = _context.Database.CurrentTransaction.GetDbTransaction();
+
+                            await command.ExecuteNonQueryAsync();
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Log warning and continue — coverage updates are eventually consistent
+                    _logger.LogWarning(ex,
+                        "Failed to update coverage for security {SecurityAlias}: {Message}",
+                        delta.SecurityAlias, ex.Message);
+                }
+            }
+        }
+        finally
+        {
+            if (!connectionWasOpen)
+                await connection.CloseAsync();
+        }
+    }
+
     /// <inheritdoc />
     public async Task<int> BulkInsertAsync(IEnumerable<PriceCreateDto> prices)
     {
@@ -183,6 +357,11 @@ public class SqlPriceRepository : IPriceRepository
 
             _context.Prices.AddRange(entities);
             await _context.SaveChangesAsync();
+
+            // Update coverage tables incrementally after each batch
+            var deltas = ComputeDeltas(newPrices);
+            await UpdateCoverageAsync(deltas);
+
             count += newPrices.Count;
 
             if (count % 10000 == 0)

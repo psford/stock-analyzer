@@ -1,6 +1,6 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.51
+**Version:** 2.52
 **Last Updated:** 2026-02-24
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
@@ -2454,20 +2454,44 @@ During `BulkInsertAsync` batch processing, after each 1000-row batch successfull
 
 ```csharp
 var deltas = ComputeDeltas(newPrices);
-await UpdateCoverageAsync(deltas);  // Phase 3 (TODO)
+await UpdateCoverageAsync(deltas);
 ```
 
-Deltas feed into `UpdateCoverageAsync` which executes parameterized MERGE statements against both coverage tables. Coverage updates are eventually consistent per design — a coverage update failure does not block price insertion.
+**UpdateCoverageAsync Implementation:**
+
+The private async method `UpdateCoverageAsync(List<CoverageDelta> deltas)` in `SqlPriceRepository.cs` executes atomic MERGE statements against both coverage tables:
+
+**SecurityPriceCoverage MERGE:**
+- **WHEN MATCHED:** Increments `PriceCount` by `InsertedCount`; widens `FirstDate`/`LastDate` to include new boundaries (MIN/MAX); recomputes `ExpectedCount` via correlated subquery against `data.BusinessCalendar` (SourceId = 1, IsBusinessDay = 1, date range = widened boundaries)
+- **WHEN NOT MATCHED:** Inserts new row with SecurityAlias, InsertedCount → PriceCount, MinDate → FirstDate, MaxDate → LastDate, computed ExpectedCount, LastUpdatedAt = GETUTCDATE()
+- **HOLDLOCK:** Applied to prevent race conditions on concurrent batch processing
+
+**SecurityPriceCoverageByYear MERGE (per year in YearCounts):**
+- **WHEN MATCHED:** Increments `PriceCount` by count for that year
+- **WHEN NOT MATCHED:** Inserts new row with SecurityAlias, Year, count → PriceCount, LastUpdatedAt = GETUTCDATE()
+- **HOLDLOCK:** Applied to prevent race conditions
+
+**Parameterization & Error Handling:**
+- All SQL values passed as parameters (@SecurityAlias, @InsertedCount, @MinDate, @MaxDate, @Year, @Count) — no string concatenation
+- Per-delta try/catch: logs `LogWarning` on failure, continues to next delta
+- Coverage updates are eventually consistent per design — a failure does NOT block price insertion
 
 **Test Coverage:**
 
-Unit tests in `SqlPriceRepositoryCoverageTests.cs` verify:
+Unit tests in `SqlPriceRepositoryCoverageTests.cs` verify delta computation:
 - Empty input → empty list
 - Single price → single delta with correct boundaries and year count
 - Multiple prices per security → correct aggregated InsertedCount and date range
 - Multiple securities → separate deltas with independent counts and date ranges
 - Dates spanning calendar years → correct YearCounts partition across years
 - Min/MaxDate stripped to `.Date` (no time component)
+
+Integration tests in `CoverageIntegrationTests.cs` verify MERGE behavior against SQL Express:
+- **AC1.5:** First-ever price insert creates new SecurityPriceCoverage row with correct PriceCount, FirstDate = min date, LastDate = max date
+- **AC1.2:** Inserting prices before existing FirstDate widens FirstDate; inserting after existing LastDate widens LastDate; opposite boundary unchanged
+- **AC1.3:** ExpectedCount matches actual business day count from BusinessCalendar (SourceId = 1) between FirstDate and LastDate
+- **AC1.1 (incremental):** Multiple security insertions in one batch update each security's coverage independently
+- **AC1.6 (multi-year):** Prices spanning multiple calendar years increment each year's coverage in SecurityPriceCoverageByYear
 
 #### EODHD Integration (Historical Price Data)
 
