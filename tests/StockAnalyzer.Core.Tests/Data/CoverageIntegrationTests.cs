@@ -33,7 +33,7 @@ public class CoverageIntegrationTests
 
         try
         {
-            // Arrange: Insert security master via raw SQL with IDENTITY_INSERT to auto-generate alias
+            // Arrange: Insert security master via raw SQL to auto-generate alias
             await using (var context = CreateContext())
             {
                 // Insert test security and capture auto-generated alias

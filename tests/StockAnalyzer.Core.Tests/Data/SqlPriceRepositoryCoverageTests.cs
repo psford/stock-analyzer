@@ -26,7 +26,7 @@ public class SqlPriceRepositoryCoverageTests
     }
 
     [Fact]
-    public void ComputeDeltas_SinglePrice_ProducesCorrectDelta()
+    public void ComputeCoverageDeltas_SinglePrice_ProducesCorrectDelta()
     {
         // Arrange
         var date = new DateTime(2024, 1, 15);
@@ -60,7 +60,7 @@ public class SqlPriceRepositoryCoverageTests
     }
 
     [Fact]
-    public void ComputeDeltas_MultipleForOneSecurity_CorrectCountAndRange()
+    public void ComputeCoverageDeltas_MultipleForOneSecurity_CorrectCountAndRange()
     {
         // Arrange
         var date1 = new DateTime(2024, 1, 15);
@@ -88,7 +88,7 @@ public class SqlPriceRepositoryCoverageTests
     }
 
     [Fact]
-    public void ComputeDeltas_MultipleSecurities_SeparateDeltasWithIndependentCounts()
+    public void ComputeCoverageDeltas_MultipleSecurities_SeparateDeltasWithIndependentCounts()
     {
         // Arrange
         var date1 = new DateTime(2024, 1, 15);
@@ -121,7 +121,7 @@ public class SqlPriceRepositoryCoverageTests
     }
 
     [Fact]
-    public void ComputeDeltas_SpanningTwoCalendarYears_CorrectYearPartition()
+    public void ComputeCoverageDeltas_SpanningTwoCalendarYears_CorrectYearPartition()
     {
         // Arrange
         var pricesIn2024 = new List<PriceCreateDto>
@@ -154,7 +154,7 @@ public class SqlPriceRepositoryCoverageTests
     }
 
     [Fact]
-    public void ComputeDeltas_MinDateMaxDateWithTimeComponents_StripToDateOnly()
+    public void ComputeCoverageDeltas_MinDateMaxDateWithTimeComponents_StripToDateOnly()
     {
         // Arrange
         var date1WithTime = new DateTime(2024, 1, 15, 10, 30, 45);
@@ -178,7 +178,7 @@ public class SqlPriceRepositoryCoverageTests
     }
 
     [Fact]
-    public void ComputeDeltas_UnorderedInput_ProducesCorrectDeltaWithCorrectBoundaries()
+    public void ComputeCoverageDeltas_UnorderedInput_ProducesCorrectDeltaWithCorrectBoundaries()
     {
         // Arrange: Deliberately provide dates out of order
         var newPrices = new List<PriceCreateDto>
@@ -200,7 +200,7 @@ public class SqlPriceRepositoryCoverageTests
     }
 
     [Fact]
-    public void ComputeDeltas_DuplicateDatesForSecurity_AllCountedInInsertedCount()
+    public void ComputeCoverageDeltas_DuplicateDatesForSecurity_AllCountedInInsertedCount()
     {
         // Arrange: Same security, same date (would not occur in practice due to DB uniqueness,
         // but test ensures counting is correct)
@@ -222,7 +222,7 @@ public class SqlPriceRepositoryCoverageTests
     }
 
     [Fact]
-    public void ComputeDeltas_MultipleSecuritiesWithDifferentDateRanges_IndependentBoundaries()
+    public void ComputeCoverageDeltas_MultipleSecuritiesWithDifferentDateRanges_IndependentBoundaries()
     {
         // Arrange
         var newPrices = new List<PriceCreateDto>
@@ -254,7 +254,7 @@ public class SqlPriceRepositoryCoverageTests
     }
 
     [Fact]
-    public void ComputeDeltas_LargeBatch_ProcessesAllSecuritiesAndDates()
+    public void ComputeCoverageDeltas_LargeBatch_ProcessesAllSecuritiesAndDates()
     {
         // Arrange: Create 100 prices across 10 securities
         var newPrices = new List<PriceCreateDto>();
