@@ -7,6 +7,7 @@ using Serilog;
 using Serilog.Events;
 using StockAnalyzer.Core.Data;
 using StockAnalyzer.Core.Data.Entities;
+using StockAnalyzer.Core.Helpers;
 using StockAnalyzer.Core.Models;
 using StockAnalyzer.Core.Services;
 
@@ -383,6 +384,7 @@ var refreshSummarySemaphore = new SemaphoreSlim(1, 1);
 var bulkLoadSemaphore = new SemaphoreSlim(1, 1);
 var calculateImportanceSemaphore = new SemaphoreSlim(1, 1);
 var autoTrackSemaphore = new SemaphoreSlim(3, 3);
+var backfillCoverageSemaphore = new SemaphoreSlim(1, 1);
 #pragma warning restore CA2000
 
 // Ticker validation helper - allows 1-10 alphanumeric chars plus dots, dashes, carets (e.g., BRK.B, BRK-B, ^GSPC)
@@ -1403,6 +1405,145 @@ app.MapPost("/api/admin/prices/backfill", async (
 .WithOpenApi()
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status500InternalServerError);
+
+// POST /api/admin/prices/backfill-coverage - Backfill SecurityPriceCoverage from existing Prices data
+// One-time bootstrap operation to populate coverage tables from full Prices scan.
+// Safe to re-run (MERGE is idempotent). Extended timeout for full table scan.
+app.MapPost("/api/admin/prices/backfill-coverage", async (IServiceProvider serviceProvider) =>
+{
+    using var scope = serviceProvider.CreateScope();
+    var context = scope.ServiceProvider.GetService<StockAnalyzerDbContext>();
+
+    if (context == null)
+        return Results.BadRequest(new { error = "Database context not configured" });
+
+    // Semaphore guard: prevent concurrent backfill runs
+    if (!await backfillCoverageSemaphore.WaitAsync(0))
+        return Results.Conflict(new { error = "Coverage backfill already in progress." });
+
+    var connection = context.Database.GetDbConnection();
+    var connectionWasOpen = connection.State == System.Data.ConnectionState.Open;
+
+    try
+    {
+        if (!connectionWasOpen)
+            await connection.OpenAsync();
+
+        Log.Information("Starting SecurityPriceCoverage backfill from Prices table");
+
+        int coverageRows = 0;
+        int byYearRows = 0;
+
+        // MERGE SecurityPriceCoverage: aggregate all Prices by SecurityAlias
+        // Include ExpectedCount calculation from BusinessCalendar for the date range
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = @"
+MERGE INTO data.SecurityPriceCoverage AS target
+USING (
+    SELECT
+        p.SecurityAlias,
+        COUNT(*) AS PriceCount,
+        MIN(p.EffectiveDate) AS FirstDate,
+        MAX(p.EffectiveDate) AS LastDate
+    FROM data.Prices p WITH (NOLOCK)
+    GROUP BY p.SecurityAlias
+) AS source
+ON target.SecurityAlias = source.SecurityAlias
+WHEN MATCHED THEN
+    UPDATE SET
+        PriceCount = source.PriceCount,
+        FirstDate = source.FirstDate,
+        LastDate = source.LastDate,
+        ExpectedCount = (
+            SELECT COUNT(*)
+            FROM meta.BusinessCalendar bc WITH (NOLOCK)
+            WHERE bc.SourceId = 1
+              AND bc.IsBusinessDay = 1
+              AND bc.CalendarDate >= source.FirstDate
+              AND bc.CalendarDate <= source.LastDate
+        ),
+        LastUpdatedAt = GETUTCDATE()
+WHEN NOT MATCHED THEN
+    INSERT (SecurityAlias, PriceCount, FirstDate, LastDate, ExpectedCount, LastUpdatedAt)
+    VALUES (
+        source.SecurityAlias,
+        source.PriceCount,
+        source.FirstDate,
+        source.LastDate,
+        (
+            SELECT COUNT(*)
+            FROM meta.BusinessCalendar bc WITH (NOLOCK)
+            WHERE bc.SourceId = 1
+              AND bc.IsBusinessDay = 1
+              AND bc.CalendarDate >= source.FirstDate
+              AND bc.CalendarDate <= source.LastDate
+        ),
+        GETUTCDATE()
+    );
+
+SELECT @@ROWCOUNT";
+            cmd.CommandTimeout = 600; // 10 minutes - intentionally expensive one-time scan
+            coverageRows = (int)(await cmd.ExecuteScalarAsync() ?? 0);
+        }
+
+        Log.Information("SecurityPriceCoverage backfill complete: {Rows} rows affected", LogSanitizer.Sanitize(coverageRows.ToString()));
+
+        // MERGE SecurityPriceCoverageByYear: aggregate all Prices by SecurityAlias + YEAR
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = @"
+MERGE INTO data.SecurityPriceCoverageByYear AS target
+USING (
+    SELECT
+        p.SecurityAlias,
+        YEAR(p.EffectiveDate) AS [Year],
+        COUNT(*) AS PriceCount
+    FROM data.Prices p WITH (NOLOCK)
+    GROUP BY p.SecurityAlias, YEAR(p.EffectiveDate)
+) AS source
+ON target.SecurityAlias = source.SecurityAlias AND target.[Year] = source.[Year]
+WHEN MATCHED THEN
+    UPDATE SET
+        PriceCount = source.PriceCount,
+        LastUpdatedAt = GETUTCDATE()
+WHEN NOT MATCHED THEN
+    INSERT (SecurityAlias, [Year], PriceCount, LastUpdatedAt)
+    VALUES (source.SecurityAlias, source.[Year], source.PriceCount, GETUTCDATE());
+
+SELECT @@ROWCOUNT";
+            cmd.CommandTimeout = 600;
+            byYearRows = (int)(await cmd.ExecuteScalarAsync() ?? 0);
+        }
+
+        Log.Information("SecurityPriceCoverageByYear backfill complete: {Rows} rows affected", LogSanitizer.Sanitize(byYearRows.ToString()));
+
+        return Results.Ok(new
+        {
+            success = true,
+            message = $"Backfilled {coverageRows} coverage rows and {byYearRows} by-year rows",
+            coverageRowsUpdated = coverageRows,
+            coverageByYearRowsUpdated = byYearRows
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Backfill coverage failed");
+        return Results.Problem($"Backfill coverage failed: {LogSanitizer.Sanitize(ex.Message)}");
+    }
+    finally
+    {
+        backfillCoverageSemaphore.Release();
+        if (!connectionWasOpen && connection.State == System.Data.ConnectionState.Open)
+            connection.Close();
+    }
+})
+.WithName("BackfillPriceCoverage")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status409Conflict)
 .Produces(StatusCodes.Status500InternalServerError);
 
 // ============================================================================

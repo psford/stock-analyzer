@@ -2540,6 +2540,7 @@ Maintains the historical price database with automatic daily updates.
 | `POST /api/admin/prices/refresh-date` | Fetch prices for specific date (body: `{Date: "yyyy-MM-dd"}`) |
 | `POST /api/admin/prices/load-tickers` | Load historical prices for specific tickers (body: `{Tickers[], StartDate, EndDate}`) |
 | `POST /api/admin/prices/backfill` | Parallel backfill for multiple tickers (body: `{Tickers[], StartDate, EndDate}`, 10 concurrent) |
+| `POST /api/admin/prices/backfill-coverage` | Backfill SecurityPriceCoverage and SecurityPriceCoverageByYear from existing Prices data (one-time bootstrap, 600s timeout, MERGE idempotent) |
 | `POST /api/admin/prices/bulk-load` | Start bulk historical load (body: `{StartDate, EndDate}`) |
 | `POST /api/admin/securities/calculate-importance` | Calculate importance scores for all active securities |
 | `POST /api/admin/securities/promote-untracked` | Promote untracked securities to tracked (query: `count`, default 500, max 500) |
@@ -2603,6 +2604,20 @@ Maintains the historical price database with automatic daily updates.
 - Columns: SecurityAlias, Year, PriceCount, LastUpdatedAt
 - Updated incrementally during price loads via delta arithmetic (no Prices table scan)
 - **Purpose:** Supports CoverageSummary aggregation from ~60K rows instead of scanning 43M+ Prices rows; replaces the expensive refresh-summary GROUP BY query
+
+**Backfill Coverage (`/api/admin/prices/backfill-coverage`):**
+- **Purpose:** One-time bootstrap operation to populate SecurityPriceCoverage and SecurityPriceCoverageByYear tables from existing Prices data
+- **When to use:** After initial database setup or migration from legacy data; after manual Prices table edits
+- **Operational note:** Run during off-hours or when EODHD crawler is idle. While MERGE statements are idempotent, concurrent runs with `BulkInsertAsync` (price delta updates) could transiently corrupt coverage counts. A subsequent backfill run will correct any inconsistencies.
+- **Timeout:** 600 seconds (10 minutes) — intentionally generous for full Prices table scan on large databases; critical for Azure SQL Basic (5 DTU) which may exhaust DTU during intensive full-table operations
+- **Idempotency:** Uses MERGE (not INSERT), safe to re-run multiple times
+- **Semaphore:** Guarded by `SemaphoreSlim(1,1)` — prevents concurrent backfill runs; returns HTTP 409 Conflict if already running
+- **SQL Operations:**
+  1. **SecurityPriceCoverage MERGE:** Groups all Prices rows by SecurityAlias with `WITH (NOLOCK)`, computes COUNT(*), MIN(EffectiveDate), MAX(EffectiveDate). WHEN MATCHED: updates PriceCount, FirstDate, LastDate, and recomputes ExpectedCount from BusinessCalendar. WHEN NOT MATCHED: inserts new row.
+  2. **SecurityPriceCoverageByYear MERGE:** Groups all Prices rows by SecurityAlias + YEAR(EffectiveDate) with `WITH (NOLOCK)`, computes COUNT(*) per year. WHEN MATCHED: updates PriceCount. WHEN NOT MATCHED: inserts new row.
+- **Response:** HTTP 200 with `{ success: true, message, coverageRowsUpdated, coverageByYearRowsUpdated }`
+- **Failure:** HTTP 400/500 with error details; semaphore released in finally block
+- **Verification:** After backfill, coverage row counts should match number of distinct securities in Prices table; PriceCount should exactly match COUNT(*) per security (no deltas)
 
 **DTU-Optimized Query Patterns (Azure SQL Basic, 5 DTU):**
 - **No full-table scans on Prices** — the 7M+ row table will exhaust 5 DTU / 60 worker limits
