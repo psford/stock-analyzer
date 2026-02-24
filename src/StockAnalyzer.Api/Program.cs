@@ -1440,7 +1440,7 @@ app.MapPost("/api/admin/prices/backfill-coverage", async (IServiceProvider servi
         using (var cmd = connection.CreateCommand())
         {
             cmd.CommandText = @"
-MERGE INTO data.SecurityPriceCoverage AS target
+MERGE INTO data.SecurityPriceCoverage WITH (HOLDLOCK) AS target
 USING (
     SELECT
         p.SecurityAlias,
@@ -1458,11 +1458,11 @@ WHEN MATCHED THEN
         LastDate = source.LastDate,
         ExpectedCount = (
             SELECT COUNT(*)
-            FROM meta.BusinessCalendar bc WITH (NOLOCK)
+            FROM data.BusinessCalendar bc WITH (NOLOCK)
             WHERE bc.SourceId = 1
               AND bc.IsBusinessDay = 1
-              AND bc.CalendarDate >= source.FirstDate
-              AND bc.CalendarDate <= source.LastDate
+              AND bc.EffectiveDate >= source.FirstDate
+              AND bc.EffectiveDate <= source.LastDate
         ),
         LastUpdatedAt = GETUTCDATE()
 WHEN NOT MATCHED THEN
@@ -1474,11 +1474,11 @@ WHEN NOT MATCHED THEN
         source.LastDate,
         (
             SELECT COUNT(*)
-            FROM meta.BusinessCalendar bc WITH (NOLOCK)
+            FROM data.BusinessCalendar bc WITH (NOLOCK)
             WHERE bc.SourceId = 1
               AND bc.IsBusinessDay = 1
-              AND bc.CalendarDate >= source.FirstDate
-              AND bc.CalendarDate <= source.LastDate
+              AND bc.EffectiveDate >= source.FirstDate
+              AND bc.EffectiveDate <= source.LastDate
         ),
         GETUTCDATE()
     );
@@ -1494,7 +1494,7 @@ SELECT @@ROWCOUNT";
         using (var cmd = connection.CreateCommand())
         {
             cmd.CommandText = @"
-MERGE INTO data.SecurityPriceCoverageByYear AS target
+MERGE INTO data.SecurityPriceCoverageByYear WITH (HOLDLOCK) AS target
 USING (
     SELECT
         p.SecurityAlias,
