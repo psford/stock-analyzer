@@ -2575,9 +2575,9 @@ Maintains the historical price database with automatic daily updates.
 - ~230 cells (47 years × ~5 populated scores)
 
 **Refresh Summary (`/api/admin/dashboard/refresh-summary`):**
-- Runs the expensive aggregation query on `data.Prices` × `data.SecurityMaster` and writes results to `data.CoverageSummary`
-- **5-minute timeout** — designed for infrequent execution (post-deploy, post-crawl)
-- SQL: `GROUP BY YEAR(p.EffectiveDate), sm.ImportanceScore` with tracked/untracked splits, COUNT(DISTINCT) for securities, COUNT(DISTINCT EffectiveDate) for trading days
+- Aggregates pre-computed coverage metadata from `data.SecurityPriceCoverageByYear` × `data.SecurityMaster` and writes results to `data.CoverageSummary`
+- **30-second timeout** — fast operation that queries ~60K pre-aggregated coverage rows instead of 43M+ Prices rows
+- SQL: `GROUP BY cy.[Year], sm.ImportanceScore` with tracked/untracked splits via SUM of PriceCount, SUM of 1 for securities count, correlated BusinessCalendar subquery for TradingDays (expected business days per year, decoupled from data completeness)
 - Invalidates both `dashboard:heatmap` and `dashboard:stats` cache keys on completion
 - Returns: `{ success, message, cellCount }`
 - **When to call:** After deployment, after running calculate-importance, after crawl sessions

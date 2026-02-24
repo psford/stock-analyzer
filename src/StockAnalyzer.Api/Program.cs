@@ -3249,21 +3249,21 @@ app.MapPost("/api/admin/dashboard/refresh-summary", async (IServiceProvider serv
         using var cmd = connection.CreateCommand();
         cmd.CommandText = @"
             SELECT
-                YEAR(p.EffectiveDate) AS [Year],
+                cy.[Year],
                 sm.ImportanceScore AS Score,
-                SUM(CASE WHEN sm.IsTracked = 1 THEN 1 ELSE 0 END) AS TrackedRecords,
-                SUM(CASE WHEN sm.IsTracked = 0 THEN 1 ELSE 0 END) AS UntrackedRecords,
-                COUNT(DISTINCT CASE WHEN sm.IsTracked = 1 THEN sm.SecurityAlias END) AS TrackedSecurities,
-                COUNT(DISTINCT CASE WHEN sm.IsTracked = 0 THEN sm.SecurityAlias END) AS UntrackedSecurities,
-                COUNT(DISTINCT p.EffectiveDate) AS TradingDays
-            FROM data.Prices p WITH (NOLOCK)
+                SUM(CASE WHEN sm.IsTracked = 1 THEN cy.PriceCount ELSE 0 END) AS TrackedRecords,
+                SUM(CASE WHEN sm.IsTracked = 0 THEN cy.PriceCount ELSE 0 END) AS UntrackedRecords,
+                SUM(CASE WHEN sm.IsTracked = 1 THEN 1 ELSE 0 END) AS TrackedSecurities,
+                SUM(CASE WHEN sm.IsTracked = 0 THEN 1 ELSE 0 END) AS UntrackedSecurities,
+                (SELECT COUNT(DISTINCT bc.EffectiveDate) FROM data.BusinessCalendar bc WITH (NOLOCK) WHERE bc.IsBusinessDay = 1 AND YEAR(bc.EffectiveDate) = cy.[Year]) AS TradingDays
+            FROM data.SecurityPriceCoverageByYear cy WITH (NOLOCK)
             INNER JOIN data.SecurityMaster sm WITH (NOLOCK)
-                ON p.SecurityAlias = sm.SecurityAlias
+                ON cy.SecurityAlias = sm.SecurityAlias
             WHERE sm.IsActive = 1
-            GROUP BY YEAR(p.EffectiveDate), sm.ImportanceScore
+            GROUP BY cy.[Year], sm.ImportanceScore
             ORDER BY [Year], Score;
         ";
-        cmd.CommandTimeout = 300; // 5 min — this is the expensive query, runs infrequently
+        cmd.CommandTimeout = 30; // 30 sec — reduced from 300 sec, now aggregates from pre-computed coverage metadata instead of 43M+ Prices rows
 
         var rows = new List<CoverageSummaryEntity>();
         using var reader = await cmd.ExecuteReaderAsync();
