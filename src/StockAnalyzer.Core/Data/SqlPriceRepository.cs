@@ -9,6 +9,17 @@ using StockAnalyzer.Core.Services;
 namespace StockAnalyzer.Core.Data;
 
 /// <summary>
+/// Delta of prices inserted for a single security in one batch.
+/// Used to incrementally update coverage tables without scanning Prices.
+/// </summary>
+internal record CoverageDelta(
+    int SecurityAlias,
+    int InsertedCount,
+    DateTime MinDate,
+    DateTime MaxDate,
+    Dictionary<int, int> YearCounts);
+
+/// <summary>
 /// SQL Server implementation of IPriceRepository.
 /// Manages historical price data in the data.Prices table.
 /// Optimized for efficient querying of large datasets (~1.26M+ rows).
@@ -22,6 +33,24 @@ public class SqlPriceRepository : IPriceRepository
     {
         _context = context;
         _logger = logger;
+    }
+
+    /// <summary>
+    /// Compute per-security coverage deltas from a list of newly inserted prices.
+    /// Pure in-memory arithmetic — no database access.
+    /// </summary>
+    internal static List<CoverageDelta> ComputeDeltas(List<PriceCreateDto> newPrices)
+    {
+        return newPrices
+            .GroupBy(p => p.SecurityAlias)
+            .Select(g => new CoverageDelta(
+                SecurityAlias: g.Key,
+                InsertedCount: g.Count(),
+                MinDate: g.Min(p => p.EffectiveDate.Date),
+                MaxDate: g.Max(p => p.EffectiveDate.Date),
+                YearCounts: g.GroupBy(p => p.EffectiveDate.Year)
+                             .ToDictionary(y => y.Key, y => y.Count())))
+            .ToList();
     }
 
     /// <inheritdoc />

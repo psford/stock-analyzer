@@ -2427,6 +2427,48 @@ Both tables use idempotent migration (IF NOT EXISTS guards) for safe application
 - Both tables provide instant analytics without scanning 43M+ row Prices table
 - Critical for Azure SQL Basic tier (5 DTU limit) where full-table scans cause timeouts
 
+**CoverageDelta Model and Computation:**
+
+The `CoverageDelta` record (`SqlPriceRepository.cs`) represents the per-security price delta inserted in a single batch:
+
+```csharp
+internal record CoverageDelta(
+    int SecurityAlias,
+    int InsertedCount,          // Number of prices inserted for this security
+    DateTime MinDate,           // Earliest date (date only, no time)
+    DateTime MaxDate,           // Latest date (date only, no time)
+    Dictionary<int, int> YearCounts);  // Prices per calendar year
+```
+
+The static method `ComputeDeltas(List<PriceCreateDto> newPrices)` performs in-memory delta arithmetic on newly inserted prices:
+
+- **Grouping:** Partitions input prices by `SecurityAlias`
+- **Count:** Tallies total inserted prices per security
+- **Date Range:** Computes MIN/MAX dates from `EffectiveDate.Date` (strips time component)
+- **Year Partition:** Aggregates price counts by calendar year via `EffectiveDate.Year`
+- **Zero DTU Cost:** Pure C# computation — no database access
+
+**Usage:**
+
+During `BulkInsertAsync` batch processing, after each 1000-row batch successfully completes `SaveChangesAsync()`:
+
+```csharp
+var deltas = ComputeDeltas(newPrices);
+await UpdateCoverageAsync(deltas);  // Phase 3 (TODO)
+```
+
+Deltas feed into `UpdateCoverageAsync` which executes parameterized MERGE statements against both coverage tables. Coverage updates are eventually consistent per design — a coverage update failure does not block price insertion.
+
+**Test Coverage:**
+
+Unit tests in `SqlPriceRepositoryCoverageTests.cs` verify:
+- Empty input → empty list
+- Single price → single delta with correct boundaries and year count
+- Multiple prices per security → correct aggregated InsertedCount and date range
+- Multiple securities → separate deltas with independent counts and date ranges
+- Dates spanning calendar years → correct YearCounts partition across years
+- Min/MaxDate stripped to `.Date` (no time component)
+
 #### EODHD Integration (Historical Price Data)
 
 **Service:** `EodhdService.cs`
