@@ -2651,12 +2651,15 @@ Maintains the historical price database with automatic daily updates.
 - Returns only tracked securities (`IsTracked = 1`) with price gaps
 - Response includes `isTracked` flag and `importanceScore` per security, plus summary counts
 - Used by EODHD Loader crawler for single-loop gap filling with batch promotion
-- **Ordering:** Priority → ImportanceScore DESC → SecurityType → TickerLength → MissingDays DESC
-- **Date capping:** `LastDate` is capped at `GETDATE()` to exclude future price data; `ActualPriceCount` excludes future dates
-- **Query Structure (2 sources combined via UNION ALL):**
-  1. **TrackedWithGaps:** Tracked securities with existing prices that have internal gaps (expected > actual in date range). Pre-computes `SecuritiesWithPrices` CTE using `GROUP BY` for O(n) scan
-  2. **TrackedNoPrices:** Tracked securities with zero price records (uses `NOT EXISTS` index seek on `Prices(SecurityAlias)`, efficient since tracked securities are a small subset)
-- **Separate gap count query:** Computes true totals independently of LIMIT parameter
+- **Ordering:** Priority → MissingDays DESC → TickerSymbol
+- **Query Architecture (Phase 3 — DTU optimized):**
+  - Reads from `SecurityPriceCoverage` table (~30K rows, indexed) instead of scanning 43M+ row Prices table
+  - Joins: `SecurityMaster LEFT JOIN SecurityPriceCoverage LEFT JOIN TrackedSecurities`
+  - Includes securities with `GapDays > 0` (have prices but missing days) OR `SecurityAlias IS NULL` (zero prices loaded)
+  - Excludes fully covered securities (`GapDays = 0`)
+  - For securities with no coverage row: `FirstDate = NOW() - 2 years`, `LastDate = TODAY`, `ExpectedCount = business days over 2 years`, `GapDays = ExpectedCount`
+  - Command timeout: 30 seconds (reduced from 300 seconds)
+- **Summary stats:** Now pulls `SecuritiesWithData` (count from SecurityPriceCoverage) and `TotalPriceRecords` (sum of PriceCount from coverage table)
 
 **Promote Untracked (`/api/admin/securities/promote-untracked`):**
 - Selects top N untracked securities ordered by `ImportanceScore DESC`, then by `TickerSymbol`
