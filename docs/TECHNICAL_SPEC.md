@@ -2398,6 +2398,8 @@ CREATE INDEX IX_PriceStaging_Ticker_EffectiveDate ON staging.PriceStaging(Ticker
 - `Migrations/20260223034707_MapIndexAttributionTables.cs` - Baseline migration (empty Up/Down, tables created by Python pipeline)
 - `Migrations/20260223034707_MapIndexAttributionTables.Designer.cs` - Migration snapshot metadata
 - `Migrations/20260223232008_CreateIndexTablesIfNotExist.cs` - Idempotent migration: creates IndexDefinition, IndexConstituent, SecurityIdentifier, SecurityIdentifierHist tables with `IF NOT EXISTS` guards (safe for both local and production)
+- `Data/Entities/SecurityPriceCoverageEntity.cs` - Per-security coverage metadata entity
+- `Data/Entities/SecurityPriceCoverageByYearEntity.cs` - Per-security-per-year coverage metadata entity
 - `Data/StockAnalyzerDbContext.cs` - DbContext with Fluent API configuration for all entities
 
 **DbContext Configuration:**
@@ -2503,6 +2505,20 @@ Maintains the historical price database with automatic daily updates.
 - **Purpose:** Avoids expensive full-table scans on the 7M+ row Prices table; critical for Azure SQL Basic tier (5 DTU)
 - Populated by `POST /api/admin/dashboard/refresh-summary`; consumed by heatmap and stats endpoints
 - Also consumed by: `/api/admin/data/prices/summary`, `/api/admin/data/prices/monitor`, `GetTotalCountAsync()`, `AnalyzeHolidaysAsync()`
+
+**SecurityPriceCoverage Table (`data.SecurityPriceCoverage`):**
+- Per-security price coverage metadata. One row per security.
+- Tracks actual price count, date range, expected count, and gap days to replace expensive full-table scans on the Prices table.
+- Columns: SecurityAlias (PK, FK to SecurityMaster), PriceCount, FirstDate (date), LastDate (date), ExpectedCount, GapDays (computed persisted: `ISNULL(ExpectedCount, 0) - PriceCount`), LastUpdatedAt
+- Updated incrementally during price loads via delta arithmetic (no Prices table scan)
+- **Purpose:** Replaces the 4-CTE gap query that scanned the entire Prices table; enables gap detection from a ~30K row table instead of 43M+ rows
+
+**SecurityPriceCoverageByYear Table (`data.SecurityPriceCoverageByYear`):**
+- Per-security-per-year price coverage metadata. One row per security per year.
+- Composite PK: (SecurityAlias, Year), FK to SecurityMaster on SecurityAlias
+- Columns: SecurityAlias, Year, PriceCount, LastUpdatedAt
+- Updated incrementally during price loads via delta arithmetic (no Prices table scan)
+- **Purpose:** Supports CoverageSummary aggregation from ~60K rows instead of scanning 43M+ Prices rows; replaces the expensive refresh-summary GROUP BY query
 
 **DTU-Optimized Query Patterns (Azure SQL Basic, 5 DTU):**
 - **No full-table scans on Prices** — the 7M+ row table will exhaust 5 DTU / 60 worker limits
