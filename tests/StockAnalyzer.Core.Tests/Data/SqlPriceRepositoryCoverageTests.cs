@@ -13,13 +13,13 @@ using Xunit;
 public class SqlPriceRepositoryCoverageTests
 {
     [Fact]
-    public void ComputeDeltas_EmptyInput_ReturnsEmptyList()
+    public void ComputeCoverageDeltas_EmptyInput_ReturnsEmptyList()
     {
         // Arrange
         var newPrices = new List<PriceCreateDto>();
 
         // Act
-        var deltas = SqlPriceRepository.ComputeDeltas(newPrices);
+        var deltas = SqlPriceRepository.ComputeCoverageDeltas(newPrices);
 
         // Assert
         deltas.Should().BeEmpty();
@@ -47,7 +47,7 @@ public class SqlPriceRepositoryCoverageTests
         };
 
         // Act
-        var deltas = SqlPriceRepository.ComputeDeltas(newPrices);
+        var deltas = SqlPriceRepository.ComputeCoverageDeltas(newPrices);
 
         // Assert
         deltas.Should().HaveCount(1);
@@ -75,7 +75,7 @@ public class SqlPriceRepositoryCoverageTests
         };
 
         // Act
-        var deltas = SqlPriceRepository.ComputeDeltas(newPrices);
+        var deltas = SqlPriceRepository.ComputeCoverageDeltas(newPrices);
 
         // Assert
         deltas.Should().HaveCount(1);
@@ -102,7 +102,7 @@ public class SqlPriceRepositoryCoverageTests
         };
 
         // Act
-        var deltas = SqlPriceRepository.ComputeDeltas(newPrices);
+        var deltas = SqlPriceRepository.ComputeCoverageDeltas(newPrices);
 
         // Assert
         deltas.Should().HaveCount(2);
@@ -140,7 +140,7 @@ public class SqlPriceRepositoryCoverageTests
         var newPrices = pricesIn2024.Concat(pricesIn2025).ToList();
 
         // Act
-        var deltas = SqlPriceRepository.ComputeDeltas(newPrices);
+        var deltas = SqlPriceRepository.ComputeCoverageDeltas(newPrices);
 
         // Assert
         deltas.Should().HaveCount(1);
@@ -167,7 +167,7 @@ public class SqlPriceRepositoryCoverageTests
         };
 
         // Act
-        var deltas = SqlPriceRepository.ComputeDeltas(newPrices);
+        var deltas = SqlPriceRepository.ComputeCoverageDeltas(newPrices);
 
         // Assert
         var delta = deltas[0];
@@ -190,7 +190,7 @@ public class SqlPriceRepositoryCoverageTests
         };
 
         // Act
-        var deltas = SqlPriceRepository.ComputeDeltas(newPrices);
+        var deltas = SqlPriceRepository.ComputeCoverageDeltas(newPrices);
 
         // Assert
         var delta = deltas[0];
@@ -213,7 +213,7 @@ public class SqlPriceRepositoryCoverageTests
         };
 
         // Act
-        var deltas = SqlPriceRepository.ComputeDeltas(newPrices);
+        var deltas = SqlPriceRepository.ComputeCoverageDeltas(newPrices);
 
         // Assert
         var delta = deltas[0];
@@ -235,7 +235,7 @@ public class SqlPriceRepositoryCoverageTests
         };
 
         // Act
-        var deltas = SqlPriceRepository.ComputeDeltas(newPrices);
+        var deltas = SqlPriceRepository.ComputeCoverageDeltas(newPrices);
 
         // Assert
         deltas.Should().HaveCount(3);
@@ -269,7 +269,7 @@ public class SqlPriceRepositoryCoverageTests
         }
 
         // Act
-        var deltas = SqlPriceRepository.ComputeDeltas(newPrices);
+        var deltas = SqlPriceRepository.ComputeCoverageDeltas(newPrices);
 
         // Assert
         deltas.Should().HaveCount(10);

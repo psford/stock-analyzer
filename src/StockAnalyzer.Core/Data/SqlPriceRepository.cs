@@ -39,7 +39,7 @@ public class SqlPriceRepository : IPriceRepository
     /// Compute per-security coverage deltas from a list of newly inserted prices.
     /// Pure in-memory arithmetic — no database access.
     /// </summary>
-    internal static List<CoverageDelta> ComputeDeltas(List<PriceCreateDto> newPrices)
+    internal static List<CoverageDelta> ComputeCoverageDeltas(List<PriceCreateDto> newPrices)
     {
         return newPrices
             .GroupBy(p => p.SecurityAlias)
@@ -359,7 +359,7 @@ public class SqlPriceRepository : IPriceRepository
             await _context.SaveChangesAsync();
 
             // Update coverage tables incrementally after each batch
-            var deltas = ComputeDeltas(newPrices);
+            var deltas = ComputeCoverageDeltas(newPrices);
             await UpdateCoverageAsync(deltas);
 
             count += newPrices.Count;

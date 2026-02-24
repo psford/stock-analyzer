@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using StockAnalyzer.Core.Data;
 using StockAnalyzer.Core.Data.Entities;
 using StockAnalyzer.Core.Services;
+using System.Data;
 using Xunit;
 
 /// <summary>
@@ -28,31 +29,43 @@ public class CoverageIntegrationTests
         if (!IsSqlServerAvailable())
             return;
 
-        // Arrange: Create a unique security alias
-        int testSecurityAlias = 99900 + (int)(DateTime.UtcNow.Ticks % 100);
-
-        await using (var context = CreateContext())
-        {
-            // Seed security master
-            var securityMaster = new SecurityMasterEntity
-            {
-                SecurityAlias = testSecurityAlias,
-                TickerSymbol = $"TEST{testSecurityAlias}",
-                IssueName = "Test Company",
-                Isin = "US0000000001",
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-            context.SecurityMaster.Add(securityMaster);
-            await context.SaveChangesAsync();
-
-            // Seed business calendar for test date range
-            SeedBusinessCalendar(context, new DateTime(2024, 1, 1), new DateTime(2024, 1, 31));
-            await context.SaveChangesAsync();
-        }
+        int testSecurityAlias = 0;
 
         try
         {
+            // Arrange: Insert security master via raw SQL with IDENTITY_INSERT to auto-generate alias
+            await using (var context = CreateContext())
+            {
+                // Insert test security and capture auto-generated alias
+                var connection = context.Database.GetDbConnection();
+                var connectionWasOpen = connection.State == System.Data.ConnectionState.Open;
+                if (!connectionWasOpen)
+                    await connection.OpenAsync();
+
+                try
+                {
+                    using var cmd = connection.CreateCommand();
+                    cmd.CommandText = @"
+                        INSERT INTO data.SecurityMaster (TickerSymbol, IssueName, Isin, CreatedAt, UpdatedAt)
+                        OUTPUT inserted.SecurityAlias
+                        VALUES ('TEST_' + CAST(ABS(CHECKSUM(NEWID())) AS NVARCHAR(10)), 'Test Company', 'US0000000001', GETUTCDATE(), GETUTCDATE())";
+                    cmd.CommandTimeout = 30;
+
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    if (await reader.ReadAsync())
+                        testSecurityAlias = reader.GetInt32(0);
+                }
+                finally
+                {
+                    if (!connectionWasOpen && connection.State == System.Data.ConnectionState.Open)
+                        await connection.CloseAsync();
+                }
+
+                // Seed business calendar for test date range
+                SeedBusinessCalendar(context, new DateTime(2024, 1, 1), new DateTime(2024, 1, 31));
+                await context.SaveChangesAsync();
+            }
+
             // Act: Insert first batch of prices for this security
             var date1 = new DateTime(2024, 1, 10);
             var date2 = new DateTime(2024, 1, 20);
@@ -96,7 +109,8 @@ public class CoverageIntegrationTests
         finally
         {
             // Cleanup
-            await CleanupSecurityData(testSecurityAlias);
+            if (testSecurityAlias > 0)
+                await CleanupSecurityData(testSecurityAlias);
         }
     }
 
@@ -108,46 +122,60 @@ public class CoverageIntegrationTests
         if (!IsSqlServerAvailable())
             return;
 
-        // Arrange
-        int testSecurityAlias = 99910 + (int)(DateTime.UtcNow.Ticks % 100);
-        var originalFirstDate = new DateTime(2024, 1, 15);
-        var originalLastDate = new DateTime(2024, 1, 20);
-        var newFirstDate = new DateTime(2024, 1, 1);
-
-        await using (var context = CreateContext())
-        {
-            // Seed security
-            var securityMaster = new SecurityMasterEntity
-            {
-                SecurityAlias = testSecurityAlias,
-                TickerSymbol = $"WFST{testSecurityAlias}",
-                IssueName = "Test Widen First",
-                Isin = "US0000000002",
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-            context.SecurityMaster.Add(securityMaster);
-
-            // Seed calendar
-            SeedBusinessCalendar(context, new DateTime(2024, 1, 1), new DateTime(2024, 1, 31));
-
-            // Seed initial coverage
-            var initialCoverage = new SecurityPriceCoverageEntity
-            {
-                SecurityAlias = testSecurityAlias,
-                PriceCount = 5,
-                FirstDate = originalFirstDate,
-                LastDate = originalLastDate,
-                ExpectedCount = 4,
-                LastUpdatedAt = DateTime.UtcNow
-            };
-            context.Set<SecurityPriceCoverageEntity>().Add(initialCoverage);
-
-            await context.SaveChangesAsync();
-        }
+        int testSecurityAlias = 0;
 
         try
         {
+            // Arrange: Insert security via raw SQL with auto-generated alias
+            var originalFirstDate = new DateTime(2024, 1, 15);
+            var originalLastDate = new DateTime(2024, 1, 20);
+            var newFirstDate = new DateTime(2024, 1, 1);
+
+            await using (var context = CreateContext())
+            {
+                // Insert test security and capture auto-generated alias
+                var connection = context.Database.GetDbConnection();
+                var connectionWasOpen = connection.State == System.Data.ConnectionState.Open;
+                if (!connectionWasOpen)
+                    await connection.OpenAsync();
+
+                try
+                {
+                    using var cmd = connection.CreateCommand();
+                    cmd.CommandText = @"
+                        INSERT INTO data.SecurityMaster (TickerSymbol, IssueName, Isin, CreatedAt, UpdatedAt)
+                        OUTPUT inserted.SecurityAlias
+                        VALUES ('WFST_' + CAST(ABS(CHECKSUM(NEWID())) AS NVARCHAR(10)), 'Test Widen First', 'US0000000002', GETUTCDATE(), GETUTCDATE())";
+                    cmd.CommandTimeout = 30;
+
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    if (await reader.ReadAsync())
+                        testSecurityAlias = reader.GetInt32(0);
+                }
+                finally
+                {
+                    if (!connectionWasOpen && connection.State == System.Data.ConnectionState.Open)
+                        await connection.CloseAsync();
+                }
+
+                // Seed calendar
+                SeedBusinessCalendar(context, new DateTime(2024, 1, 1), new DateTime(2024, 1, 31));
+
+                // Seed initial coverage
+                var initialCoverage = new SecurityPriceCoverageEntity
+                {
+                    SecurityAlias = testSecurityAlias,
+                    PriceCount = 5,
+                    FirstDate = originalFirstDate,
+                    LastDate = originalLastDate,
+                    ExpectedCount = 4,
+                    LastUpdatedAt = DateTime.UtcNow
+                };
+                context.Set<SecurityPriceCoverageEntity>().Add(initialCoverage);
+
+                await context.SaveChangesAsync();
+            }
+
             // Act: Insert prices before the original first date
             await using (var context = CreateContext())
             {
@@ -177,7 +205,8 @@ public class CoverageIntegrationTests
         }
         finally
         {
-            await CleanupSecurityData(testSecurityAlias);
+            if (testSecurityAlias > 0)
+                await CleanupSecurityData(testSecurityAlias);
         }
     }
 
@@ -189,45 +218,60 @@ public class CoverageIntegrationTests
         if (!IsSqlServerAvailable())
             return;
 
-        // Arrange
-        int testSecurityAlias = 99920 + (int)(DateTime.UtcNow.Ticks % 100);
-        var originalFirstDate = new DateTime(2024, 1, 1);
-        var originalLastDate = new DateTime(2024, 1, 10);
-        var newLastDate = new DateTime(2024, 1, 31);
-
-        await using (var context = CreateContext())
-        {
-            // Seed security
-            var securityMaster = new SecurityMasterEntity
-            {
-                SecurityAlias = testSecurityAlias,
-                TickerSymbol = $"WLST{testSecurityAlias}",
-                IssueName = "Test Widen Last",
-                Isin = "US0000000003",
-                CreatedAt = DateTime.UtcNow
-            };
-            context.SecurityMaster.Add(securityMaster);
-
-            // Seed calendar
-            SeedBusinessCalendar(context, new DateTime(2024, 1, 1), new DateTime(2024, 1, 31));
-
-            // Seed initial coverage
-            var initialCoverage = new SecurityPriceCoverageEntity
-            {
-                SecurityAlias = testSecurityAlias,
-                PriceCount = 5,
-                FirstDate = originalFirstDate,
-                LastDate = originalLastDate,
-                ExpectedCount = 5,
-                LastUpdatedAt = DateTime.UtcNow
-            };
-            context.Set<SecurityPriceCoverageEntity>().Add(initialCoverage);
-
-            await context.SaveChangesAsync();
-        }
+        int testSecurityAlias = 0;
 
         try
         {
+            // Arrange: Insert security via raw SQL with auto-generated alias
+            var originalFirstDate = new DateTime(2024, 1, 1);
+            var originalLastDate = new DateTime(2024, 1, 10);
+            var newLastDate = new DateTime(2024, 1, 31);
+
+            await using (var context = CreateContext())
+            {
+                // Insert test security and capture auto-generated alias
+                var connection = context.Database.GetDbConnection();
+                var connectionWasOpen = connection.State == System.Data.ConnectionState.Open;
+                if (!connectionWasOpen)
+                    await connection.OpenAsync();
+
+                try
+                {
+                    using var cmd = connection.CreateCommand();
+                    cmd.CommandText = @"
+                        INSERT INTO data.SecurityMaster (TickerSymbol, IssueName, Isin, CreatedAt, UpdatedAt)
+                        OUTPUT inserted.SecurityAlias
+                        VALUES ('WLST_' + CAST(ABS(CHECKSUM(NEWID())) AS NVARCHAR(10)), 'Test Widen Last', 'US0000000003', GETUTCDATE(), GETUTCDATE())";
+                    cmd.CommandTimeout = 30;
+
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    if (await reader.ReadAsync())
+                        testSecurityAlias = reader.GetInt32(0);
+                }
+                finally
+                {
+                    if (!connectionWasOpen && connection.State == System.Data.ConnectionState.Open)
+                        await connection.CloseAsync();
+                }
+
+                // Seed calendar
+                SeedBusinessCalendar(context, new DateTime(2024, 1, 1), new DateTime(2024, 1, 31));
+
+                // Seed initial coverage
+                var initialCoverage = new SecurityPriceCoverageEntity
+                {
+                    SecurityAlias = testSecurityAlias,
+                    PriceCount = 5,
+                    FirstDate = originalFirstDate,
+                    LastDate = originalLastDate,
+                    ExpectedCount = 5,
+                    LastUpdatedAt = DateTime.UtcNow
+                };
+                context.Set<SecurityPriceCoverageEntity>().Add(initialCoverage);
+
+                await context.SaveChangesAsync();
+            }
+
             // Act: Insert prices after the original last date
             await using (var context = CreateContext())
             {
@@ -257,7 +301,8 @@ public class CoverageIntegrationTests
         }
         finally
         {
-            await CleanupSecurityData(testSecurityAlias);
+            if (testSecurityAlias > 0)
+                await CleanupSecurityData(testSecurityAlias);
         }
     }
 
@@ -269,32 +314,47 @@ public class CoverageIntegrationTests
         if (!IsSqlServerAvailable())
             return;
 
-        // Arrange
-        int testSecurityAlias = 99930 + (int)(DateTime.UtcNow.Ticks % 100);
-        var startDate = new DateTime(2024, 1, 1);
-        var endDate = new DateTime(2024, 1, 31);
-
-        await using (var context = CreateContext())
-        {
-            // Seed security
-            var securityMaster = new SecurityMasterEntity
-            {
-                SecurityAlias = testSecurityAlias,
-                TickerSymbol = $"BDAY{testSecurityAlias}",
-                IssueName = "Test Business Days",
-                Isin = "US0000000004",
-                CreatedAt = DateTime.UtcNow
-            };
-            context.SecurityMaster.Add(securityMaster);
-
-            // Seed calendar with all days in January 2024
-            // and count expected business days
-            SeedBusinessCalendar(context, startDate, endDate);
-            await context.SaveChangesAsync();
-        }
+        int testSecurityAlias = 0;
 
         try
         {
+            // Arrange: Insert security via raw SQL with auto-generated alias
+            var startDate = new DateTime(2024, 1, 1);
+            var endDate = new DateTime(2024, 1, 31);
+
+            await using (var context = CreateContext())
+            {
+                // Insert test security and capture auto-generated alias
+                var connection = context.Database.GetDbConnection();
+                var connectionWasOpen = connection.State == System.Data.ConnectionState.Open;
+                if (!connectionWasOpen)
+                    await connection.OpenAsync();
+
+                try
+                {
+                    using var cmd = connection.CreateCommand();
+                    cmd.CommandText = @"
+                        INSERT INTO data.SecurityMaster (TickerSymbol, IssueName, Isin, CreatedAt, UpdatedAt)
+                        OUTPUT inserted.SecurityAlias
+                        VALUES ('BDAY_' + CAST(ABS(CHECKSUM(NEWID())) AS NVARCHAR(10)), 'Test Business Days', 'US0000000004', GETUTCDATE(), GETUTCDATE())";
+                    cmd.CommandTimeout = 30;
+
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    if (await reader.ReadAsync())
+                        testSecurityAlias = reader.GetInt32(0);
+                }
+                finally
+                {
+                    if (!connectionWasOpen && connection.State == System.Data.ConnectionState.Open)
+                        await connection.CloseAsync();
+                }
+
+                // Seed calendar with all days in January 2024
+                // and count expected business days
+                SeedBusinessCalendar(context, startDate, endDate);
+                await context.SaveChangesAsync();
+            }
+
             // Act: Insert prices and check ExpectedCount
             await using (var context = CreateContext())
             {
@@ -332,7 +392,8 @@ public class CoverageIntegrationTests
         }
         finally
         {
-            await CleanupSecurityData(testSecurityAlias);
+            if (testSecurityAlias > 0)
+                await CleanupSecurityData(testSecurityAlias);
         }
     }
 
@@ -344,40 +405,54 @@ public class CoverageIntegrationTests
         if (!IsSqlServerAvailable())
             return;
 
-        // Arrange
-        int testSecurityAlias = 99940 + (int)(DateTime.UtcNow.Ticks % 100);
-
-        await using (var context = CreateContext())
-        {
-            // Seed security
-            var securityMaster = new SecurityMasterEntity
-            {
-                SecurityAlias = testSecurityAlias,
-                TickerSymbol = $"MYER{testSecurityAlias}",
-                IssueName = "Test Multi Year",
-                Isin = "US0000000005",
-                CreatedAt = DateTime.UtcNow
-            };
-            context.SecurityMaster.Add(securityMaster);
-
-            // Seed calendar for 2 years
-            SeedBusinessCalendar(context, new DateTime(2023, 12, 1), new DateTime(2025, 1, 31));
-
-            // Pre-seed coverage for one year
-            var existingCoverage = new SecurityPriceCoverageByYearEntity
-            {
-                SecurityAlias = testSecurityAlias,
-                Year = 2024,
-                PriceCount = 10,
-                LastUpdatedAt = DateTime.UtcNow
-            };
-            context.Set<SecurityPriceCoverageByYearEntity>().Add(existingCoverage);
-
-            await context.SaveChangesAsync();
-        }
+        int testSecurityAlias = 0;
 
         try
         {
+            // Arrange: Insert security via raw SQL with auto-generated alias
+            await using (var context = CreateContext())
+            {
+                // Insert test security and capture auto-generated alias
+                var connection = context.Database.GetDbConnection();
+                var connectionWasOpen = connection.State == System.Data.ConnectionState.Open;
+                if (!connectionWasOpen)
+                    await connection.OpenAsync();
+
+                try
+                {
+                    using var cmd = connection.CreateCommand();
+                    cmd.CommandText = @"
+                        INSERT INTO data.SecurityMaster (TickerSymbol, IssueName, Isin, CreatedAt, UpdatedAt)
+                        OUTPUT inserted.SecurityAlias
+                        VALUES ('MYER_' + CAST(ABS(CHECKSUM(NEWID())) AS NVARCHAR(10)), 'Test Multi Year', 'US0000000005', GETUTCDATE(), GETUTCDATE())";
+                    cmd.CommandTimeout = 30;
+
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    if (await reader.ReadAsync())
+                        testSecurityAlias = reader.GetInt32(0);
+                }
+                finally
+                {
+                    if (!connectionWasOpen && connection.State == System.Data.ConnectionState.Open)
+                        await connection.CloseAsync();
+                }
+
+                // Seed calendar for 2 years
+                SeedBusinessCalendar(context, new DateTime(2023, 12, 1), new DateTime(2025, 1, 31));
+
+                // Pre-seed coverage for one year
+                var existingCoverage = new SecurityPriceCoverageByYearEntity
+                {
+                    SecurityAlias = testSecurityAlias,
+                    Year = 2024,
+                    PriceCount = 10,
+                    LastUpdatedAt = DateTime.UtcNow
+                };
+                context.Set<SecurityPriceCoverageByYearEntity>().Add(existingCoverage);
+
+                await context.SaveChangesAsync();
+            }
+
             // Act: Insert prices spanning 2024 and 2025
             await using (var context = CreateContext())
             {
@@ -414,7 +489,8 @@ public class CoverageIntegrationTests
         }
         finally
         {
-            await CleanupSecurityData(testSecurityAlias);
+            if (testSecurityAlias > 0)
+                await CleanupSecurityData(testSecurityAlias);
         }
     }
 
@@ -477,12 +553,16 @@ public class CoverageIntegrationTests
             entries.Add(entry);
         }
 
+        // Load existing dates in a single query to avoid N+1 problem
+        var existingDates = context.BusinessCalendar
+            .Where(bc => bc.SourceId == 1 && bc.EffectiveDate >= startDate.Date && bc.EffectiveDate <= endDate.Date)
+            .Select(bc => bc.EffectiveDate)
+            .ToHashSet();
+
         // Only add if not already exists
         foreach (var entry in entries)
         {
-            var exists = context.BusinessCalendar.Any(
-                bc => bc.SourceId == entry.SourceId && bc.EffectiveDate == entry.EffectiveDate);
-            if (!exists)
+            if (!existingDates.Contains(entry.EffectiveDate))
             {
                 context.BusinessCalendar.Add(entry);
             }

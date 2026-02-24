@@ -2440,7 +2440,7 @@ internal record CoverageDelta(
     Dictionary<int, int> YearCounts);  // Prices per calendar year
 ```
 
-The static method `ComputeDeltas(List<PriceCreateDto> newPrices)` performs in-memory delta arithmetic on newly inserted prices:
+The static method `ComputeCoverageDeltas(List<PriceCreateDto> newPrices)` performs in-memory delta arithmetic on newly inserted prices:
 
 - **Grouping:** Partitions input prices by `SecurityAlias`
 - **Count:** Tallies total inserted prices per security
@@ -2453,7 +2453,7 @@ The static method `ComputeDeltas(List<PriceCreateDto> newPrices)` performs in-me
 During `BulkInsertAsync` batch processing, after each 1000-row batch successfully completes `SaveChangesAsync()`:
 
 ```csharp
-var deltas = ComputeDeltas(newPrices);
+var deltas = ComputeCoverageDeltas(newPrices);
 await UpdateCoverageAsync(deltas);
 ```
 
