@@ -2566,8 +2566,8 @@ app.MapPost("/api/admin/prices/bulk-mark-eodhd-complete", async (IServiceProvide
               AND sm.IsEodhdUnavailable = 0
               AND ca.PriceCount >= @minPriceCount";
 
-        using var conn = context.Database.GetDbConnection();
-        await conn.OpenAsync();
+        var conn = context.Database.GetDbConnection();
+        await context.Database.OpenConnectionAsync();
 
         // First, get the list of securities to mark
         // CA2100: sql is a hardcoded constant string with parameterized @minPriceCount — no injection risk
@@ -2853,8 +2853,8 @@ app.MapPost("/api/admin/securities/calculate-importance", async (IServiceProvide
             // Single efficient query using raw SQL to avoid N+1 and minimize DTU usage
             if (indexDefs.Count > 0)
             {
-                using var conn = context.Database.GetDbConnection();
-                await conn.OpenAsync();
+                var conn = context.Database.GetDbConnection();
+                await context.Database.OpenConnectionAsync();
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"
                     ;WITH LatestPerIndex AS (

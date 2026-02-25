@@ -2711,6 +2711,7 @@ Maintains the historical price database with automatic daily updates.
   - **Penalties:** OTC/Pink/Grey exchange -2, Preferred/Warrant/Right type -2, OTC type -2, Warrant/Right/Unit name -2, Liquidating/Bankrupt name -3
 - Response includes `indexDataAvailable` flag and `securitiesWithIndexMembership` count for diagnostics
 - Run on-demand after adding new securities or loading index constituents; scores persisted in SecurityMaster.ImportanceScore
+- **Connection pattern:** Uses `context.Database.GetDbConnection()` (no `using`) + `context.Database.OpenConnectionAsync()` — EF Core manages the connection lifetime; wrapping in `using` disposes prematurely and causes 500 errors. Same pattern used by `bulk-mark-eodhd-complete`.
 
 **Bulk Load Flow:**
 1. Call `/api/admin/prices/sync-securities` to populate SecurityMaster
