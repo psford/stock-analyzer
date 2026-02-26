@@ -2061,6 +2061,7 @@ See `docs/CI_CD_SETUP.md` for complete setup and troubleshooting guide.
 | SecurityCodeScan.VS2019 | .NET SAST | Build-time analyzer |
 | Bandit | Python SAST | Pre-commit hook |
 | detect-secrets | Secrets detection | Pre-commit hook |
+| Claude Code hooks | SDLC guard rails | PreToolUse/PostToolUse hooks |
 | Dependabot | Dependency scanning | GitHub (enabled) |
 | Jenkins CI | Full test suite | Pre-push hook (local)
 
