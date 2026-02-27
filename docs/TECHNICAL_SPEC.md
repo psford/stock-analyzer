@@ -2283,6 +2283,13 @@ CREATE INDEX IX_MicExchange_Country ON data.MicExchange(Country);
 - Key US exchanges: XNYS (NYSE), XNAS (NASDAQ), ARCX (NYSE Arca), BATS (BATS Exchange), OTCM (OTC Markets), PINX (Pink Sheets)
 - All exchanges marked IsActive based on ISO status field (ACTIVE/UPDATED = 1, others = 0)
 
+**MicExchange Entity Configuration (EF Core):**
+
+- Configured in `StockAnalyzerDbContext.OnModelCreating()` with Fluent API
+- PK: MicCode (char(4), fixed-length)
+- Properties: ExchangeName (nvarchar(200), required), Country (char(2), fixed-length, required), IsActive (bit, default=1)
+- No navigation relationships beyond the reverse relationship from SecurityMaster
+
 **SecurityMaster Table:**
 ```sql
 CREATE TABLE data.SecurityMaster (

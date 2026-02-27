@@ -26,6 +26,7 @@ public class StockAnalyzerDbContext : DbContext
     public DbSet<SecurityMasterEntity> SecurityMaster => Set<SecurityMasterEntity>();
     public DbSet<PriceEntity> Prices => Set<PriceEntity>();
     public DbSet<SourceEntity> Sources => Set<SourceEntity>();
+    public DbSet<MicExchangeEntity> MicExchange => Set<MicExchangeEntity>();
     public DbSet<BusinessCalendarEntity> BusinessCalendar => Set<BusinessCalendarEntity>();
     public DbSet<TrackedSecurityEntity> TrackedSecurities => Set<TrackedSecurityEntity>();
     public DbSet<CompanyBioEntity> CompanyBios => Set<CompanyBioEntity>();
@@ -172,7 +173,9 @@ public class StockAnalyzerDbContext : DbContext
             entity.Property(e => e.PrimaryAssetId).HasMaxLength(50);
             entity.Property(e => e.IssueName).HasMaxLength(200).IsRequired();
             entity.Property(e => e.TickerSymbol).HasMaxLength(20).IsRequired();
-            entity.Property(e => e.Exchange).HasMaxLength(50);
+            entity.Property(e => e.MicCode)
+                .HasColumnType("char(4)")
+                .IsFixedLength();
             entity.Property(e => e.SecurityType).HasMaxLength(50);
             entity.Property(e => e.IsActive).HasDefaultValue(true);
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
@@ -200,6 +203,12 @@ public class StockAnalyzerDbContext : DbContext
                 .WithOne(p => p.Security)
                 .HasForeignKey(p => p.SecurityAlias)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            // Many-to-one: SecurityMaster -> MicExchange
+            entity.HasOne(e => e.MicExchange)
+                .WithMany(m => m.Securities)
+                .HasForeignKey(e => e.MicCode)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         // Prices configuration
@@ -247,6 +256,27 @@ public class StockAnalyzerDbContext : DbContext
                 .WithOne(b => b.Source)
                 .HasForeignKey(b => b.SourceId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // MicExchange configuration (ISO 10383 reference table)
+        modelBuilder.Entity<MicExchangeEntity>(entity =>
+        {
+            entity.ToTable("MicExchange", "data");
+            entity.HasKey(e => e.MicCode);
+            entity.Property(e => e.MicCode)
+                .HasColumnType("char(4)")
+                .IsFixedLength()
+                .IsRequired();
+            entity.Property(e => e.ExchangeName)
+                .HasMaxLength(200)
+                .IsRequired();
+            entity.Property(e => e.Country)
+                .HasColumnType("char(2)")
+                .IsFixedLength()
+                .IsRequired();
+            entity.Property(e => e.IsActive)
+                .IsRequired()
+                .HasDefaultValue(true);
         });
 
         // BusinessCalendar configuration
