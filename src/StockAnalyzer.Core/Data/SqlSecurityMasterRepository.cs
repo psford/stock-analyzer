@@ -46,6 +46,10 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
     /// <inheritdoc />
     public async Task<List<SecurityMasterEntity>> GetAllActiveAsync()
     {
+        // Include MicExchange: Although this loads ~2,800 rows of reference data for ~55K securities,
+        // the JOIN is on char(4) PK/FK which SQL Server handles efficiently. The overhead is minimal
+        // compared to the 55K row scan itself. The alternative (optional Include parameter) adds complexity
+        // for negligible DTU savings on a 5 DTU instance.
         return await _context.SecurityMaster
             .AsNoTracking()
             .Include(s => s.MicExchange)
@@ -74,8 +78,7 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
             TickerSymbol = dto.TickerSymbol.Trim().ToUpperInvariant(),
             IssueName = dto.IssueName.Trim(),
             PrimaryAssetId = dto.PrimaryAssetId?.Trim(),
-            // MicCode: populated by backfill phase (replaces Exchange field)
-            MicCode = null,
+            MicCode = dto.MicCode?.Trim(),
             SecurityType = dto.SecurityType?.Trim(),
             Country = dto.Country?.Trim(),
             Currency = dto.Currency?.Trim(),
@@ -195,8 +198,7 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
                         TickerSymbol = normalizedTicker,
                         IssueName = dto.IssueName.Trim(),
                         PrimaryAssetId = dto.PrimaryAssetId?.Trim(),
-                        // MicCode: populated by backfill phase (replaces Exchange field)
-                        MicCode = null,
+                        MicCode = dto.MicCode?.Trim(),
                         SecurityType = dto.SecurityType?.Trim(),
                         Country = dto.Country?.Trim(),
                         Currency = dto.Currency?.Trim(),
