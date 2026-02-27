@@ -1,7 +1,7 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.52
-**Last Updated:** 2026-02-24
+**Version:** 2.53
+**Last Updated:** 2026-02-26
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
 
@@ -255,6 +255,8 @@ Environment variables: `TWELVEDATA_API_KEY`, `FMP_API_KEY`
   "country": "US",
   "currency": "USD",
   "exchange": "NASDAQ NMS - GLOBAL MARKET",
+  "micCode": "XNAS",
+  "exchangeName": "NASDAQ",
   "isin": null,
   "cusip": null,
   "sedol": null,

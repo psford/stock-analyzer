@@ -387,6 +387,10 @@ var autoTrackSemaphore = new SemaphoreSlim(3, 3);
 var backfillCoverageSemaphore = new SemaphoreSlim(1, 1);
 #pragma warning restore CA2000
 
+// HashSets for MIC code-based scoring (reused across ~30K security iterations)
+var bonusMics = new HashSet<string> { "XNYS", "XNAS" };
+var penaltyMics = new HashSet<string> { "OTCM", "PINX", "XOTC" };
+
 // Ticker validation helper - allows 1-10 alphanumeric chars plus dots, dashes, carets (e.g., BRK.B, BRK-B, ^GSPC)
 static bool IsValidTicker(string? ticker) =>
     !string.IsNullOrWhiteSpace(ticker) &&
@@ -469,6 +473,8 @@ app.MapGet("/api/stock/{ticker}", async (string ticker, AggregatedStockDataServi
         LongName = profile?.Name ?? info.LongName,
         ShortName = profile?.Name ?? info.ShortName,
         Exchange = profile?.Exchange ?? info.Exchange,
+        MicCode = info.MicCode,                        // From SecurityMaster
+        ExchangeName = info.ExchangeName,              // Joined from MicExchange
         Industry = profile?.Industry ?? info.Industry,
         Country = profile?.Country ?? info.Country,
         Website = profile?.WebUrl ?? info.Website,
@@ -851,6 +857,8 @@ app.MapGet("/api/search", async (string q, AggregatedStockDataService stockServi
             shortName = r.ShortName,
             longName = r.LongName,
             exchange = r.Exchange,
+            micCode = r.MicCode,
+            exchangeName = r.ExchangeName,
             type = r.Type,
             displayName = r.DisplayName
         })
@@ -1573,7 +1581,8 @@ app.MapGet("/api/admin/data/securities", async (IServiceProvider serviceProvider
                 securityAlias = s.SecurityAlias,
                 tickerSymbol = s.TickerSymbol,
                 issueName = s.IssueName,
-                exchange = string.Empty, // TODO Phase 2: Use MicExchange.ExchangeName instead of Exchange field
+                micCode = s.MicCode,
+                exchangeName = s.MicExchange?.ExchangeName,
                 securityType = s.SecurityType,
                 country = s.Country,
                 currency = s.Currency,
@@ -2683,6 +2692,7 @@ app.MapPost("/api/admin/securities/reset-unavailable", async (IServiceProvider s
         {
             // Reset ALL unavailable securities
             var unavailable = await context.SecurityMaster
+                .Include(s => s.MicExchange)
                 .Where(s => s.IsEodhdUnavailable && s.IsActive)
                 .ToListAsync();
 
@@ -2698,7 +2708,8 @@ app.MapPost("/api/admin/securities/reset-unavailable", async (IServiceProvider s
             {
                 securityAlias = s.SecurityAlias,
                 ticker = s.TickerSymbol,
-                exchange = string.Empty // TODO Phase 2: Use MicExchange.ExchangeName instead of Exchange field
+                micCode = s.MicCode,
+                exchangeName = s.MicExchange?.ExchangeName
             }).ToList();
 
             Log.Information("Reset IsEodhdUnavailable for ALL {Count} securities", unavailable.Count);
@@ -2708,6 +2719,7 @@ app.MapPost("/api/admin/securities/reset-unavailable", async (IServiceProvider s
             // Reset securities marked unavailable within the last N days (by UpdatedAt)
             var cutoff = DateTime.UtcNow.AddDays(-daysBack);
             var recentlyMarked = await context.SecurityMaster
+                .Include(s => s.MicExchange)
                 .Where(s => s.IsEodhdUnavailable && s.IsActive && s.UpdatedAt >= cutoff)
                 .ToListAsync();
 
@@ -2723,7 +2735,8 @@ app.MapPost("/api/admin/securities/reset-unavailable", async (IServiceProvider s
             {
                 securityAlias = s.SecurityAlias,
                 ticker = s.TickerSymbol,
-                exchange = string.Empty // TODO Phase 2: Use MicExchange.ExchangeName instead of Exchange field
+                micCode = s.MicCode,
+                exchangeName = s.MicExchange?.ExchangeName
             }).ToList();
 
             Log.Information("Reset IsEodhdUnavailable for {Count} securities marked in last {Days} days", recentlyMarked.Count, daysBack);
@@ -2752,7 +2765,7 @@ app.MapPost("/api/admin/securities/reset-unavailable", async (IServiceProvider s
 
 // POST /api/admin/securities/calculate-importance - Calculate importance scores for all active securities
 // Primary signal: index membership (which indices a security belongs to, and how many)
-// Secondary signals: security type, exchange quality
+// Secondary signals: security type, MIC code quality
 // Penalties: OTC/Pink, warrants/rights, distressed securities
 app.MapPost("/api/admin/securities/calculate-importance", async (IServiceProvider serviceProvider) =>
 {
@@ -2797,15 +2810,14 @@ app.MapPost("/api/admin/securities/calculate-importance", async (IServiceProvide
         if (secType.Contains("COMMON STOCK"))
             score += 1;
 
-        // Secondary signal: Exchange quality (0-1 points)
-        // TODO Phase 2: Use MicCode + MicExchange navigation instead of Exchange field
-        // var exchange = sec.Exchange?.ToUpperInvariant() ?? "";
-        // if (exchange.Contains("NYSE") || exchange.Contains("NASDAQ"))
-        //     score += 1;
+        // Secondary signal: MIC code quality (0-1 points)
+        var mic = sec.MicCode;
+        if (mic != null && bonusMics.Contains(mic))
+            score += 1;
+        if (mic != null && penaltyMics.Contains(mic))
+            score -= 2;
 
         // Penalties
-        // if (exchange.Contains("OTC") || exchange.Contains("PINK") || exchange.Contains("GREY"))
-        //     score -= 2;
         if (secType.Contains("PREFERRED") || secType.Contains("WARRANT") || secType.Contains("RIGHT"))
             score -= 2;
         if (secType.Contains("OTC") || secType.Contains("PINK") || secType.Contains("GREY"))
