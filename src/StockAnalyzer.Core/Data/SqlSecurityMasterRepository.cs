@@ -195,7 +195,7 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
                         IssueName = dto.IssueName.Trim(),
                         PrimaryAssetId = dto.PrimaryAssetId?.Trim(),
                         // MicCode: populated by backfill phase (replaces Exchange field)
-            MicCode = null,
+                        MicCode = null,
                         SecurityType = dto.SecurityType?.Trim(),
                         Country = dto.Country?.Trim(),
                         Currency = dto.Currency?.Trim(),

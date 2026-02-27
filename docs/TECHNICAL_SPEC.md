@@ -2274,8 +2274,6 @@ CREATE TABLE data.MicExchange (
     Country CHAR(2) NOT NULL,                       -- ISO 3166 country code (e.g., "US")
     IsActive BIT DEFAULT 1                          -- Whether this exchange is actively trading
 );
-
-CREATE INDEX IX_MicExchange_Country ON data.MicExchange(Country);
 ```
 
 **MIC Seed Data:**
