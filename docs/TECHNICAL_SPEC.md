@@ -2789,6 +2789,10 @@ Maintains the historical price database with automatic daily updates.
 - Non-blocking: runs as fire-and-forget so it doesn't slow down the stock data response
 - Rationale: user searches are a proxy for interest in a stock; auto-tracking ensures the crawler will fill price data for stocks users care about
 
+**MIC Code Enrichment on Stock View:**
+- `GET /api/stock/{ticker}` enriches the response with `micCode` and `exchangeName` from the SecurityMaster→MicExchange join
+- External data providers (Yahoo, FMP) do not carry MIC data, so the endpoint queries SecurityMaster with `.Include(MicExchange)` during the company bio lookup and merges the result into the response
+
 **Gap Detail (`/api/admin/prices/gaps/{securityAlias}`):**
 - Returns specific missing dates for a security
 - **Date capping:** `lastDate` is capped at `DateTime.Today` to prevent requesting future dates from EODHD

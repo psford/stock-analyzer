@@ -490,11 +490,19 @@ app.MapGet("/api/stock/{ticker}", async (string ticker, AggregatedStockDataServi
         var bioCtx = bioScope.ServiceProvider.GetRequiredService<StockAnalyzerDbContext>();
 
         var security = await bioCtx.SecurityMaster
+            .Include(s => s.MicExchange)
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.TickerSymbol == ticker && s.IsActive);
 
         if (security != null)
         {
+            // Enrich with MicCode from SecurityMaster (external providers don't have this)
+            enrichedInfo = enrichedInfo with
+            {
+                MicCode = security.MicCode,
+                ExchangeName = security.MicExchange?.ExchangeName
+            };
+
             // Check CompanyBio cache
             var cachedBio = await bioCtx.CompanyBios
                 .AsNoTracking()
