@@ -13,7 +13,9 @@ public record StockInfo
     public string? Website { get; init; }
     public string? Country { get; init; }
     public string? Currency { get; init; }
-    public string? Exchange { get; init; }
+    public string? Exchange { get; init; }       // Set by external API services
+    public string? MicCode { get; init; }        // ISO 10383 Market Identifier Code from SecurityMaster
+    public string? ExchangeName { get; init; }   // Joined from MicExchange reference table
 
     // Security identifiers
     public string? Isin { get; init; }

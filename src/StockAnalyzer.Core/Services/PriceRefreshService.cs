@@ -586,7 +586,7 @@ public class PriceRefreshService : BackgroundService
         {
             TickerSymbol = s.Symbol,
             IssueName = s.Description ?? s.Symbol,
-            Exchange = s.Exchange,
+            MicCode = null, // Populated later by backfill-mic-codes endpoint
             SecurityType = s.Type
         });
 
@@ -634,7 +634,7 @@ public class PriceRefreshService : BackgroundService
         {
             TickerSymbol = s.Ticker,
             IssueName = s.Name,
-            Exchange = s.Exchange,
+            MicCode = null, // Populated later by backfill-mic-codes endpoint
             SecurityType = s.Type,
             Country = s.Country,
             Currency = s.Currency,
