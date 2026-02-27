@@ -30,6 +30,7 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
         var normalizedTicker = ticker.Trim().ToUpperInvariant();
         return await _context.SecurityMaster
             .AsNoTracking()
+            .Include(s => s.MicExchange)
             .FirstOrDefaultAsync(s => s.TickerSymbol == normalizedTicker);
     }
 
@@ -38,6 +39,7 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
     {
         return await _context.SecurityMaster
             .AsNoTracking()
+            .Include(s => s.MicExchange)
             .FirstOrDefaultAsync(s => s.SecurityAlias == securityAlias);
     }
 
@@ -46,6 +48,7 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
     {
         return await _context.SecurityMaster
             .AsNoTracking()
+            .Include(s => s.MicExchange)
             .Where(s => s.IsActive)
             .OrderBy(s => s.TickerSymbol)
             .ToListAsync();
@@ -240,7 +243,7 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
 
         var normalizedQuery = query.Trim().ToUpperInvariant();
 
-        var baseQuery = _context.SecurityMaster.AsNoTracking();
+        var baseQuery = _context.SecurityMaster.AsNoTracking().Include(s => s.MicExchange);
 
         if (!includeInactive)
         {
