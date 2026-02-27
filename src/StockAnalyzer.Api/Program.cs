@@ -385,6 +385,7 @@ var bulkLoadSemaphore = new SemaphoreSlim(1, 1);
 var calculateImportanceSemaphore = new SemaphoreSlim(1, 1);
 var autoTrackSemaphore = new SemaphoreSlim(3, 3);
 var backfillCoverageSemaphore = new SemaphoreSlim(1, 1);
+var backfillMicCodesSemaphore = new SemaphoreSlim(1, 1);
 #pragma warning restore CA2000
 
 // HashSets for MIC code-based scoring (reused across ~30K security iterations)
@@ -2991,6 +2992,156 @@ app.MapPost("/api/admin/securities/calculate-importance", async (IServiceProvide
 .WithOpenApi()
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status500InternalServerError);
+
+// POST /api/admin/securities/backfill-mic-codes - Backfill MIC codes from EODHD exchange symbols
+// Fetches all US symbols from EODHD, maps exchange names to ISO 10383 MIC codes,
+// and bulk-updates SecurityMaster.MicCode for active securities.
+app.MapPost("/api/admin/securities/backfill-mic-codes", async (IServiceProvider serviceProvider) =>
+{
+    using var scope = serviceProvider.CreateScope();
+    var context = scope.ServiceProvider.GetService<StockAnalyzerDbContext>();
+    var eodhdService = scope.ServiceProvider.GetService<EodhdService>();
+
+    if (context == null)
+        return Results.BadRequest(new { error = "Database context not configured" });
+
+    if (eodhdService == null)
+        return Results.BadRequest(new { error = "EODHD service not available" });
+
+    // Concurrency guard — only one backfill at a time
+    if (!await backfillMicCodesSemaphore.WaitAsync(0))
+        return Results.Conflict(new { error = "MIC code backfill already in progress." });
+
+    try
+    {
+        Log.Information("Starting MIC code backfill from EODHD exchange symbols");
+
+        // EODHD exchange name → ISO 10383 MIC code mapping (case-insensitive)
+        var exchangeMapping = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "NYSE", "XNYS" },
+            { "NASDAQ", "XNAS" },
+            { "NYSE ARCA", "ARCX" },
+            { "ARCA", "ARCX" },
+            { "BATS", "BATS" },
+            { "NYSE MKT", "XNYS" },
+            { "OTC", "OTCM" },
+            { "PINK", "PINX" },
+            { "OTCQB", "OTCM" },
+            { "OTCQX", "OTCM" },
+            { "OTCMKTS", "OTCM" },
+            { "OTCBB", "OTCM" },
+            { "OTCGREY", "XOTC" },
+            { "NMFQS", "XNAS" },
+        };
+
+        // Fetch all US symbols from EODHD (single API call)
+        var symbols = await eodhdService.GetExchangeSymbolsAsync("US");
+        Log.Information("Fetched {Count} US symbols from EODHD", symbols.Count);
+
+        // Build ticker → MIC lookup and track unknown exchanges
+        var tickerToMic = new Dictionary<string, string>();
+        var unknownExchanges = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var symbol in symbols)
+        {
+            if (exchangeMapping.TryGetValue(symbol.Exchange, out var mic))
+            {
+                tickerToMic[symbol.Code] = mic;
+            }
+            else
+            {
+                // Unknown exchange names are logged but don't fail processing (AC3.5)
+                if (!unknownExchanges.ContainsKey(symbol.Exchange))
+                    unknownExchanges[symbol.Exchange] = 0;
+                unknownExchanges[symbol.Exchange]++;
+            }
+        }
+
+        // Log unknown exchanges as warnings
+        foreach (var (exchange, count) in unknownExchanges.OrderByDescending(x => x.Value))
+        {
+            Log.Warning("Unknown EODHD exchange: {Exchange} ({Count} symbols)",
+                LogSanitizer.Sanitize(exchange), LogSanitizer.Sanitize(count.ToString()));
+        }
+
+        Log.Information("Built ticker → MIC lookup with {Count} mapped tickers, {UnknownCount} unknown exchanges",
+            tickerToMic.Count, unknownExchanges.Count);
+
+        // Batch update SecurityMaster.MicCode (1000 per batch)
+        var pageSize = 1000;
+        var skip = 0;
+        var matched = 0;
+        var unmatched = 0;
+
+        while (true)
+        {
+            var batch = await context.SecurityMaster
+                .Where(s => s.IsActive)
+                .OrderBy(s => s.SecurityAlias)
+                .Skip(skip)
+                .Take(pageSize)
+                .ToListAsync();
+
+            if (batch.Count == 0) break;
+
+            foreach (var security in batch)
+            {
+                if (tickerToMic.TryGetValue(security.TickerSymbol, out var mic))
+                {
+                    security.MicCode = mic;
+                    security.UpdatedAt = DateTime.UtcNow;
+                    matched++;
+                }
+                else
+                {
+                    unmatched++;
+                }
+            }
+
+            await context.SaveChangesAsync();
+            context.ChangeTracker.Clear();
+            skip += pageSize;
+
+            Log.Information("Processed batch of {Count} securities (matched: {Matched}, unmatched: {Unmatched})",
+                batch.Count, matched, unmatched);
+        }
+
+        Log.Information("MIC code backfill complete: {Matched} matched, {Unmatched} unmatched",
+            matched, unmatched);
+
+        // Build response with unknown exchanges list
+        var unknownExchangesList = unknownExchanges
+            .Select(x => new { exchange = x.Key, count = x.Value })
+            .OrderByDescending(x => x.count)
+            .ToList();
+
+        return Results.Ok(new
+        {
+            success = true,
+            message = "MIC code backfill complete",
+            totalEodhdSymbols = symbols.Count,
+            matched,
+            unmatched,
+            unknownExchanges = unknownExchangesList
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Failed to backfill MIC codes");
+        return Results.Problem(ex.Message);
+    }
+    finally
+    {
+        backfillMicCodesSemaphore.Release();
+    }
+})
+.WithName("BackfillMicCodes")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status409Conflict)
 .Produces(StatusCodes.Status500InternalServerError);
 
 // POST /api/admin/securities/promote-untracked - Promote untracked securities to tracked
