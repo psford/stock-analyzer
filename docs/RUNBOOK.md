@@ -350,5 +350,6 @@ az webapp restart --name app-stockanalyzer-prod --resource-group rg-stockanalyze
 
 | Date | Change |
 |------|--------|
+| 2026-02-26 | Added MIC Code Enrichment post-deploy operational sequence (5-step workflow) |
 | 2026-01-19 | Updated for App Service migration, Key Vault, removed ACI references |
 | 2026-01-18 | Initial runbook created (ACI-based) |
