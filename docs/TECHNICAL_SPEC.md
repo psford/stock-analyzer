@@ -1,7 +1,7 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.52
-**Last Updated:** 2026-02-24
+**Version:** 2.55
+**Last Updated:** 2026-02-26
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
 
@@ -255,6 +255,8 @@ Environment variables: `TWELVEDATA_API_KEY`, `FMP_API_KEY`
   "country": "US",
   "currency": "USD",
   "exchange": "NASDAQ NMS - GLOBAL MARKET",
+  "micCode": "XNAS",
+  "exchangeName": "NASDAQ",
   "isin": null,
   "cusip": null,
   "sedol": null,
@@ -328,7 +330,9 @@ public record StockInfo
     public string? Website { get; init; }
     public string? Country { get; init; }
     public string? Currency { get; init; }
-    public string? Exchange { get; init; }
+    public string? Exchange { get; init; }       // Set by external API services
+    public string? MicCode { get; init; }        // ISO 10383 Market Identifier Code from SecurityMaster
+    public string? ExchangeName { get; init; }   // Joined from MicExchange reference table
 
     // Security identifiers
     public string? Isin { get; init; }
@@ -363,10 +367,13 @@ public record SearchResult
     public required string Symbol { get; init; }
     public required string ShortName { get; init; }
     public string? LongName { get; init; }
-    public string? Exchange { get; init; }
+    public string? Exchange { get; init; }       // Set by external API services
+    public string? MicCode { get; init; }        // ISO 10383 Market Identifier Code from SecurityMaster
+    public string? ExchangeName { get; init; }   // Joined from MicExchange reference table
     public string? Type { get; init; }
     public string DisplayName => $"{Symbol} - {ShortName}" +
-        (Exchange != null ? $" ({Exchange})" : "");
+        (ExchangeName != null ? $" ({ExchangeName})" :
+         Exchange != null ? $" ({Exchange})" : "");
 }
 ```
 
@@ -452,7 +459,9 @@ public record CompanyProfile
     public string? Name { get; init; }
     public string? Country { get; init; }
     public string? Currency { get; init; }
-    public string? Exchange { get; init; }
+    public string? Exchange { get; init; }       // Set by Finnhub/NewsService
+    public string? MicCode { get; init; }        // ISO 10383 Market Identifier Code from SecurityMaster
+    public string? ExchangeName { get; init; }   // Joined from MicExchange reference table
     public string? Industry { get; init; }
     public string? WebUrl { get; init; }
     public string? Logo { get; init; }
@@ -979,6 +988,59 @@ private static List<PortfolioSignificantMove> CalculateSignificantMoves(
     return moves;
 }
 ```
+
+### 5.10 SecurityMaster Importance Scoring Service
+
+**Purpose:** Calculate importance scores (1-10) for all securities to prioritize data loading and indexing.
+
+**Algorithm (Multi-Signal):**
+
+The ImportanceScore combines index membership signals with security quality attributes.
+
+**Base Score: 1** (all securities start at 1)
+
+**Signal 1: Index Membership (0-6 points)**
+
+Signals based on index tier membership:
+- **6 points**: In 2+ flagship indices (S&P 500, Russell 1000, Russell 3000)
+- **5 points**: In 1 flagship index (e.g., Russell 2000 only)
+- **4 points**: In 2+ core indices (Russell 2000, Nasdaq 100, Russell Mid/Small Cap)
+- **3 points**: In 1 core index
+- **2 points**: In 3+ thematic/sector indices
+- **1 point**: In at least 1 index
+
+**Signal 2: Breadth Bonus (0-1 points)**
+
+- **+1 point**: If security is held across 8+ indices (diversified exposure)
+
+**Signal 3: Security Type (0-1 points)**
+
+- **+1 point**: Common Stock (primary market asset)
+- **-2 points**: Preferred Shares, Warrants, Rights
+- **-2 points**: Types containing "OTC", "PINK", "GREY" (low-quality markets)
+
+**Signal 4: Market Identifier Code (0-1 points)**
+
+- **+1 point**: Bonus MICs — XNYS (NYSE), XNAS (NASDAQ)
+- **-2 points**: Penalty MICs — OTCM (OTC Markets), PINX (Pink Sheets), XOTC (OTC)
+
+**Penalties:**
+
+- **-2 points**: Warrant, Right, Unit in issue name
+- **-3 points**: Liquidating, Bankrupt, Liquidation in issue name
+
+**Score Clamp:** Final score is clamped to [1, 10].
+
+**Maximum Achievable Score: 10**
+- Base (1) + Index membership (6) + Breadth (1) + Common stock (1) + Bonus MIC (1) = **10**
+
+**Endpoint:**
+
+```
+POST /api/admin/securities/calculate-importance
+```
+
+Processes all active securities, updates ImportanceScore in SecurityMaster table. Returns count of processed securities.
 
 ---
 
@@ -2061,6 +2123,7 @@ See `docs/CI_CD_SETUP.md` for complete setup and troubleshooting guide.
 | SecurityCodeScan.VS2019 | .NET SAST | Build-time analyzer |
 | Bandit | Python SAST | Pre-commit hook |
 | detect-secrets | Secrets detection | Pre-commit hook |
+| Claude Code hooks | SDLC guard rails | PreToolUse/PostToolUse hooks |
 | Dependabot | Dependency scanning | GitHub (enabled) |
 | Jenkins CI | Full test suite | Pre-push hook (local)
 
@@ -2262,6 +2325,41 @@ The application maintains a separate `data` schema for domain data (securities a
 - **Backup strategy** - `data` schema (larger) can be backed up on different schedule
 - **Future scaling** - Could move `data` schema to separate database later
 
+**MicExchange Table (ISO 10383 Reference):**
+
+Reference table for ISO 10383 Market Identifier Codes (MICs). Enables normalized exchange identification across securities.
+
+```sql
+CREATE TABLE data.MicExchange (
+    MicCode CHAR(4) PRIMARY KEY,                    -- ISO 10383 MIC code (e.g., "XNYS")
+    ExchangeName NVARCHAR(200) NOT NULL,            -- Display name (e.g., "New York Stock Exchange")
+    Country CHAR(2) NOT NULL,                       -- ISO 3166 country code (e.g., "US")
+    IsActive BIT DEFAULT 1                          -- Whether this exchange is actively trading
+);
+```
+
+**MIC Seed Data:**
+- Contains ~2,274 rows from ISO 10383 standard as of 2026-02-25
+- Key US exchanges: XNYS (NYSE), XNAS (NASDAQ), ARCX (NYSE Arca), BATS (BATS Exchange), OTCM (OTC Markets), PINX (Pink Sheets)
+- All exchanges marked IsActive based on ISO status field (ACTIVE/UPDATED = 1, others = 0)
+
+**MicExchange Entity Configuration (EF Core):**
+
+- Configured in `StockAnalyzerDbContext.OnModelCreating()` with Fluent API
+- PK: MicCode (char(4), fixed-length)
+- Properties: ExchangeName (nvarchar(200), required), Country (char(2), fixed-length, required), IsActive (bit, default=1)
+- No navigation relationships beyond the reverse relationship from SecurityMaster
+
+**EF Core Migration: AddMicExchangeTable**
+
+- Migration: `20260227013220_AddMicExchangeTable.cs`
+- Drops Exchange column from SecurityMaster table
+- Adds MicCode column (char(4), nullable, FK to MicExchange)
+- Creates MicExchange table with 2817 rows from ISO 10383 standard seed data
+- Creates FK constraint from SecurityMaster.MicCode → MicExchange.MicCode with OnDelete.SetNull
+- Includes key US exchanges: XNYS (NYSE), XNAS (NASDAQ), ARCX (NYSE Arca), BATS, OTCM, PINX
+- Down() migration properly re-adds Exchange column for rollback
+
 **SecurityMaster Table:**
 ```sql
 CREATE TABLE data.SecurityMaster (
@@ -2269,7 +2367,7 @@ CREATE TABLE data.SecurityMaster (
     PrimaryAssetId NVARCHAR(50),                   -- Future: CUSIP, ISIN, etc.
     IssueName NVARCHAR(200) NOT NULL,              -- Full name (e.g., "Apple Inc.")
     TickerSymbol NVARCHAR(20) NOT NULL,            -- Ticker (e.g., "AAPL")
-    Exchange NVARCHAR(50),                          -- Exchange (e.g., "NASDAQ")
+    MicCode CHAR(4),                                -- ISO 10383 Market Identifier Code (e.g., "XNYS")
     SecurityType NVARCHAR(50),                      -- Common Stock, ETF, ADR, etc.
     Country NVARCHAR(10),                           -- Country code (e.g., "USA")
     Currency NVARCHAR(10),                          -- Currency (e.g., "USD")
@@ -2280,7 +2378,8 @@ CREATE TABLE data.SecurityMaster (
     IsEodhdComplete BIT DEFAULT 0,                  -- Whether all available EODHD data has been loaded
     ImportanceScore INT DEFAULT 5,                  -- Calculated importance (1-10, 10=most important)
     CreatedAt DATETIME2 DEFAULT GETUTCDATE(),
-    UpdatedAt DATETIME2 DEFAULT GETUTCDATE()
+    UpdatedAt DATETIME2 DEFAULT GETUTCDATE(),
+    FOREIGN KEY (MicCode) REFERENCES data.MicExchange(MicCode) ON DELETE SET NULL
 );
 
 CREATE UNIQUE INDEX IX_SecurityMaster_TickerSymbol ON data.SecurityMaster(TickerSymbol);
@@ -2690,6 +2789,10 @@ Maintains the historical price database with automatic daily updates.
 - Non-blocking: runs as fire-and-forget so it doesn't slow down the stock data response
 - Rationale: user searches are a proxy for interest in a stock; auto-tracking ensures the crawler will fill price data for stocks users care about
 
+**MIC Code Enrichment on Stock View:**
+- `GET /api/stock/{ticker}` enriches the response with `micCode` and `exchangeName` from the SecurityMaster→MicExchange join
+- External data providers (Yahoo, FMP) do not carry MIC data, so the endpoint queries SecurityMaster with `.Include(MicExchange)` during the company bio lookup and merges the result into the response
+
 **Gap Detail (`/api/admin/prices/gaps/{securityAlias}`):**
 - Returns specific missing dates for a security
 - **Date capping:** `lastDate` is capped at `DateTime.Today` to prevent requesting future dates from EODHD
@@ -2711,6 +2814,7 @@ Maintains the historical price database with automatic daily updates.
   - **Penalties:** OTC/Pink/Grey exchange -2, Preferred/Warrant/Right type -2, OTC type -2, Warrant/Right/Unit name -2, Liquidating/Bankrupt name -3
 - Response includes `indexDataAvailable` flag and `securitiesWithIndexMembership` count for diagnostics
 - Run on-demand after adding new securities or loading index constituents; scores persisted in SecurityMaster.ImportanceScore
+- **Connection pattern:** Uses `context.Database.GetDbConnection()` (no `using`) + `context.Database.OpenConnectionAsync()` — EF Core manages the connection lifetime; wrapping in `using` disposes prematurely and causes 500 errors. Same pattern used by `bulk-mark-eodhd-complete`.
 
 **Bulk Load Flow:**
 1. Call `/api/admin/prices/sync-securities` to populate SecurityMaster
@@ -3209,6 +3313,9 @@ const newsPromise = API.getAggregatedNews(ticker, 30, 10);
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.55 | 2026-02-26 | **SecurityMaster MIC Code Enrichment (Phase 5):** Added section 5.10 documenting ImportanceScore algorithm with MIC-based scoring (bonus MICs: XNYS +1, XNAS +1; penalty MICs: OTCM -2, PINX -2, XOTC -2). Maximum achievable score now 10. Added post-deploy operational sequence to RUNBOOK.md. |
+| 2.54 | 2026-02-26 | **SecurityMaster MIC Code Enrichment (Phase 4):** Implemented `POST /api/admin/securities/backfill-mic-codes` endpoint. Fetches all US symbols via `EodhdService.GetExchangeSymbolsAsync("US")` (~48K symbols), maps EODHD exchange names to ISO 10383 MIC codes using configurable dictionary (NASDAQ→XNAS, NYSE→XNYS, OTC→OTCM, etc.). Bulk-updates `SecurityMaster.MicCode` in batches of 1000 with `SaveChangesAsync` + `ChangeTracker.Clear()` per batch. Logs unknown exchanges as warnings without failing (AC3.5). Returns summary: `totalEodhdSymbols`, `matched`, `unmatched`, list of `unknownExchanges` with counts. Concurrency guard via `SemaphoreSlim(1,1)` returns 409 Conflict if already running. All user strings in logs wrapped with `LogSanitizer.Sanitize()` (CWE-117). Exchange mapping dictionary (14 mappings) handles case-insensitive lookups: NYSE/NASDAQ/NYSE ARCA/ARCA/BATS/NYSE MKT/OTC/PINK/OTCQB/OTCQX/OTCMKTS/OTCBB/OTCGREY/NMFQS. Verifies: secmaster-mic.AC3.1, secmaster-mic.AC3.2, secmaster-mic.AC3.3, secmaster-mic.AC3.4, secmaster-mic.AC3.5. |
+| 2.53 | 2026-02-26 | **SecurityMaster MIC Code Enrichment (Phase 2):** Renamed `Exchange` → `MicCode` on SecurityMaster DTOs and repository methods. `SecurityMasterCreateDto` and `SecurityMasterUpdateDto` now use `MicCode` (ISO 10383 code populated by backfill endpoint). `SqlSecurityMasterRepository.CreateAsync/UpdateAsync/UpsertManyAsync` updated to handle `MicCode` instead of `Exchange` — **code review fix:** `CreateAsync` (line 81) and `UpsertManyAsync` insert path (line 201) now respect `dto.MicCode?.Trim()` instead of hardcoding `null`, fixing asymmetry with update paths. `GetAllActiveAsync` documents why `.Include(MicExchange)` is acceptable: ~2,800 reference rows with efficient char(4) PK/FK join adds minimal DTU overhead vs 55K row scan. Added `MicCode` and `ExchangeName` fields to response models (`StockInfo`, `SearchResult`, `CompanyProfile`) while keeping `Exchange` for external API compatibility (FmpService, TwelveDataService, YahooFinanceService, Finnhub). `SearchResult.DisplayName` now prefers `ExchangeName` (e.g., "New York Stock Exchange") over `Exchange` for readability. Updated `PriceRefreshService` methods (`SyncSecurityMasterFromEodhdAsync`, `SyncSecurityMasterFromSymbolCacheAsync`) to set `MicCode = null` (populated later by backfill-mic-codes endpoint in Phase 4). Verifies: secmaster-mic.AC6.1, secmaster-mic.AC6.2 (partial). |
 | 2.52 | 2026-02-24 | **Pipeline DTU Fix (5 Phases):** Complete replacement of all Prices table full-scans with pre-aggregated coverage metadata. **Phase 1:** Two new EF Core entities (`SecurityPriceCoverageEntity`, `SecurityPriceCoverageByYearEntity`) with idempotent migration. **Phase 2:** `ComputeCoverageDeltas` pure function + `UpdateCoverageAsync` MERGE SQL wired into `BulkInsertAsync` for incremental coverage updates during price loads (no Prices scan). 10 unit tests + 6 integration tests. **Phase 3:** Gap endpoint 4-CTE query replaced with 3-table coverage join (timeout 300s→30s). **Phase 4:** Refresh-summary Prices scan replaced with CoverageByYear aggregation (timeout 300s→30s). TradingDays now from BusinessCalendar (expected days, not actual). **Phase 5:** New `POST /api/admin/prices/backfill-coverage` endpoint for one-time bootstrap via MERGE (600s timeout, semaphore-guarded, idempotent). All operations now within 5 DTU budget on Azure SQL Basic. |
 | 2.51 | 2026-02-24 | **SecurityPriceCoverage DbContext Registration (Pipeline DTU Fix Phase 1):** Registered `SecurityPriceCoverageEntity` and `SecurityPriceCoverageByYearEntity` in `StockAnalyzerDbContext.cs` with Fluent API configuration. Tables: `data.SecurityPriceCoverage` (PK: SecurityAlias, 1:1 FK to SecurityMaster) and `data.SecurityPriceCoverageByYear` (PK: SecurityAlias+Year, N:1 FK to SecurityMaster). GapDays configured as persisted computed column `ISNULL(ExpectedCount, 0) - PriceCount`. Foundation for Phase 2–5 DTU optimization (pre-aggregated coverage metadata replaces expensive full-table Prices scans). |
 | 2.48 | 2026-02-05 | **Theme Editor Security Hardening:** Comprehensive anti-abuse system for theme generator. **Sanitization:** `sanitize_prompt()` enforces 2000-char max, strips control characters (CWE-117), removes null bytes. Frontend: character counters, `maxlength` attributes. **Scope Enforcement:** `is_theme_related()` rejects off-topic prompts; system prompt hardened to ONLY output theme JSON; `validate_theme_response()` verifies valid CSS variables in response. **Jailbreak Detection:** IP-based violation tracking with escalating blocks — 2s rate limit, 3 violations → 5-min soft block, 5 violations → 60-min hard block (escalates on repeat). Detects evasion patterns: encoding tricks, multi-language, instruction overrides, theme word stuffing. `enforce_access_control()` integrates all checks. HTTP 429 responses for blocked clients. |

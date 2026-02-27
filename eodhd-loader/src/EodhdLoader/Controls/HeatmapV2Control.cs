@@ -82,6 +82,7 @@ public class HeatmapV2Control : UserControl
     private Dictionary<(int year, int score), HeatmapCell>? _cellLookup;
     private int _minYear, _maxYear;
     private long _maxTracked, _maxUntracked;
+    private const int TradingDaysPerYear = 252;
 
     // Hover state
     private int _hoverYear = -1;
@@ -365,10 +366,14 @@ public class HeatmapV2Control : UserControl
                 blobR = 0; blobG = 255; blobB = 136;
             }
 
-            // Normalize with sqrt perceptual scaling
-            double t = Math.Sqrt(Math.Min(1.0, (double)cell.TrackedRecords / _maxTracked));
-            double u = Math.Sqrt(Math.Min(1.0, (double)cell.UntrackedRecords / _maxUntracked));
-            double intensity = 0.5 * t + 0.5 * u;
+            // Coverage-based intensity: tracked records / (total securities × trading days)
+            int totalSecurities = cell.TrackedSecurities + cell.UntrackedSecurities;
+            int estimatedDays = (year < DateTime.Now.Year)
+                ? TradingDaysPerYear
+                : Math.Max(1, (int)(TradingDaysPerYear * DateTime.Now.DayOfYear / 365.0));
+            long maxPossible = (long)totalSecurities * estimatedDays;
+            double coverage = (maxPossible > 0) ? Math.Min(1.0, (double)cell.TrackedRecords / maxPossible) : 0;
+            double intensity = Math.Sqrt(coverage); // sqrt for perceptual scaling
 
             if (intensity < 0.01) continue;
 
@@ -675,14 +680,17 @@ public class HeatmapV2Control : UserControl
 
             if (year >= 0 && score >= 0 && _cellLookup.TryGetValue((year, score), out var cell))
             {
-                double t = Math.Sqrt(Math.Min(1.0, (double)cell.TrackedRecords / _maxTracked));
-                double u = Math.Sqrt(Math.Min(1.0, (double)cell.UntrackedRecords / _maxUntracked));
-                double intensity = 0.5 * t + 0.5 * u;
+                int totalSec = cell.TrackedSecurities + cell.UntrackedSecurities;
+                int estDays = (year < DateTime.Now.Year)
+                    ? TradingDaysPerYear
+                    : Math.Max(1, (int)(TradingDaysPerYear * DateTime.Now.DayOfYear / 365.0));
+                long maxPoss = (long)totalSec * estDays;
+                double coveragePct = (maxPoss > 0) ? (double)cell.TrackedRecords / maxPoss : 0;
 
                 _tooltip.Content = $"Year: {year}  Score: {score}\n" +
                     $"Tracked: {cell.TrackedRecords:N0} records ({cell.TrackedSecurities:N0} securities)\n" +
                     $"Untracked: {cell.UntrackedRecords:N0} records ({cell.UntrackedSecurities:N0} securities)\n" +
-                    $"Coverage: {intensity:P0}";
+                    $"Coverage: {coveragePct:P0}";
                 _tooltip.IsOpen = true;
             }
             else if (year >= 0 && score >= 0)

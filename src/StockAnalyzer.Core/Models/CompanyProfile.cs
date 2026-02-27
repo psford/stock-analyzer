@@ -9,7 +9,9 @@ public record CompanyProfile
     public string? Name { get; init; }
     public string? Country { get; init; }
     public string? Currency { get; init; }
-    public string? Exchange { get; init; }
+    public string? Exchange { get; init; }       // Set by Finnhub/NewsService
+    public string? MicCode { get; init; }        // ISO 10383 Market Identifier Code from SecurityMaster
+    public string? ExchangeName { get; init; }   // Joined from MicExchange reference table
     public string? Industry { get; init; }
     public string? WebUrl { get; init; }
     public string? Logo { get; init; }

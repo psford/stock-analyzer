@@ -322,3 +322,20 @@ Phase 4 successfully concludes the 4-phase iShares constituent loader implementa
 **Test Status**: 60/60 passing (100%)
 **Build Status**: Succeeded, 0 errors, 8 warnings (pre-existing, unrelated to phase)
 **DI Status**: All constructor dependencies resolvable
+
+## HeatmapV2Control
+
+### Overview
+`HeatmapV2Control` renders a year × ImportanceScore coverage heatmap using SkiaSharp. Each cell's brightness represents data coverage for that year/score combination.
+
+### Intensity Calculation
+- **Formula**: `sqrt(TrackedRecords / (TotalSecurities × TradingDays))` — coverage-based with sqrt perceptual scaling
+- **TradingDays**: 252 per year (constant). Current year prorated by day-of-year.
+- **TotalSecurities**: `TrackedSecurities + UntrackedSecurities` from `CoverageSummary`
+
+### Tooltip
+- Shows year, score, tracked/untracked record and security counts, and coverage percentage
+- Coverage percentage is raw (not capped) to surface data integrity issues like >100% coverage
+
+### Version History
+- **2026-02-25**: Changed intensity from absolute-count normalization (`TrackedRecords / MaxTrackedRecords`) to coverage-based (`TrackedRecords / (TotalSecurities × TradingDays)`). Previous formula made high-coverage low-count scores appear dark.

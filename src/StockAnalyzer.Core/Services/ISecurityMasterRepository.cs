@@ -108,9 +108,9 @@ public record SecurityMasterCreateDto
     public string? PrimaryAssetId { get; init; }
 
     /// <summary>
-    /// Optional exchange where the security is traded.
+    /// Optional MIC code (Market Identifier Code) of the exchange.
     /// </summary>
-    public string? Exchange { get; init; }
+    public string? MicCode { get; init; }
 
     /// <summary>
     /// Optional security type (e.g., "Common Stock", "ETF").
@@ -150,9 +150,9 @@ public record SecurityMasterUpdateDto
     public string? PrimaryAssetId { get; init; }
 
     /// <summary>
-    /// Updated exchange.
+    /// Updated MIC code (Market Identifier Code) of the exchange.
     /// </summary>
-    public string? Exchange { get; init; }
+    public string? MicCode { get; init; }
 
     /// <summary>
     /// Updated security type.

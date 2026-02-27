@@ -314,7 +314,7 @@ public class ISharesConstituentService : IISharesConstituentService
             PrimaryAssetId = holding.Cusip ?? holding.Isin,
             IssueName = holding.Name,
             TickerSymbol = holding.Ticker,
-            Exchange = holding.Exchange,
+            MicCode = null, // Populated by backfill-mic-codes endpoint
             SecurityType = "Common Stock",
             Country = holding.Location,
             Currency = holding.Currency,

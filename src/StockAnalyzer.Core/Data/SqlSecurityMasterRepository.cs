@@ -30,6 +30,7 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
         var normalizedTicker = ticker.Trim().ToUpperInvariant();
         return await _context.SecurityMaster
             .AsNoTracking()
+            .Include(s => s.MicExchange)
             .FirstOrDefaultAsync(s => s.TickerSymbol == normalizedTicker);
     }
 
@@ -38,14 +39,20 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
     {
         return await _context.SecurityMaster
             .AsNoTracking()
+            .Include(s => s.MicExchange)
             .FirstOrDefaultAsync(s => s.SecurityAlias == securityAlias);
     }
 
     /// <inheritdoc />
     public async Task<List<SecurityMasterEntity>> GetAllActiveAsync()
     {
+        // Include MicExchange: Although this loads ~2,800 rows of reference data for ~55K securities,
+        // the JOIN is on char(4) PK/FK which SQL Server handles efficiently. The overhead is minimal
+        // compared to the 55K row scan itself. The alternative (optional Include parameter) adds complexity
+        // for negligible DTU savings on a 5 DTU instance.
         return await _context.SecurityMaster
             .AsNoTracking()
+            .Include(s => s.MicExchange)
             .Where(s => s.IsActive)
             .OrderBy(s => s.TickerSymbol)
             .ToListAsync();
@@ -71,7 +78,7 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
             TickerSymbol = dto.TickerSymbol.Trim().ToUpperInvariant(),
             IssueName = dto.IssueName.Trim(),
             PrimaryAssetId = dto.PrimaryAssetId?.Trim(),
-            Exchange = dto.Exchange?.Trim(),
+            MicCode = dto.MicCode?.Trim(),
             SecurityType = dto.SecurityType?.Trim(),
             Country = dto.Country?.Trim(),
             Currency = dto.Currency?.Trim(),
@@ -102,8 +109,8 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
             entity.IssueName = dto.IssueName.Trim();
         if (dto.PrimaryAssetId != null)
             entity.PrimaryAssetId = dto.PrimaryAssetId.Trim();
-        if (dto.Exchange != null)
-            entity.Exchange = dto.Exchange.Trim();
+        if (dto.MicCode != null)
+            entity.MicCode = dto.MicCode.Trim();
         if (dto.SecurityType != null)
             entity.SecurityType = dto.SecurityType.Trim();
         if (dto.Country != null)
@@ -169,8 +176,8 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
                     existing.IssueName = dto.IssueName.Trim();
                     if (dto.PrimaryAssetId != null)
                         existing.PrimaryAssetId = dto.PrimaryAssetId.Trim();
-                    if (dto.Exchange != null)
-                        existing.Exchange = dto.Exchange.Trim();
+                    if (dto.MicCode != null)
+                        existing.MicCode = dto.MicCode.Trim();
                     if (dto.SecurityType != null)
                         existing.SecurityType = dto.SecurityType.Trim();
                     if (dto.Country != null)
@@ -191,7 +198,7 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
                         TickerSymbol = normalizedTicker,
                         IssueName = dto.IssueName.Trim(),
                         PrimaryAssetId = dto.PrimaryAssetId?.Trim(),
-                        Exchange = dto.Exchange?.Trim(),
+                        MicCode = dto.MicCode?.Trim(),
                         SecurityType = dto.SecurityType?.Trim(),
                         Country = dto.Country?.Trim(),
                         Currency = dto.Currency?.Trim(),
@@ -238,12 +245,10 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
 
         var normalizedQuery = query.Trim().ToUpperInvariant();
 
-        var baseQuery = _context.SecurityMaster.AsNoTracking();
-
-        if (!includeInactive)
-        {
-            baseQuery = baseQuery.Where(s => s.IsActive);
-        }
+        var baseQuery = _context.SecurityMaster
+            .AsNoTracking()
+            .Include(s => s.MicExchange)
+            .Where(s => includeInactive || s.IsActive);
 
         // Search by ticker prefix first, then name contains
         var results = await baseQuery

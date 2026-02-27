@@ -33,9 +33,15 @@ public class SecurityMasterEntity
     public string TickerSymbol { get; set; } = string.Empty;
 
     /// <summary>
-    /// Primary exchange where the security is traded (e.g., "NASDAQ", "NYSE").
+    /// ISO 10383 Market Identifier Code (e.g., "XNYS", "XNAS").
+    /// Nullable until backfill populates real MIC codes.
     /// </summary>
-    public string? Exchange { get; set; }
+    public string? MicCode { get; set; }
+
+    /// <summary>
+    /// Navigation property to the MicExchange reference table.
+    /// </summary>
+    public MicExchangeEntity? MicExchange { get; set; }
 
     /// <summary>
     /// Security type classification (e.g., "Common Stock", "ETF", "ADR", "Preferred").

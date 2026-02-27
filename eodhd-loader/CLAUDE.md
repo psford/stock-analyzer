@@ -1,6 +1,6 @@
 # EODHD Loader
 
-Last verified: 2026-02-24
+Last verified: 2026-02-26
 
 ## Purpose
 
@@ -16,9 +16,10 @@ Standalone WPF desktop tool for managing stock data pipelines. Primary function:
 
 - **Uses**: `StockAnalyzer.Core` (DbContext, entities), iShares public JSON API, EODHD Fundamentals API
 - **Used by**: None (standalone desktop app)
-- **Shared schema**: 4 entities added to `StockAnalyzerDbContext` -- `IndexDefinition`, `IndexConstituent`, `SecurityIdentifier`, `SecurityIdentifierHist` (all in `data` schema)
+- **Shared schema**: 4 entities added to `StockAnalyzerDbContext` -- `IndexDefinition`, `IndexConstituent`, `SecurityIdentifier`, `SecurityIdentifierHist` (all in `data` schema). Also reads `MicExchangeEntity` (ISO 10383 reference table, PK = MicCode char(4)).
 - **DbContext also includes**: `SecurityPriceCoverage`, `SecurityPriceCoverageByYear` (populated by Stock Analyzer API, not eodhd-loader -- read-only from this app's perspective)
 - **Boundary**: Does NOT write to production database directly. Price backfills go through Stock Analyzer API.
+- **DTO contract**: `SecurityMasterCreateDto.Exchange` was renamed to `MicCode` (ISO 10383). `ISharesConstituentService` sets `MicCode = null` when creating securities -- actual MIC codes are backfilled by the Stock Analyzer API's `POST /api/admin/securities/backfill-mic-codes` endpoint.
 
 ## Key Decisions
 
