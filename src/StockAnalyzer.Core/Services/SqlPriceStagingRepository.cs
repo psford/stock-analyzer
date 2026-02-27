@@ -110,7 +110,8 @@ public class SqlPriceStagingRepository : IPriceStagingRepository
                         {
                             TickerSymbol = ticker,
                             IssueName = ticker,
-                            Exchange = "US",
+                            // MicCode: populated by backfill phase (replaces Exchange field)
+                            MicCode = null,
                             IsActive = true,
                             IsTracked = false,
                             CreatedAt = DateTime.UtcNow,

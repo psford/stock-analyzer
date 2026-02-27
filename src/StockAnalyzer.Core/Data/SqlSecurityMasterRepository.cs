@@ -71,7 +71,8 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
             TickerSymbol = dto.TickerSymbol.Trim().ToUpperInvariant(),
             IssueName = dto.IssueName.Trim(),
             PrimaryAssetId = dto.PrimaryAssetId?.Trim(),
-            Exchange = dto.Exchange?.Trim(),
+            // MicCode: populated by backfill phase (replaces Exchange field)
+            MicCode = null,
             SecurityType = dto.SecurityType?.Trim(),
             Country = dto.Country?.Trim(),
             Currency = dto.Currency?.Trim(),
@@ -102,8 +103,9 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
             entity.IssueName = dto.IssueName.Trim();
         if (dto.PrimaryAssetId != null)
             entity.PrimaryAssetId = dto.PrimaryAssetId.Trim();
-        if (dto.Exchange != null)
-            entity.Exchange = dto.Exchange.Trim();
+        // MicCode: populated by backfill phase (replaces Exchange field)
+        // if (dto.Exchange != null)
+        //     entity.MicCode = dto.Exchange.Trim();
         if (dto.SecurityType != null)
             entity.SecurityType = dto.SecurityType.Trim();
         if (dto.Country != null)
@@ -169,8 +171,9 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
                     existing.IssueName = dto.IssueName.Trim();
                     if (dto.PrimaryAssetId != null)
                         existing.PrimaryAssetId = dto.PrimaryAssetId.Trim();
-                    if (dto.Exchange != null)
-                        existing.Exchange = dto.Exchange.Trim();
+                    // MicCode: populated by backfill phase (replaces Exchange field)
+                    // if (dto.Exchange != null)
+                    //     existing.MicCode = dto.Exchange.Trim();
                     if (dto.SecurityType != null)
                         existing.SecurityType = dto.SecurityType.Trim();
                     if (dto.Country != null)
@@ -191,7 +194,8 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
                         TickerSymbol = normalizedTicker,
                         IssueName = dto.IssueName.Trim(),
                         PrimaryAssetId = dto.PrimaryAssetId?.Trim(),
-                        Exchange = dto.Exchange?.Trim(),
+                        // MicCode: populated by backfill phase (replaces Exchange field)
+            MicCode = null,
                         SecurityType = dto.SecurityType?.Trim(),
                         Country = dto.Country?.Trim(),
                         Currency = dto.Currency?.Trim(),

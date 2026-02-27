@@ -2290,6 +2290,16 @@ CREATE INDEX IX_MicExchange_Country ON data.MicExchange(Country);
 - Properties: ExchangeName (nvarchar(200), required), Country (char(2), fixed-length, required), IsActive (bit, default=1)
 - No navigation relationships beyond the reverse relationship from SecurityMaster
 
+**EF Core Migration: AddMicExchangeTable**
+
+- Migration: `20260227013220_AddMicExchangeTable.cs`
+- Drops Exchange column from SecurityMaster table
+- Adds MicCode column (char(4), nullable, FK to MicExchange)
+- Creates MicExchange table with 2817 rows from ISO 10383 standard seed data
+- Creates FK constraint from SecurityMaster.MicCode → MicExchange.MicCode with OnDelete.SetNull
+- Includes key US exchanges: XNYS (NYSE), XNAS (NASDAQ), ARCX (NYSE Arca), BATS, OTCM, PINX
+- Down() migration properly re-adds Exchange column for rollback
+
 **SecurityMaster Table:**
 ```sql
 CREATE TABLE data.SecurityMaster (

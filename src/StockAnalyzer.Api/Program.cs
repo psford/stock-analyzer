@@ -1573,7 +1573,7 @@ app.MapGet("/api/admin/data/securities", async (IServiceProvider serviceProvider
                 securityAlias = s.SecurityAlias,
                 tickerSymbol = s.TickerSymbol,
                 issueName = s.IssueName,
-                exchange = s.Exchange,
+                exchange = string.Empty, // TODO Phase 2: Use MicExchange.ExchangeName instead of Exchange field
                 securityType = s.SecurityType,
                 country = s.Country,
                 currency = s.Currency,
@@ -2698,7 +2698,7 @@ app.MapPost("/api/admin/securities/reset-unavailable", async (IServiceProvider s
             {
                 securityAlias = s.SecurityAlias,
                 ticker = s.TickerSymbol,
-                exchange = s.Exchange
+                exchange = string.Empty // TODO Phase 2: Use MicExchange.ExchangeName instead of Exchange field
             }).ToList();
 
             Log.Information("Reset IsEodhdUnavailable for ALL {Count} securities", unavailable.Count);
@@ -2723,7 +2723,7 @@ app.MapPost("/api/admin/securities/reset-unavailable", async (IServiceProvider s
             {
                 securityAlias = s.SecurityAlias,
                 ticker = s.TickerSymbol,
-                exchange = s.Exchange
+                exchange = string.Empty // TODO Phase 2: Use MicExchange.ExchangeName instead of Exchange field
             }).ToList();
 
             Log.Information("Reset IsEodhdUnavailable for {Count} securities marked in last {Days} days", recentlyMarked.Count, daysBack);
@@ -2798,13 +2798,14 @@ app.MapPost("/api/admin/securities/calculate-importance", async (IServiceProvide
             score += 1;
 
         // Secondary signal: Exchange quality (0-1 points)
-        var exchange = sec.Exchange?.ToUpperInvariant() ?? "";
-        if (exchange.Contains("NYSE") || exchange.Contains("NASDAQ"))
-            score += 1;
+        // TODO Phase 2: Use MicCode + MicExchange navigation instead of Exchange field
+        // var exchange = sec.Exchange?.ToUpperInvariant() ?? "";
+        // if (exchange.Contains("NYSE") || exchange.Contains("NASDAQ"))
+        //     score += 1;
 
         // Penalties
-        if (exchange.Contains("OTC") || exchange.Contains("PINK") || exchange.Contains("GREY"))
-            score -= 2;
+        // if (exchange.Contains("OTC") || exchange.Contains("PINK") || exchange.Contains("GREY"))
+        //     score -= 2;
         if (secType.Contains("PREFERRED") || secType.Contains("WARRANT") || secType.Contains("RIGHT"))
             score -= 2;
         if (secType.Contains("OTC") || secType.Contains("PINK") || secType.Contains("GREY"))
