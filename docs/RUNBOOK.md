@@ -2,7 +2,7 @@
 
 Operational procedures for Stock Analyzer production environment.
 
-**Last Updated:** 2026-01-19
+**Last Updated:** 2026-02-26
 
 ---
 
@@ -55,6 +55,95 @@ curl -s https://psfordtaurus.com/health | jq .
 # Check App Service state
 az webapp show --resource-group rg-stockanalyzer-prod --name app-stockanalyzer-prod --query "state"
 ```
+
+### Post-Deploy: MIC Code Enrichment Operational Sequence
+
+After deploying the SecurityMaster MIC Code Enrichment changes (Phase 5), run the following operational steps in order:
+
+**1. Verify Migration Auto-Applied**
+
+The EF Core migration applies automatically on App Service startup:
+- Creates `data.MicExchange` table with ~2,274 ISO 10383 MIC codes
+- Adds `MicCode` column (char(4), nullable FK) to SecurityMaster
+- Drops old `Exchange` column (if present from prior schema)
+- All SecurityMaster.MicCode values are NULL until backfilled
+
+Verify via logs:
+```bash
+az webapp log tail --name app-stockanalyzer-prod --resource-group rg-stockanalyzer-prod | grep -i "migration\|micexchange"
+```
+
+**2. Backfill MIC Codes from EODHD**
+
+Call the backfill endpoint to populate MicCode for all securities:
+
+```bash
+curl -X POST https://psfordtaurus.com/api/admin/securities/backfill-mic-codes
+```
+
+**Response:** JSON with matched/unmatched counts and list of unknown exchanges
+- `totalEodhdSymbols`: Total symbols fetched from EODHD US exchange
+- `matched`: Securities successfully mapped to MIC codes
+- `unmatched`: Securities with unmappable exchange names
+- `unknownExchanges`: Dictionary of unknown exchange names with occurrence counts
+
+**Expected:** >90% matched rate. Unknown exchanges (if any) logged as warnings.
+
+**3. Recalculate Importance Scores**
+
+After MIC codes are populated, recalculate ImportanceScore using the new MIC-based scoring:
+
+```bash
+curl -X POST https://psfordtaurus.com/api/admin/securities/calculate-importance
+```
+
+**Response:** JSON with count of processed securities
+
+**Changes with this step:**
+- Score 10 now achievable (was previously capped at 9) because XNYS/XNAS MICs now properly matched
+- Bonus MICs: XNYS (+1), XNAS (+1)
+- Penalty MICs: OTCM (-2), PINX (-2), XOTC (-2)
+- Score distribution across ImportanceScore tiers updates
+
+**4. Refresh Coverage Summary**
+
+After scores are updated, refresh the pre-aggregated coverage table to ensure heatmap and stats reflect new scores:
+
+```bash
+curl -X POST https://psfordtaurus.com/api/admin/dashboard/refresh-summary
+```
+
+This query is expensive (300s+) so runs in background via semaphore guard. Returns 409 Conflict if already running.
+
+**5. Verification Checklist**
+
+After all steps complete, verify:
+
+- [ ] Health endpoints all return 200 OK
+  ```bash
+  curl -s https://psfordtaurus.com/health/live
+  ```
+
+- [ ] Score 10 appears in heatmap
+  ```bash
+  # Check heatmap endpoint returns Year x ImportanceScore grid
+  curl -s https://psfordtaurus.com/api/admin/dashboard/heatmap | jq '.[] | select(.ImportanceScore == 10)'
+  ```
+
+- [ ] API responses include `micCode` and `exchangeName`
+  ```bash
+  # Check stock endpoint includes new fields
+  curl -s https://psfordtaurus.com/api/stock/AAPL | jq '.micCode, .exchangeName'
+  ```
+
+- [ ] SearchResult DisplayName shows exchange name
+  ```bash
+  # Search for a security and verify DisplayName format
+  curl -s 'https://psfordtaurus.com/api/search?q=apple' | jq '.results[0].displayName'
+  # Expected format: "AAPL - Apple Inc (New York Stock Exchange)"
+  ```
+
+- [ ] Dashboard stats show updated ImportanceScore tier distribution
 
 ---
 

@@ -1,6 +1,6 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.54
+**Version:** 2.55
 **Last Updated:** 2026-02-26
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
@@ -988,6 +988,59 @@ private static List<PortfolioSignificantMove> CalculateSignificantMoves(
     return moves;
 }
 ```
+
+### 5.10 SecurityMaster Importance Scoring Service
+
+**Purpose:** Calculate importance scores (1-10) for all securities to prioritize data loading and indexing.
+
+**Algorithm (Multi-Signal):**
+
+The ImportanceScore combines index membership signals with security quality attributes.
+
+**Base Score: 1** (all securities start at 1)
+
+**Signal 1: Index Membership (0-6 points)**
+
+Signals based on index tier membership:
+- **6 points**: In 2+ flagship indices (S&P 500, Russell 1000, Russell 3000)
+- **5 points**: In 1 flagship index (e.g., Russell 2000 only)
+- **4 points**: In 2+ core indices (Russell 2000, Nasdaq 100, Russell Mid/Small Cap)
+- **3 points**: In 1 core index
+- **2 points**: In 3+ thematic/sector indices
+- **1 point**: In at least 1 index
+
+**Signal 2: Breadth Bonus (0-1 points)**
+
+- **+1 point**: If security is held across 8+ indices (diversified exposure)
+
+**Signal 3: Security Type (0-1 points)**
+
+- **+1 point**: Common Stock (primary market asset)
+- **-2 points**: Preferred Shares, Warrants, Rights
+- **-2 points**: Types containing "OTC", "PINK", "GREY" (low-quality markets)
+
+**Signal 4: Market Identifier Code (0-1 points)**
+
+- **+1 point**: Bonus MICs — XNYS (NYSE), XNAS (NASDAQ)
+- **-2 points**: Penalty MICs — OTCM (OTC Markets), PINX (Pink Sheets), XOTC (OTC)
+
+**Penalties:**
+
+- **-2 points**: Warrant, Right, Unit in issue name
+- **-3 points**: Liquidating, Bankrupt, Liquidation in issue name
+
+**Score Clamp:** Final score is clamped to [1, 10].
+
+**Maximum Achievable Score: 10**
+- Base (1) + Index membership (6) + Breadth (1) + Common stock (1) + Bonus MIC (1) = **10**
+
+**Endpoint:**
+
+```
+POST /api/admin/securities/calculate-importance
+```
+
+Processes all active securities, updates ImportanceScore in SecurityMaster table. Returns count of processed securities.
 
 ---
 
