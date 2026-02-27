@@ -2263,6 +2263,26 @@ The application maintains a separate `data` schema for domain data (securities a
 - **Backup strategy** - `data` schema (larger) can be backed up on different schedule
 - **Future scaling** - Could move `data` schema to separate database later
 
+**MicExchange Table (ISO 10383 Reference):**
+
+Reference table for ISO 10383 Market Identifier Codes (MICs). Enables normalized exchange identification across securities.
+
+```sql
+CREATE TABLE data.MicExchange (
+    MicCode CHAR(4) PRIMARY KEY,                    -- ISO 10383 MIC code (e.g., "XNYS")
+    ExchangeName NVARCHAR(200) NOT NULL,            -- Display name (e.g., "New York Stock Exchange")
+    Country CHAR(2) NOT NULL,                       -- ISO 3166 country code (e.g., "US")
+    IsActive BIT DEFAULT 1                          -- Whether this exchange is actively trading
+);
+
+CREATE INDEX IX_MicExchange_Country ON data.MicExchange(Country);
+```
+
+**MIC Seed Data:**
+- Contains ~2,274 rows from ISO 10383 standard as of 2026-02-25
+- Key US exchanges: XNYS (NYSE), XNAS (NASDAQ), ARCX (NYSE Arca), BATS (BATS Exchange), OTCM (OTC Markets), PINX (Pink Sheets)
+- All exchanges marked IsActive based on ISO status field (ACTIVE/UPDATED = 1, others = 0)
+
 **SecurityMaster Table:**
 ```sql
 CREATE TABLE data.SecurityMaster (
