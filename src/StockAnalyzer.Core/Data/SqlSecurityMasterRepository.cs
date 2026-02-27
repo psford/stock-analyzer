@@ -243,12 +243,10 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
 
         var normalizedQuery = query.Trim().ToUpperInvariant();
 
-        var baseQuery = _context.SecurityMaster.AsNoTracking().Include(s => s.MicExchange);
-
-        if (!includeInactive)
-        {
-            baseQuery = baseQuery.Where(s => s.IsActive);
-        }
+        var baseQuery = _context.SecurityMaster
+            .AsNoTracking()
+            .Include(s => s.MicExchange)
+            .Where(s => includeInactive || s.IsActive);
 
         // Search by ticker prefix first, then name contains
         var results = await baseQuery
