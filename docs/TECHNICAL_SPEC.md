@@ -2290,7 +2290,7 @@ CREATE TABLE data.SecurityMaster (
     PrimaryAssetId NVARCHAR(50),                   -- Future: CUSIP, ISIN, etc.
     IssueName NVARCHAR(200) NOT NULL,              -- Full name (e.g., "Apple Inc.")
     TickerSymbol NVARCHAR(20) NOT NULL,            -- Ticker (e.g., "AAPL")
-    Exchange NVARCHAR(50),                          -- Exchange (e.g., "NASDAQ")
+    MicCode CHAR(4),                                -- ISO 10383 Market Identifier Code (e.g., "XNYS")
     SecurityType NVARCHAR(50),                      -- Common Stock, ETF, ADR, etc.
     Country NVARCHAR(10),                           -- Country code (e.g., "USA")
     Currency NVARCHAR(10),                          -- Currency (e.g., "USD")
@@ -2301,7 +2301,8 @@ CREATE TABLE data.SecurityMaster (
     IsEodhdComplete BIT DEFAULT 0,                  -- Whether all available EODHD data has been loaded
     ImportanceScore INT DEFAULT 5,                  -- Calculated importance (1-10, 10=most important)
     CreatedAt DATETIME2 DEFAULT GETUTCDATE(),
-    UpdatedAt DATETIME2 DEFAULT GETUTCDATE()
+    UpdatedAt DATETIME2 DEFAULT GETUTCDATE(),
+    FOREIGN KEY (MicCode) REFERENCES data.MicExchange(MicCode) ON DELETE SET NULL
 );
 
 CREATE UNIQUE INDEX IX_SecurityMaster_TickerSymbol ON data.SecurityMaster(TickerSymbol);
