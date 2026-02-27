@@ -103,9 +103,8 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
             entity.IssueName = dto.IssueName.Trim();
         if (dto.PrimaryAssetId != null)
             entity.PrimaryAssetId = dto.PrimaryAssetId.Trim();
-        // MicCode: populated by backfill phase (replaces Exchange field)
-        // if (dto.Exchange != null)
-        //     entity.MicCode = dto.Exchange.Trim();
+        if (dto.MicCode != null)
+            entity.MicCode = dto.MicCode.Trim();
         if (dto.SecurityType != null)
             entity.SecurityType = dto.SecurityType.Trim();
         if (dto.Country != null)
@@ -171,9 +170,8 @@ public class SqlSecurityMasterRepository : ISecurityMasterRepository
                     existing.IssueName = dto.IssueName.Trim();
                     if (dto.PrimaryAssetId != null)
                         existing.PrimaryAssetId = dto.PrimaryAssetId.Trim();
-                    // MicCode: populated by backfill phase (replaces Exchange field)
-                    // if (dto.Exchange != null)
-                    //     existing.MicCode = dto.Exchange.Trim();
+                    if (dto.MicCode != null)
+                        existing.MicCode = dto.MicCode.Trim();
                     if (dto.SecurityType != null)
                         existing.SecurityType = dto.SecurityType.Trim();
                     if (dto.Country != null)
