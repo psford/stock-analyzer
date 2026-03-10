@@ -2,6 +2,19 @@
  * Stock Analyzer Application
  * Main application logic
  */
+
+// Okabe-Ito color palette for chart series (colorblind-safe)
+const SERIES_PALETTE = [
+    { color: '#0072B2', dash: 'solid' },     // Position 0: Primary stock (Blue)
+    { color: '#E69F00', dash: 'dash' },       // Position 1: Comparison (Orange)
+    { color: '#009E73', dash: 'dot' },        // Position 2: Benchmark 1 (Blue-Green)
+    { color: '#56B4E9', dash: 'dashdot' },    // Position 3: Benchmark 2 (Sky Blue)
+    { color: '#D55E00', dash: 'longdash' },   // Position 4: Benchmark 3 (Vermillion)
+    { color: '#CC79A7', dash: 'solid' },      // Position 5: Benchmark 4 (Red-Purple)
+    { color: '#F0E442', dash: 'dash' },       // Position 6: Benchmark 5 (Yellow)
+];
+const MAX_BENCHMARKS = 5;
+
 const App = {
     currentTicker: null,
     endDatePreset: 'PBD',
@@ -30,10 +43,11 @@ const App = {
     searchSelectedIndex: -1,
     compareSelectedIndex: -1,
 
-    // Comparison feature state
-    comparisonTicker: null,
-    comparisonHistoryData: null,
+    // Chart series state (replaces comparisonTicker/comparisonHistoryData)
+    chartSeries: [],          // Array of {ticker, label, type, data, color, dash}
     compareSearchTimeout: null,
+    // Preserved indicator state (saved when disabling for multi-series mode)
+    savedIndicatorState: null,
 
     // Image cache for pre-loaded animal images
     imageCache: {
@@ -1437,6 +1451,127 @@ const App = {
             Plotly.purge(chartEl);
         }
         Charts.resetChart('stock-chart');
+    },
+
+    /**
+     * Build the primary series entry from current stock data.
+     * Called when a stock is first analyzed.
+     */
+    buildPrimarySeries() {
+        if (!this.historyData || !this.currentTicker) return null;
+        return {
+            ticker: this.currentTicker,
+            label: this.currentTicker,
+            type: 'primary',
+            data: this.historyData,
+            color: SERIES_PALETTE[0].color,
+            dash: SERIES_PALETTE[0].dash
+        };
+    },
+
+    /**
+     * Rebuild chartSeries from current state.
+     * Ensures primary is always at index 0 with correct palette assignment.
+     */
+    rebuildChartSeries() {
+        const primary = this.buildPrimarySeries();
+        if (!primary) {
+            this.chartSeries = [];
+            return;
+        }
+        // Keep non-primary series, reassign palette positions
+        const others = this.chartSeries.filter(s => s.type !== 'primary');
+        this.chartSeries = [primary, ...others];
+        this.assignPalettePositions();
+    },
+
+    /**
+     * Assign palette colors/dashes based on position in chartSeries.
+     */
+    assignPalettePositions() {
+        this.chartSeries.forEach((series, i) => {
+            if (i < SERIES_PALETTE.length) {
+                series.color = SERIES_PALETTE[i].color;
+                series.dash = SERIES_PALETTE[i].dash;
+            }
+        });
+    },
+
+    /**
+     * Add a series to the chart. Returns false if limit reached or duplicate.
+     * @param {string} ticker
+     * @param {string} label
+     * @param {'comparison'|'benchmark'} type
+     * @param {object} data - History data from API
+     * @returns {boolean} true if added
+     */
+    addSeries(ticker, label, type, data) {
+        // Prevent duplicates
+        if (this.chartSeries.some(s => s.ticker === ticker)) {
+            return false;
+        }
+        // Enforce max benchmarks
+        const benchmarkCount = this.chartSeries.filter(s => s.type === 'benchmark').length;
+        if (type === 'benchmark' && benchmarkCount >= MAX_BENCHMARKS) {
+            alert(`Maximum ${MAX_BENCHMARKS} benchmarks allowed. Remove one before adding another.`);
+            return false;
+        }
+        // Only one comparison allowed
+        if (type === 'comparison') {
+            this.chartSeries = this.chartSeries.filter(s => s.type !== 'comparison');
+        }
+        const idx = this.chartSeries.length;
+        const palette = idx < SERIES_PALETTE.length ? SERIES_PALETTE[idx] : SERIES_PALETTE[SERIES_PALETTE.length - 1];
+        this.chartSeries.push({
+            ticker,
+            label,
+            type,
+            data,
+            color: palette.color,
+            dash: palette.dash
+        });
+        this.assignPalettePositions();
+        return true;
+    },
+
+    /**
+     * Remove a series by ticker. Returns the removed series or null.
+     */
+    removeSeries(ticker) {
+        const idx = this.chartSeries.findIndex(s => s.ticker === ticker);
+        if (idx <= 0) return null; // Can't remove primary (index 0) or not found
+        const removed = this.chartSeries.splice(idx, 1)[0];
+        this.assignPalettePositions();
+        return removed;
+    },
+
+    /**
+     * Get all series of a given type.
+     */
+    getSeriesByType(type) {
+        return this.chartSeries.filter(s => s.type === type);
+    },
+
+    /**
+     * Remove all benchmark series. Comparison and primary remain.
+     */
+    clearBenchmarkSeries() {
+        this.chartSeries = this.chartSeries.filter(s => s.type !== 'benchmark');
+        this.assignPalettePositions();
+    },
+
+    /**
+     * Remove all non-primary series (comparison + benchmarks).
+     */
+    clearAllSeries() {
+        this.chartSeries = this.chartSeries.filter(s => s.type === 'primary');
+    },
+
+    /**
+     * Whether the chart is in multi-series mode (more than just the primary stock).
+     */
+    isMultiSeriesMode() {
+        return this.chartSeries.length > 1;
     },
 
     /**
