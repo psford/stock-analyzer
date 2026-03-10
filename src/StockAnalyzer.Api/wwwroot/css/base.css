@@ -191,6 +191,15 @@ ul, ol {
     --chart-marker-symbol: triangle-up;
     --chart-marker-size: 10;
 
+    /* Benchmark overlay colors (Okabe-Ito colorblind-safe palette) */
+    --chart-series-primary: #0072B2;
+    --chart-series-comparison: #E69F00;
+    --chart-benchmark-1: #009E73;
+    --chart-benchmark-2: #56B4E9;
+    --chart-benchmark-3: #D55E00;
+    --chart-benchmark-4: #CC79A7;
+    --chart-benchmark-5: #F0E442;
+
     /* Grid/Dashboard */
     --grid-dot: #e5e7eb;
     --grid-dot-active: #3b82f6;
