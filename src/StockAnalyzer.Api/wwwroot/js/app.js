@@ -1889,6 +1889,13 @@ const App = {
      * Render chart
      */
     renderChart() {
+        // Ensure primary series is current
+        this.rebuildChartSeries();
+
+        // Derive comparison from chartSeries for backward compatibility with charts.js
+        // (Phase 2 will refactor charts.js to accept chartSeries directly)
+        const comparisonSeries = this.chartSeries.find(s => s.type === 'comparison');
+
         const options = {
             chartType: document.getElementById('chart-type').value,
             showMa20: document.getElementById('ma-20').checked,
@@ -1900,19 +1907,18 @@ const App = {
             showMacd: document.getElementById('show-macd').checked,
             showBollinger: document.getElementById('show-bollinger').checked,
             showStochastic: document.getElementById('show-stochastic').checked,
-            // Comparison data
-            comparisonData: this.comparisonHistoryData,
-            comparisonTicker: this.comparisonTicker
+            // Bridge: derive from chartSeries
+            comparisonData: comparisonSeries ? comparisonSeries.data : null,
+            comparisonTicker: comparisonSeries ? comparisonSeries.ticker : null
         };
 
-        // Adjust chart height based on enabled indicators (only when not comparing)
+        // Adjust chart height based on enabled indicators (only when not in multi-series mode)
         const chartEl = document.getElementById('stock-chart');
         const baseHeight = 400;
         const indicatorHeight = 150;
         let totalHeight = baseHeight;
 
-        // Only add indicator height if not comparing (indicators disabled during comparison)
-        if (!this.comparisonTicker) {
+        if (!this.isMultiSeriesMode()) {
             if (options.showRsi) totalHeight += indicatorHeight;
             if (options.showMacd) totalHeight += indicatorHeight;
             if (options.showStochastic) totalHeight += indicatorHeight;
