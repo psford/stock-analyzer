@@ -143,8 +143,33 @@ const Charts = {
             markerUpOutline: this.getCssVar('--chart-marker-up-outline') || '#065f46',
             markerDownOutline: this.getCssVar('--chart-marker-down-outline') || '#991b1b',
             markerSymbol: this.getCssVar('--chart-marker-symbol') || 'triangle',
-            markerSize: parseInt(this.getCssVar('--chart-marker-size')) || 22
+            markerSize: parseInt(this.getCssVar('--chart-marker-size')) || 22,
+            // Benchmark overlay colors (Okabe-Ito defaults, theme-overridable)
+            seriesPrimary: this.getCssVar('--chart-series-primary') || '#0072B2',
+            seriesComparison: this.getCssVar('--chart-series-comparison') || '#E69F00',
+            benchmark1: this.getCssVar('--chart-benchmark-1') || '#009E73',
+            benchmark2: this.getCssVar('--chart-benchmark-2') || '#56B4E9',
+            benchmark3: this.getCssVar('--chart-benchmark-3') || '#D55E00',
+            benchmark4: this.getCssVar('--chart-benchmark-4') || '#CC79A7',
+            benchmark5: this.getCssVar('--chart-benchmark-5') || '#F0E442'
         };
+    },
+
+    /**
+     * Get the theme-aware Okabe-Ito color palette for chart series.
+     * Returns array of {color, dash} matching SERIES_PALETTE positions.
+     */
+    getSeriesPalette() {
+        const tc = this.getThemeColors();
+        return [
+            { color: tc.seriesPrimary, dash: 'solid' },
+            { color: tc.seriesComparison, dash: 'dash' },
+            { color: tc.benchmark1, dash: 'dot' },
+            { color: tc.benchmark2, dash: 'dashdot' },
+            { color: tc.benchmark3, dash: 'longdash' },
+            { color: tc.benchmark4, dash: 'solid' },
+            { color: tc.benchmark5, dash: 'dash' }
+        ];
     },
 
     /**
