@@ -261,64 +261,88 @@ const Charts = {
             showMacd = false,
             showBollinger = false,
             showStochastic = false,
+            chartSeries = null,
             comparisonData = null,
             comparisonTicker = null
         } = options;
 
         const data = historyData.data;
         const themeColors = this.getThemeColors();
+        const seriesPalette = this.getSeriesPalette();
 
-        // Check if we're in comparison mode
-        const isComparing = comparisonData && comparisonTicker && comparisonData.data;
+        // Determine active series for multi-series mode.
+        // Priority: explicit chartSeries > legacy comparisonData/comparisonTicker bridge.
+        let activeSeries = chartSeries;
+        if (!activeSeries || activeSeries.length === 0) {
+            if (comparisonData && comparisonTicker && comparisonData.data) {
+                activeSeries = [
+                    {
+                        ticker: historyData.symbol,
+                        label: historyData.symbol,
+                        type: 'primary',
+                        data: historyData,
+                        color: seriesPalette[0].color,
+                        dash: seriesPalette[0].dash
+                    },
+                    {
+                        ticker: comparisonTicker,
+                        label: comparisonTicker,
+                        type: 'comparison',
+                        data: comparisonData,
+                        color: seriesPalette[1].color,
+                        dash: seriesPalette[1].dash
+                    }
+                ];
+            }
+        }
 
+        const isMultiSeries = activeSeries && activeSeries.length > 1;
         const traces = [];
 
-        // COMPARISON MODE: Show normalized percentage change for both stocks
-        if (isComparing) {
-            // Normalize primary stock to % change
-            const primaryNormalized = this.normalizeToPercentChange(data);
-            traces.push({
-                type: 'scatter',
-                mode: 'lines',
-                x: primaryNormalized.map(d => d.date),
-                y: primaryNormalized.map(d => d.value),
-                name: historyData.symbol,
-                line: { color: themeColors.linePrimary, width: 2 },
-                yaxis: 'y'
+        // MULTI-SERIES MODE: Normalized % change lines for all series
+        if (isMultiSeries) {
+            activeSeries.forEach((series, i) => {
+                const seriesData = series.data?.data || series.data;
+                if (!seriesData || seriesData.length === 0) return;
+
+                const normalized = this.normalizeToPercentChange(seriesData);
+                const paletteEntry = i < seriesPalette.length ? seriesPalette[i] : seriesPalette[seriesPalette.length - 1];
+
+                traces.push({
+                    type: 'scatter',
+                    mode: 'lines',
+                    x: normalized.map(d => d.date),
+                    y: normalized.map(d => d.value),
+                    name: series.label || series.ticker,
+                    line: { color: paletteEntry.color, width: 2, dash: paletteEntry.dash },
+                    yaxis: 'y'
+                });
             });
 
-            // Normalize comparison stock to % change
-            const comparisonNormalized = this.normalizeToPercentChange(comparisonData.data);
-            traces.push({
-                type: 'scatter',
-                mode: 'lines',
-                x: comparisonNormalized.map(d => d.date),
-                y: comparisonNormalized.map(d => d.value),
-                name: comparisonTicker,
-                line: { color: themeColors.lineSecondary, width: 2, dash: 'dash' },
-                yaxis: 'y'
-            });
+            // Zero reference baseline
+            const primaryData = activeSeries[0].data?.data || activeSeries[0].data;
+            if (primaryData && primaryData.length > 0) {
+                const allDates = primaryData.map(d => d.date);
+                traces.push({
+                    type: 'scatter',
+                    mode: 'lines',
+                    x: [allDates[0], allDates[allDates.length - 1]],
+                    y: [0, 0],
+                    name: 'Baseline',
+                    line: { color: themeColors.gridColor, width: 1, dash: 'dot' },
+                    yaxis: 'y',
+                    showlegend: false,
+                    hoverinfo: 'skip'
+                });
+            }
 
-            // Add zero reference line
-            const allDates = primaryNormalized.map(d => d.date);
-            traces.push({
-                type: 'scatter',
-                mode: 'lines',
-                x: [allDates[0], allDates[allDates.length - 1]],
-                y: [0, 0],
-                name: 'Baseline',
-                line: { color: themeColors.gridColor, width: 1, dash: 'dot' },
-                yaxis: 'y',
-                showlegend: false,
-                hoverinfo: 'skip'
-            });
+            const seriesNames = activeSeries.map(s => s.ticker);
+            const titleText = seriesNames.length <= 3
+                ? `${seriesNames.join(' vs ')} - ${this.formatPeriodLabel(historyData)}`
+                : `${seriesNames[0]} + ${seriesNames.length - 1} series - ${this.formatPeriodLabel(historyData)}`;
 
-            // Build comparison layout
             const layout = {
-                title: {
-                    text: `${historyData.symbol} vs ${comparisonTicker} - ${this.formatPeriodLabel(historyData)}`,
-                    font: { size: 18, color: themeColors.text }
-                },
+                title: { text: titleText, font: { size: 18, color: themeColors.text } },
                 xaxis: {
                     rangeslider: { visible: false },
                     gridcolor: themeColors.gridColor,
@@ -356,11 +380,12 @@ const Charts = {
                 modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
             };
 
+            const compSymbol = activeSeries.length === 2 ? activeSeries[1].ticker : null;
             this._smartPlot(elementId, traces, layout, config).then(() => {
-                this._attachDynamicTitle(elementId, historyData.symbol, comparisonTicker);
+                this._attachDynamicTitle(elementId, activeSeries[0].ticker, compSymbol);
             });
 
-            return; // Exit early for comparison mode
+            return; // Exit early for multi-series mode
         }
 
         // SINGLE STOCK MODE: Normal rendering with candlestick/line and indicators
