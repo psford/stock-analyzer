@@ -46,6 +46,9 @@ const App = {
     // Chart series state (replaces comparisonTicker/comparisonHistoryData)
     chartSeries: [],          // Array of {ticker, label, type, data, color, dash}
     compareSearchTimeout: null,
+    benchmarkSearchTimeout: null,
+    benchmarkSearchSelectedIndex: -1,
+    _benchmarkFetchInProgress: false,
     // Preserved indicator state (saved when disabling for multi-series mode)
     savedIndicatorState: null,
 
@@ -1137,6 +1140,100 @@ const App = {
             this.clearComparison();
         });
 
+        // Benchmark toggle chips
+        document.querySelectorAll('[data-benchmark]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const ticker = btn.dataset.benchmark;
+                const label = btn.textContent.trim();
+                this.toggleBenchmark(ticker, label, btn);
+            });
+        });
+
+        // Clear Benchmarks button
+        document.getElementById('clear-benchmarks').addEventListener('click', () => {
+            this.clearBenchmarkSeries();
+            document.querySelectorAll('[data-benchmark]').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelectorAll('.chip-benchmark-temp').forEach(el => el.remove());
+
+            this.updateClearButtonVisibility();
+
+            if (!this.isMultiSeriesMode()) {
+                this.disableIndicators(false);
+            }
+
+            if (this.historyData) {
+                this.renderChart();
+                this.attachChartHoverListeners();
+                this.attachDragMeasure();
+            }
+        });
+
+        // All Clear (comparison + benchmarks)
+        document.getElementById('clear-all-overlays').addEventListener('click', () => {
+            this.clearComparison();
+            this.clearBenchmarkSeries();
+            document.querySelectorAll('[data-benchmark]').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelectorAll('.chip-benchmark-temp').forEach(el => el.remove());
+
+            this.updateClearButtonVisibility();
+            this.disableIndicators(false);
+
+            if (this.historyData) {
+                this.renderChart();
+                this.attachChartHoverListeners();
+                this.attachDragMeasure();
+            }
+        });
+
+        // Benchmark search input
+        const benchmarkInput = document.getElementById('benchmark-search-input');
+        benchmarkInput.addEventListener('input', (e) => {
+            clearTimeout(this.benchmarkSearchTimeout);
+            const query = e.target.value.trim();
+            this.benchmarkSearchTimeout = setTimeout(
+                () => this.performBenchmarkSearch(query), 300
+            );
+        });
+
+        benchmarkInput.addEventListener('keydown', (e) => {
+            const container = document.getElementById('benchmark-search-results');
+            const items = container.querySelectorAll('.benchmark-result');
+            const isOpen = !container.classList.contains('hidden') && items.length > 0;
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (isOpen) {
+                    this.benchmarkSearchSelectedIndex = Math.min(
+                        this.benchmarkSearchSelectedIndex + 1, items.length - 1
+                    );
+                    this.highlightDropdownItem(items, this.benchmarkSearchSelectedIndex);
+                }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (isOpen) {
+                    this.benchmarkSearchSelectedIndex = Math.max(
+                        this.benchmarkSearchSelectedIndex - 1, 0
+                    );
+                    this.highlightDropdownItem(items, this.benchmarkSearchSelectedIndex);
+                }
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (isOpen && this.benchmarkSearchSelectedIndex >= 0) {
+                    items[this.benchmarkSearchSelectedIndex].click();
+                }
+            } else if (e.key === 'Escape') {
+                this.hideBenchmarkSearchResults();
+            }
+        });
+
+        benchmarkInput.addEventListener('blur', () => {
+            setTimeout(() => this.hideBenchmarkSearchResults(), 200);
+        });
+
         // Window resize handler for chart responsiveness
         let resizeTimeout;
         window.addEventListener('resize', () => {
@@ -1358,6 +1455,7 @@ const App = {
 
             // Show clear button
             document.getElementById('clear-compare').classList.remove('hidden');
+            this.updateClearButtonVisibility();
 
             // Re-render chart with comparison
             this.renderChart();
@@ -1382,6 +1480,7 @@ const App = {
 
         document.getElementById('compare-input').value = '';
         document.getElementById('clear-compare').classList.add('hidden');
+        this.updateClearButtonVisibility();
 
         // Re-enable technical indicators if no longer in multi-series mode
         if (!this.isMultiSeriesMode()) {
@@ -1579,6 +1678,199 @@ const App = {
      */
     isMultiSeriesMode() {
         return this.chartSeries.length > 1;
+    },
+
+    /**
+     * Toggle a benchmark index on/off the chart.
+     * If already active, removes it. If not active, fetches data and adds it.
+     * @param {string} etfTicker - The ETF proxy ticker (e.g., 'SPY')
+     * @param {string} label - Display label (e.g., 'S&P 500')
+     * @param {HTMLElement} [chipEl] - The chip button element (for toggle styling)
+     */
+    async toggleBenchmark(etfTicker, label, chipEl) {
+        etfTicker = etfTicker.toUpperCase();
+
+        if (!this.currentTicker) {
+            alert('Analyze a stock first before adding benchmarks.');
+            return;
+        }
+
+        // Guard against concurrent fetches (rapid chip clicks)
+        if (this._benchmarkFetchInProgress) return;
+        this._benchmarkFetchInProgress = true;
+
+        // If already in chartSeries, remove it (toggle off)
+        const existing = this.chartSeries.find(
+            s => s.ticker === etfTicker && s.type === 'benchmark'
+        );
+        if (existing) {
+            this.removeSeries(etfTicker);
+            if (chipEl) chipEl.classList.remove('active');
+
+            // Remove temp chips
+            const tempChip = document.querySelector(
+                `.chip-benchmark-temp[data-benchmark="${etfTicker}"]`
+            );
+            if (tempChip) tempChip.remove();
+
+            this.updateClearButtonVisibility();
+
+            if (!this.isMultiSeriesMode()) {
+                this.disableIndicators(false);
+            }
+
+            this.renderChart();
+            this.attachChartHoverListeners();
+            this.attachDragMeasure();
+            this._benchmarkFetchInProgress = false;
+            return;
+        }
+
+        // Adding a new benchmark — addSeries enforces max 5
+        try {
+            const historyData = await API.getHistory(
+                etfTicker, null, this.resolvedStartDate, this.resolvedEndDate
+            );
+
+            const added = this.addSeries(etfTicker, label || etfTicker, 'benchmark', historyData);
+            if (!added) return; // Max limit reached (addSeries already showed alert)
+
+            if (chipEl) chipEl.classList.add('active');
+
+            this.disableIndicators(true);
+            this.updateClearButtonVisibility();
+
+            this.renderChart();
+            this.attachChartHoverListeners();
+            this.attachDragMeasure();
+        } catch (error) {
+            console.error(`Failed to fetch benchmark data for ${LogSanitizer.sanitize(etfTicker)}:`, error);
+            alert(`Failed to load benchmark data for ${etfTicker}`);
+        } finally {
+            this._benchmarkFetchInProgress = false;
+        }
+    },
+
+    /**
+     * Update visibility of Clear Benchmarks and All Clear buttons.
+     */
+    updateClearButtonVisibility() {
+        const hasBenchmarks = this.getSeriesByType('benchmark').length > 0;
+        const hasComparison = this.chartSeries.some(s => s.type === 'comparison');
+
+        const clearBtn = document.getElementById('clear-benchmarks');
+        const allClearBtn = document.getElementById('clear-all-overlays');
+
+        if (clearBtn) {
+            clearBtn.classList.toggle('hidden', !hasBenchmarks);
+        }
+        if (allClearBtn) {
+            allClearBtn.classList.toggle('hidden', !hasBenchmarks && !hasComparison);
+        }
+    },
+
+    /**
+     * Perform debounced benchmark index search
+     */
+    performBenchmarkSearch(query) {
+        const container = document.getElementById('benchmark-search-results');
+        const loader = document.getElementById('benchmark-search-loader');
+
+        if (!query || query.length < 2) {
+            container.classList.add('hidden');
+            return;
+        }
+
+        loader.classList.remove('hidden');
+
+        API.searchIndices(query).then(results => {
+            loader.classList.add('hidden');
+            this.showBenchmarkSearchResults(results);
+        }).catch(err => {
+            loader.classList.add('hidden');
+            console.error('Benchmark search failed:', err);
+            container.classList.add('hidden');
+        });
+    },
+
+    /**
+     * Render benchmark search results dropdown
+     */
+    showBenchmarkSearchResults(results) {
+        const container = document.getElementById('benchmark-search-results');
+        if (!results || results.length === 0) {
+            container.classList.add('hidden');
+            return;
+        }
+
+        // Build results using DOM API (avoid innerHTML XSS with database-sourced strings)
+        container.innerHTML = '';
+        results.forEach(r => {
+            const div = document.createElement('div');
+            div.className = 'benchmark-result';
+            div.dataset.ticker = r.proxyEtfTicker;
+            div.dataset.name = r.indexName;
+
+            const symbolEl = document.createElement('div');
+            symbolEl.className = 'result-symbol';
+            symbolEl.textContent = r.proxyEtfTicker;
+
+            const nameEl = document.createElement('div');
+            nameEl.className = 'result-name';
+            nameEl.textContent = r.indexName;
+
+            const metaEl = document.createElement('div');
+            metaEl.className = 'result-meta';
+            metaEl.textContent = [r.region, r.indexCode].filter(Boolean).join(' • ');
+
+            div.appendChild(symbolEl);
+            div.appendChild(nameEl);
+            div.appendChild(metaEl);
+            container.appendChild(div);
+        });
+
+        container.classList.remove('hidden');
+
+        container.querySelectorAll('.benchmark-result').forEach(item => {
+            item.addEventListener('click', () => {
+                const ticker = item.dataset.ticker;
+                const name = item.dataset.name;
+                container.classList.add('hidden');
+                document.getElementById('benchmark-search-input').value = '';
+                this.addBenchmarkFromSearch(ticker, name);
+            });
+        });
+    },
+
+    /**
+     * Add a benchmark from search results — creates a temporary chip if not a static chip
+     */
+    async addBenchmarkFromSearch(etfTicker, indexName) {
+        const existingChip = document.querySelector(`[data-benchmark="${etfTicker}"]`);
+        if (existingChip) {
+            this.toggleBenchmark(etfTicker, existingChip.textContent.trim(), existingChip);
+            return;
+        }
+
+        const chipsContainer = document.getElementById('benchmark-chips');
+        const tempChip = document.createElement('button');
+        tempChip.className = 'chip chip-benchmark-temp';
+        tempChip.dataset.benchmark = etfTicker;
+        tempChip.textContent = indexName || etfTicker;
+        tempChip.addEventListener('click', () => {
+            this.toggleBenchmark(etfTicker, indexName || etfTicker, tempChip);
+        });
+        chipsContainer.appendChild(tempChip);
+
+        await this.toggleBenchmark(etfTicker, indexName || etfTicker, tempChip);
+    },
+
+    /**
+     * Hide benchmark search results dropdown
+     */
+    hideBenchmarkSearchResults() {
+        document.getElementById('benchmark-search-results').classList.add('hidden');
+        this.benchmarkSearchSelectedIndex = -1;
     },
 
     /**
