@@ -362,10 +362,10 @@ const App = {
         if (!this.currentTicker || !this.resolvedStartDate || !this.resolvedEndDate) return;
         if (this.resolvedStartDate > this.resolvedEndDate) return;
 
-        if (this.comparisonTicker) {
-            const comparisonTicker = this.comparisonTicker;
-            this.comparisonTicker = null;
-            this.comparisonHistoryData = null;
+        const comparisonSeries = this.chartSeries.find(s => s.type === 'comparison');
+        if (comparisonSeries) {
+            const comparisonTicker = comparisonSeries.ticker;
+            this.clearComparison();
             await this.analyzeStock();
             await this.setComparison(comparisonTicker);
         } else {
@@ -1676,6 +1676,9 @@ const App = {
                 stochastic: chartData.stochastic
             };
 
+            // Initialize chartSeries with primary stock
+            this.rebuildChartSeries();
+
             const analysis = this.analysisData;
 
             // Render chart immediately - this is what the user is waiting for
@@ -2030,10 +2033,16 @@ const App = {
 
         DragMeasure.attach('stock-chart', {
             dataSource: () => this.historyData?.data || [],
-            isComparisonMode: () => !!this.comparisonTicker,
-            getComparisonData: () => this.comparisonHistoryData ? { data: this.comparisonHistoryData.data } : null,
+            isComparisonMode: () => this.isMultiSeriesMode(),
+            getComparisonData: () => {
+                const s = this.chartSeries.find(c => c.type === 'comparison');
+                return s ? { data: s.data.data } : null;
+            },
             getPrimarySymbol: () => this.currentTicker || '',
-            getComparisonSymbol: () => this.comparisonTicker || '',
+            getComparisonSymbol: () => {
+                const s = this.chartSeries.find(c => c.type === 'comparison');
+                return s ? s.ticker : '';
+            },
             onRangeExtend: (fromDate, toDate) => this.extendChartRange(fromDate, toDate)
         });
     },
@@ -2081,11 +2090,12 @@ const App = {
             };
 
             // Also fetch comparison data for the extended range if comparing
-            if (this.comparisonTicker) {
+            const comparisonSeries = this.chartSeries.find(s => s.type === 'comparison');
+            if (comparisonSeries) {
                 try {
-                    const compData = await API.getChartData(this.comparisonTicker, null, fromDate, toDate);
+                    const compData = await API.getChartData(comparisonSeries.ticker, null, fromDate, toDate);
                     if (compData?.data) {
-                        this.comparisonHistoryData = {
+                        comparisonSeries.data = {
                             symbol: compData.symbol,
                             data: compData.data
                         };
