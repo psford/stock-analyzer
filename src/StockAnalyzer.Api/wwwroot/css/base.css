@@ -920,6 +920,50 @@ label {
     color: var(--text-inverted);
 }
 
+/* Benchmark chip styles */
+.chip-benchmark {
+    border: 1px solid var(--border-primary);
+    background-color: transparent;
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+}
+
+.chip-benchmark:hover {
+    border-color: var(--accent);
+    background-color: var(--bg-tertiary);
+}
+
+.chip-benchmark.active {
+    background-color: var(--accent);
+    color: var(--text-inverted);
+    border-color: var(--accent);
+}
+
+.chip-benchmark.active:hover {
+    opacity: 0.85;
+}
+
+/* Benchmark chips container */
+.benchmark-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+}
+
+/* Temporary benchmark chip (created from search) */
+.chip-benchmark-temp {
+    border: 1px dashed var(--accent);
+    background-color: var(--accent);
+    color: var(--text-inverted);
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: var(--radius-md);
+}
+
+.chip-benchmark-temp:hover {
+    opacity: 0.85;
+}
+
 /* === Checkbox/Radio Styling === */
 .checkbox-label {
     display: inline-flex;
