@@ -1347,11 +1347,13 @@ const App = {
             document.getElementById('compare-input').value = ticker;
 
             // Fetch comparison history data
-            this.comparisonHistoryData = await API.getHistory(
+            const historyData = await API.getHistory(
                 ticker, null, this.resolvedStartDate, this.resolvedEndDate);
-            this.comparisonTicker = ticker;
 
-            // Disable technical indicators (they don't make sense for comparison)
+            // Add to chartSeries (replaces any existing comparison)
+            this.addSeries(ticker, ticker, 'comparison', historyData);
+
+            // Disable technical indicators (they don't make sense for multi-series)
             this.disableIndicators(true);
 
             // Show clear button
@@ -1372,13 +1374,19 @@ const App = {
      * Clear comparison and restore single-stock view
      */
     clearComparison() {
-        this.comparisonTicker = null;
-        this.comparisonHistoryData = null;
+        // Remove comparison series
+        const comparison = this.chartSeries.find(s => s.type === 'comparison');
+        if (comparison) {
+            this.removeSeries(comparison.ticker);
+        }
+
         document.getElementById('compare-input').value = '';
         document.getElementById('clear-compare').classList.add('hidden');
 
-        // Re-enable technical indicators
-        this.disableIndicators(false);
+        // Re-enable technical indicators if no longer in multi-series mode
+        if (!this.isMultiSeriesMode()) {
+            this.disableIndicators(false);
+        }
 
         // Re-render chart without comparison
         if (this.historyData) {
@@ -1401,9 +1409,8 @@ const App = {
         this.significantMovesData = null;
         this.newsCache = {};
 
-        // Clear comparison
-        this.comparisonTicker = null;
-        this.comparisonHistoryData = null;
+        // Clear all non-primary series
+        this.clearAllSeries();
         document.getElementById('compare-input').value = '';
         document.getElementById('clear-compare').classList.add('hidden');
 
