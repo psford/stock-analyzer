@@ -878,6 +878,39 @@ app.MapGet("/api/search", async (string q, AggregatedStockDataService stockServi
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest);
 
+// GET /api/indices/search - Search index definitions for benchmark discovery
+app.MapGet("/api/indices/search", async (string? q, StockAnalyzerDbContext dbContext) =>
+{
+    if (string.IsNullOrWhiteSpace(q))
+        return Results.Ok(Array.Empty<object>());
+
+    var normalizedQuery = q.Trim().ToUpperInvariant();
+
+    var results = await dbContext.IndexDefinitions
+        .AsNoTracking()
+        .Where(idx => idx.ProxyEtfTicker != null &&
+            (idx.IndexName.ToUpper().Contains(normalizedQuery) ||
+             idx.IndexCode.ToUpper().Contains(normalizedQuery) ||
+             (idx.IndexFamily != null && idx.IndexFamily.ToUpper().Contains(normalizedQuery))))
+        .OrderBy(idx => idx.IndexName)
+        .Take(10)
+        .Select(idx => new
+        {
+            indexId = idx.IndexId,
+            indexCode = idx.IndexCode,
+            indexName = idx.IndexName,
+            indexFamily = idx.IndexFamily,
+            region = idx.Region,
+            proxyEtfTicker = idx.ProxyEtfTicker
+        })
+        .ToListAsync();
+
+    return Results.Ok(results);
+})
+.WithName("SearchIndices")
+.WithOpenApi()
+.Produces(StatusCodes.Status200OK);
+
 // GET /api/trending - Get trending stocks
 app.MapGet("/api/trending", async (int? count, AggregatedStockDataService stockService) =>
 {
