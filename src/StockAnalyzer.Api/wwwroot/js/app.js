@@ -1718,24 +1718,30 @@ const App = {
         const savedTickers = this.loadBenchmarkSelections();
         if (savedTickers.length === 0) return;
 
-        let anyAdded = false;
-
-        for (const ticker of savedTickers) {
-            try {
+        // Fetch all benchmarks in parallel
+        const results = await Promise.allSettled(
+            savedTickers.map(async (ticker) => {
                 const historyData = await API.getHistory(
                     ticker, null, this.resolvedStartDate, this.resolvedEndDate
                 );
+                return { ticker, historyData };
+            })
+        );
 
-                const label = this.getBenchmarkLabel(ticker);
-                const added = this.addSeries(ticker, label, 'benchmark', historyData);
+        let anyAdded = false;
+        for (const result of results) {
+            if (result.status !== 'fulfilled') {
+                console.warn('Failed to restore benchmark, skipping:', result.reason);
+                continue;
+            }
+            const { ticker, historyData } = result.value;
+            const label = this.getBenchmarkLabel(ticker);
+            const added = this.addSeries(ticker, label, 'benchmark', historyData);
 
-                if (added) {
-                    anyAdded = true;
-                    const chip = document.querySelector(`[data-benchmark="${ticker}"]`);
-                    if (chip) chip.classList.add('active');
-                }
-            } catch (error) {
-                console.warn(`Failed to restore benchmark ${ticker}, skipping:`, error);
+            if (added) {
+                anyAdded = true;
+                const chip = document.querySelector(`[data-benchmark="${ticker}"]`);
+                if (chip) chip.classList.add('active');
             }
         }
 
@@ -2969,3 +2975,8 @@ window.App = App;
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => App.init());
+
+// Export for testing (Node.js / Jest)
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { App, SERIES_PALETTE, MAX_BENCHMARKS };
+}
