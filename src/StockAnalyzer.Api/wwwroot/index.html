@@ -130,7 +130,7 @@
                             </div>
                         </div>
                         <div class="form-group">
-                            <label for="chart-type">Chart Type</label>
+                            <label id="chart-type-label" for="chart-type">Chart Type</label>
                             <select id="chart-type">
                                 <option value="line">Line</option>
                                 <option value="candlestick">Candlestick</option>
@@ -187,15 +187,15 @@
 
                     <!-- Moving Averages Toggle -->
                     <div class="options-row">
-                        <label class="checkbox-label" title="Simple Moving Average (20-day)">
+                        <label id="ma-20-label" class="checkbox-label" title="Simple Moving Average (20-day)">
                             <input type="checkbox" id="ma-20" checked>
                             <span>SMA 20</span>
                         </label>
-                        <label class="checkbox-label" title="Simple Moving Average (50-day)">
+                        <label id="ma-50-label" class="checkbox-label" title="Simple Moving Average (50-day)">
                             <input type="checkbox" id="ma-50" checked>
                             <span>SMA 50</span>
                         </label>
-                        <label class="checkbox-label" title="Simple Moving Average (200-day)">
+                        <label id="ma-200-label" class="checkbox-label" title="Simple Moving Average (200-day)">
                             <input type="checkbox" id="ma-200">
                             <span>SMA 200</span>
                         </label>
@@ -229,6 +229,41 @@
                         <button data-compare="QQQ" class="chip">Nasdaq 100 (QQQ)</button>
                         <button data-compare="^DJI" class="chip">Dow Jones (^DJI)</button>
                         <button id="clear-compare" class="chip chip-danger hidden">✕ Clear Comparison</button>
+                    </div>
+
+                    <!-- Benchmark Overlays -->
+                    <div class="options-row" id="benchmark-section">
+                        <span class="options-label">Benchmarks:</span>
+                        <div class="benchmark-chips" id="benchmark-chips">
+                            <button data-benchmark="SPY" class="chip chip-benchmark">S&amp;P 500</button>
+                            <button data-benchmark="QQQ" class="chip chip-benchmark">Nasdaq-100</button>
+                            <button data-benchmark="DIA" class="chip chip-benchmark">Dow Jones</button>
+                            <button data-benchmark="IWM" class="chip chip-benchmark">Russell 2000</button>
+                            <button data-benchmark="EWU" class="chip chip-benchmark">FTSE 100</button>
+                            <button data-benchmark="EWG" class="chip chip-benchmark">DAX 40</button>
+                            <button data-benchmark="EWJ" class="chip chip-benchmark">Nikkei 225</button>
+                            <button data-benchmark="EFA" class="chip chip-benchmark">MSCI EAFE</button>
+                            <button data-benchmark="EEM" class="chip chip-benchmark">MSCI EM</button>
+                            <button data-benchmark="ACWI" class="chip chip-benchmark">MSCI ACWI</button>
+                        </div>
+                    </div>
+
+                    <!-- Benchmark Search -->
+                    <div class="options-row" id="benchmark-search-section">
+                        <span class="options-label">Search Index:</span>
+                        <div class="input-group" style="position: relative; flex: 1; max-width: 300px;">
+                            <input type="text" id="benchmark-search-input" placeholder="Search indices..." autocomplete="off">
+                            <div id="benchmark-search-loader" class="input-loader hidden">
+                                <div class="spinner-small"></div>
+                            </div>
+                            <div id="benchmark-search-results" class="search-results hidden"></div>
+                        </div>
+                    </div>
+
+                    <!-- Clear Controls -->
+                    <div class="options-row" id="benchmark-clear-section">
+                        <button id="clear-benchmarks" class="chip chip-danger hidden">Clear Benchmarks</button>
+                        <button id="clear-all-overlays" class="chip chip-danger hidden">All Clear</button>
                     </div>
 
                     <!-- Threshold Slider -->

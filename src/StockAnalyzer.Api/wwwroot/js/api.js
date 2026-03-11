@@ -156,6 +156,21 @@ const API = {
     },
 
     /**
+     * Search index definitions by name/code/family.
+     * Only returns indices with a ProxyEtfTicker (required for price data).
+     * @param {string} query
+     * @returns {Promise<Array<{indexId, indexCode, indexName, region, proxyEtfTicker}>>}
+     */
+    async searchIndices(query) {
+        if (!query || query.trim().length === 0) return [];
+        const response = await fetch(
+            `${this.baseUrl}/indices/search?q=${encodeURIComponent(query.trim())}`
+        );
+        if (!response.ok) return [];
+        return response.json();
+    },
+
+    /**
      * Server fallback search (called after 5s debounce when local search returns empty)
      * @param {string} query - Search query
      */

@@ -2,6 +2,19 @@
  * Stock Analyzer Application
  * Main application logic
  */
+
+// Okabe-Ito color palette for chart series (colorblind-safe)
+const SERIES_PALETTE = [
+    { color: '#0072B2', dash: 'solid' },     // Position 0: Primary stock (Blue)
+    { color: '#E69F00', dash: 'dash' },       // Position 1: Comparison (Orange)
+    { color: '#009E73', dash: 'dot' },        // Position 2: Benchmark 1 (Blue-Green)
+    { color: '#56B4E9', dash: 'dashdot' },    // Position 3: Benchmark 2 (Sky Blue)
+    { color: '#D55E00', dash: 'longdash' },   // Position 4: Benchmark 3 (Vermillion)
+    { color: '#CC79A7', dash: 'solid' },      // Position 5: Benchmark 4 (Red-Purple)
+    { color: '#F0E442', dash: 'dash' },       // Position 6: Benchmark 5 (Yellow)
+];
+const MAX_BENCHMARKS = 5;
+
 const App = {
     currentTicker: null,
     endDatePreset: 'PBD',
@@ -30,10 +43,14 @@ const App = {
     searchSelectedIndex: -1,
     compareSelectedIndex: -1,
 
-    // Comparison feature state
-    comparisonTicker: null,
-    comparisonHistoryData: null,
+    // Chart series state (replaces comparisonTicker/comparisonHistoryData)
+    chartSeries: [],          // Array of {ticker, label, type, data, color, dash}
     compareSearchTimeout: null,
+    benchmarkSearchTimeout: null,
+    benchmarkSearchSelectedIndex: -1,
+    _benchmarkFetchInProgress: false,
+    // Preserved indicator state (saved when disabling for multi-series mode)
+    savedIndicatorState: null,
 
     // Image cache for pre-loaded animal images
     imageCache: {
@@ -348,10 +365,10 @@ const App = {
         if (!this.currentTicker || !this.resolvedStartDate || !this.resolvedEndDate) return;
         if (this.resolvedStartDate > this.resolvedEndDate) return;
 
-        if (this.comparisonTicker) {
-            const comparisonTicker = this.comparisonTicker;
-            this.comparisonTicker = null;
-            this.comparisonHistoryData = null;
+        const comparisonSeries = this.chartSeries.find(s => s.type === 'comparison');
+        if (comparisonSeries) {
+            const comparisonTicker = comparisonSeries.ticker;
+            this.clearComparison();
             await this.analyzeStock();
             await this.setComparison(comparisonTicker);
         } else {
@@ -1123,6 +1140,102 @@ const App = {
             this.clearComparison();
         });
 
+        // Benchmark toggle chips
+        document.querySelectorAll('[data-benchmark]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const ticker = btn.dataset.benchmark;
+                const label = btn.textContent.trim();
+                this.toggleBenchmark(ticker, label, btn);
+            });
+        });
+
+        // Clear Benchmarks button
+        document.getElementById('clear-benchmarks').addEventListener('click', () => {
+            this.clearBenchmarkSeries();
+            this.saveBenchmarkSelections();
+            document.querySelectorAll('[data-benchmark]').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelectorAll('.chip-benchmark-temp').forEach(el => el.remove());
+
+            this.updateClearButtonVisibility();
+
+            if (!this.isMultiSeriesMode()) {
+                this.disableIndicators(false);
+            }
+
+            if (this.historyData) {
+                this.renderChart();
+                this.attachChartHoverListeners();
+                this.attachDragMeasure();
+            }
+        });
+
+        // All Clear (comparison + benchmarks)
+        document.getElementById('clear-all-overlays').addEventListener('click', () => {
+            this.clearComparison();
+            this.clearBenchmarkSeries();
+            this.saveBenchmarkSelections();
+            document.querySelectorAll('[data-benchmark]').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelectorAll('.chip-benchmark-temp').forEach(el => el.remove());
+
+            this.updateClearButtonVisibility();
+            this.disableIndicators(false);
+
+            if (this.historyData) {
+                this.renderChart();
+                this.attachChartHoverListeners();
+                this.attachDragMeasure();
+            }
+        });
+
+        // Benchmark search input
+        const benchmarkInput = document.getElementById('benchmark-search-input');
+        benchmarkInput.addEventListener('input', (e) => {
+            clearTimeout(this.benchmarkSearchTimeout);
+            const query = e.target.value.trim();
+            this.benchmarkSearchTimeout = setTimeout(
+                () => this.performBenchmarkSearch(query), 300
+            );
+        });
+
+        benchmarkInput.addEventListener('keydown', (e) => {
+            const container = document.getElementById('benchmark-search-results');
+            const items = container.querySelectorAll('.benchmark-result');
+            const isOpen = !container.classList.contains('hidden') && items.length > 0;
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (isOpen) {
+                    this.benchmarkSearchSelectedIndex = Math.min(
+                        this.benchmarkSearchSelectedIndex + 1, items.length - 1
+                    );
+                    this.highlightDropdownItem(items, this.benchmarkSearchSelectedIndex);
+                }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (isOpen) {
+                    this.benchmarkSearchSelectedIndex = Math.max(
+                        this.benchmarkSearchSelectedIndex - 1, 0
+                    );
+                    this.highlightDropdownItem(items, this.benchmarkSearchSelectedIndex);
+                }
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (isOpen && this.benchmarkSearchSelectedIndex >= 0) {
+                    items[this.benchmarkSearchSelectedIndex].click();
+                }
+            } else if (e.key === 'Escape') {
+                this.hideBenchmarkSearchResults();
+            }
+        });
+
+        benchmarkInput.addEventListener('blur', () => {
+            setTimeout(() => this.hideBenchmarkSearchResults(), 200);
+        });
+
         // Window resize handler for chart responsiveness
         let resizeTimeout;
         window.addEventListener('resize', () => {
@@ -1333,15 +1446,18 @@ const App = {
             document.getElementById('compare-input').value = ticker;
 
             // Fetch comparison history data
-            this.comparisonHistoryData = await API.getHistory(
+            const historyData = await API.getHistory(
                 ticker, null, this.resolvedStartDate, this.resolvedEndDate);
-            this.comparisonTicker = ticker;
 
-            // Disable technical indicators (they don't make sense for comparison)
+            // Add to chartSeries (replaces any existing comparison)
+            this.addSeries(ticker, ticker, 'comparison', historyData);
+
+            // Disable technical indicators (they don't make sense for multi-series)
             this.disableIndicators(true);
 
             // Show clear button
             document.getElementById('clear-compare').classList.remove('hidden');
+            this.updateClearButtonVisibility();
 
             // Re-render chart with comparison
             this.renderChart();
@@ -1358,13 +1474,20 @@ const App = {
      * Clear comparison and restore single-stock view
      */
     clearComparison() {
-        this.comparisonTicker = null;
-        this.comparisonHistoryData = null;
+        // Remove comparison series
+        const comparison = this.chartSeries.find(s => s.type === 'comparison');
+        if (comparison) {
+            this.removeSeries(comparison.ticker);
+        }
+
         document.getElementById('compare-input').value = '';
         document.getElementById('clear-compare').classList.add('hidden');
+        this.updateClearButtonVisibility();
 
-        // Re-enable technical indicators
-        this.disableIndicators(false);
+        // Re-enable technical indicators if no longer in multi-series mode
+        if (!this.isMultiSeriesMode()) {
+            this.disableIndicators(false);
+        }
 
         // Re-render chart without comparison
         if (this.historyData) {
@@ -1387,9 +1510,9 @@ const App = {
         this.significantMovesData = null;
         this.newsCache = {};
 
-        // Clear comparison
-        this.comparisonTicker = null;
-        this.comparisonHistoryData = null;
+        // Clear all non-primary series
+        this.clearAllSeries();
+        this.saveBenchmarkSelections();
         document.getElementById('compare-input').value = '';
         document.getElementById('clear-compare').classList.add('hidden');
 
@@ -1440,38 +1563,500 @@ const App = {
     },
 
     /**
-     * Enable or disable technical indicator checkboxes
+     * Build the primary series entry from current stock data.
+     * Called when a stock is first analyzed.
+     */
+    buildPrimarySeries() {
+        if (!this.historyData || !this.currentTicker) return null;
+        return {
+            ticker: this.currentTicker,
+            label: this.currentTicker,
+            type: 'primary',
+            data: this.historyData,
+            color: SERIES_PALETTE[0].color,
+            dash: SERIES_PALETTE[0].dash
+        };
+    },
+
+    /**
+     * Rebuild chartSeries from current state.
+     * Ensures primary is always at index 0 with correct palette assignment.
+     */
+    rebuildChartSeries() {
+        const primary = this.buildPrimarySeries();
+        if (!primary) {
+            this.chartSeries = [];
+            return;
+        }
+        // Keep non-primary series, reassign palette positions
+        const others = this.chartSeries.filter(s => s.type !== 'primary');
+        this.chartSeries = [primary, ...others];
+        this.assignPalettePositions();
+    },
+
+    /**
+     * Assign palette colors/dashes based on position in chartSeries.
+     */
+    assignPalettePositions() {
+        this.chartSeries.forEach((series, i) => {
+            if (i < SERIES_PALETTE.length) {
+                series.color = SERIES_PALETTE[i].color;
+                series.dash = SERIES_PALETTE[i].dash;
+            }
+        });
+    },
+
+    /**
+     * Add a series to the chart. Returns false if limit reached or duplicate.
+     * @param {string} ticker
+     * @param {string} label
+     * @param {'comparison'|'benchmark'} type
+     * @param {object} data - History data from API
+     * @returns {boolean} true if added
+     */
+    addSeries(ticker, label, type, data) {
+        // Prevent duplicates
+        if (this.chartSeries.some(s => s.ticker === ticker)) {
+            return false;
+        }
+        // Enforce max benchmarks
+        const benchmarkCount = this.chartSeries.filter(s => s.type === 'benchmark').length;
+        if (type === 'benchmark' && benchmarkCount >= MAX_BENCHMARKS) {
+            alert(`Maximum ${MAX_BENCHMARKS} benchmarks allowed. Remove one before adding another.`);
+            return false;
+        }
+        // Only one comparison allowed
+        if (type === 'comparison') {
+            this.chartSeries = this.chartSeries.filter(s => s.type !== 'comparison');
+        }
+        const idx = this.chartSeries.length;
+        const palette = idx < SERIES_PALETTE.length ? SERIES_PALETTE[idx] : SERIES_PALETTE[SERIES_PALETTE.length - 1];
+        this.chartSeries.push({
+            ticker,
+            label,
+            type,
+            data,
+            color: palette.color,
+            dash: palette.dash
+        });
+        this.assignPalettePositions();
+        return true;
+    },
+
+    /**
+     * Remove a series by ticker. Returns the removed series or null.
+     */
+    removeSeries(ticker) {
+        const idx = this.chartSeries.findIndex(s => s.ticker === ticker);
+        if (idx <= 0) return null; // Can't remove primary (index 0) or not found
+        const removed = this.chartSeries.splice(idx, 1)[0];
+        this.assignPalettePositions();
+        return removed;
+    },
+
+    /**
+     * Get all series of a given type.
+     */
+    getSeriesByType(type) {
+        return this.chartSeries.filter(s => s.type === type);
+    },
+
+    /**
+     * Remove all benchmark series. Comparison and primary remain.
+     */
+    clearBenchmarkSeries() {
+        this.chartSeries = this.chartSeries.filter(s => s.type !== 'benchmark');
+        this.assignPalettePositions();
+    },
+
+    /**
+     * Remove all non-primary series (comparison + benchmarks).
+     */
+    clearAllSeries() {
+        this.chartSeries = this.chartSeries.filter(s => s.type === 'primary');
+    },
+
+    /**
+     * Save active benchmark tickers to localStorage.
+     * Called on every benchmark toggle.
+     */
+    saveBenchmarkSelections() {
+        try {
+            const benchmarkTickers = this.getSeriesByType('benchmark')
+                .map(s => s.ticker);
+            localStorage.setItem('stockAnalyzer_benchmarks', JSON.stringify(benchmarkTickers));
+        } catch (error) {
+            console.error('Failed to save benchmark selections:', error);
+        }
+    },
+
+    /**
+     * Load saved benchmark tickers from localStorage.
+     * Returns empty array on corrupted/missing data.
+     * @returns {string[]} Array of ticker strings
+     */
+    loadBenchmarkSelections() {
+        try {
+            const data = localStorage.getItem('stockAnalyzer_benchmarks');
+            if (!data) return [];
+            const parsed = JSON.parse(data);
+            if (!Array.isArray(parsed)) return [];
+            return parsed.filter(t => typeof t === 'string' && t.length > 0);
+        } catch (error) {
+            console.warn('Corrupted benchmark data in localStorage, clearing:', error);
+            localStorage.removeItem('stockAnalyzer_benchmarks');
+            return [];
+        }
+    },
+
+    /**
+     * Restore saved benchmarks after stock analysis completes.
+     * Fetches data for each saved ticker and adds to chart.
+     * Silently skips tickers that fail to load (e.g., delisted).
+     */
+    async restoreBenchmarks() {
+        const savedTickers = this.loadBenchmarkSelections();
+        if (savedTickers.length === 0) return;
+
+        let anyAdded = false;
+
+        for (const ticker of savedTickers) {
+            try {
+                const historyData = await API.getHistory(
+                    ticker, null, this.resolvedStartDate, this.resolvedEndDate
+                );
+
+                const label = this.getBenchmarkLabel(ticker);
+                const added = this.addSeries(ticker, label, 'benchmark', historyData);
+
+                if (added) {
+                    anyAdded = true;
+                    const chip = document.querySelector(`[data-benchmark="${ticker}"]`);
+                    if (chip) chip.classList.add('active');
+                }
+            } catch (error) {
+                console.warn(`Failed to restore benchmark ${ticker}, skipping:`, error);
+            }
+        }
+
+        if (anyAdded) {
+            this.disableIndicators(true);
+            this.updateClearButtonVisibility();
+            this.renderChart();
+            this.attachChartHoverListeners();
+            this.attachDragMeasure();
+        }
+    },
+
+    /**
+     * Get display label for a benchmark ticker.
+     * Checks static chips first, falls back to ticker string.
+     */
+    getBenchmarkLabel(ticker) {
+        const chip = document.querySelector(`[data-benchmark="${ticker}"]`);
+        if (chip) return chip.textContent.trim();
+        return ticker;
+    },
+
+    /**
+     * Whether the chart is in multi-series mode (more than just the primary stock).
+     */
+    isMultiSeriesMode() {
+        return this.chartSeries.length > 1;
+    },
+
+    /**
+     * Toggle a benchmark index on/off the chart.
+     * If already active, removes it. If not active, fetches data and adds it.
+     * @param {string} etfTicker - The ETF proxy ticker (e.g., 'SPY')
+     * @param {string} label - Display label (e.g., 'S&P 500')
+     * @param {HTMLElement} [chipEl] - The chip button element (for toggle styling)
+     */
+    async toggleBenchmark(etfTicker, label, chipEl) {
+        etfTicker = etfTicker.toUpperCase();
+
+        if (!this.currentTicker) {
+            alert('Analyze a stock first before adding benchmarks.');
+            return;
+        }
+
+        // Guard against concurrent fetches (rapid chip clicks)
+        if (this._benchmarkFetchInProgress) return;
+        this._benchmarkFetchInProgress = true;
+
+        // If already in chartSeries, remove it (toggle off)
+        const existing = this.chartSeries.find(
+            s => s.ticker === etfTicker && s.type === 'benchmark'
+        );
+        if (existing) {
+            this.removeSeries(etfTicker);
+            if (chipEl) chipEl.classList.remove('active');
+
+            // Remove temp chips
+            const tempChip = document.querySelector(
+                `.chip-benchmark-temp[data-benchmark="${etfTicker}"]`
+            );
+            if (tempChip) tempChip.remove();
+
+            this.updateClearButtonVisibility();
+
+            if (!this.isMultiSeriesMode()) {
+                this.disableIndicators(false);
+            }
+
+            this.renderChart();
+            this.attachChartHoverListeners();
+            this.attachDragMeasure();
+            this.saveBenchmarkSelections();
+            this._benchmarkFetchInProgress = false;
+            return;
+        }
+
+        // Adding a new benchmark — addSeries enforces max 5
+        try {
+            const historyData = await API.getHistory(
+                etfTicker, null, this.resolvedStartDate, this.resolvedEndDate
+            );
+
+            const added = this.addSeries(etfTicker, label || etfTicker, 'benchmark', historyData);
+            if (!added) return; // Max limit reached (addSeries already showed alert)
+
+            if (chipEl) chipEl.classList.add('active');
+
+            this.disableIndicators(true);
+            this.updateClearButtonVisibility();
+
+            this.renderChart();
+            this.attachChartHoverListeners();
+            this.attachDragMeasure();
+            this.saveBenchmarkSelections();
+        } catch (error) {
+            console.error(`Failed to fetch benchmark data for ${LogSanitizer.sanitize(etfTicker)}:`, error);
+            alert(`Failed to load benchmark data for ${etfTicker}`);
+        } finally {
+            this._benchmarkFetchInProgress = false;
+        }
+    },
+
+    /**
+     * Update visibility of Clear Benchmarks and All Clear buttons.
+     */
+    updateClearButtonVisibility() {
+        const hasBenchmarks = this.getSeriesByType('benchmark').length > 0;
+        const hasComparison = this.chartSeries.some(s => s.type === 'comparison');
+
+        const clearBtn = document.getElementById('clear-benchmarks');
+        const allClearBtn = document.getElementById('clear-all-overlays');
+
+        if (clearBtn) {
+            clearBtn.classList.toggle('hidden', !hasBenchmarks);
+        }
+        if (allClearBtn) {
+            allClearBtn.classList.toggle('hidden', !hasBenchmarks && !hasComparison);
+        }
+    },
+
+    /**
+     * Perform debounced benchmark index search
+     */
+    performBenchmarkSearch(query) {
+        const container = document.getElementById('benchmark-search-results');
+        const loader = document.getElementById('benchmark-search-loader');
+
+        if (!query || query.length < 2) {
+            container.classList.add('hidden');
+            return;
+        }
+
+        loader.classList.remove('hidden');
+
+        API.searchIndices(query).then(results => {
+            loader.classList.add('hidden');
+            this.showBenchmarkSearchResults(results);
+        }).catch(err => {
+            loader.classList.add('hidden');
+            console.error('Benchmark search failed:', err);
+            container.classList.add('hidden');
+        });
+    },
+
+    /**
+     * Render benchmark search results dropdown
+     */
+    showBenchmarkSearchResults(results) {
+        const container = document.getElementById('benchmark-search-results');
+        if (!results || results.length === 0) {
+            container.classList.add('hidden');
+            return;
+        }
+
+        // Build results using DOM API (avoid innerHTML XSS with database-sourced strings)
+        container.innerHTML = '';
+        results.forEach(r => {
+            const div = document.createElement('div');
+            div.className = 'benchmark-result';
+            div.dataset.ticker = r.proxyEtfTicker;
+            div.dataset.name = r.indexName;
+
+            const symbolEl = document.createElement('div');
+            symbolEl.className = 'result-symbol';
+            symbolEl.textContent = r.proxyEtfTicker;
+
+            const nameEl = document.createElement('div');
+            nameEl.className = 'result-name';
+            nameEl.textContent = r.indexName;
+
+            const metaEl = document.createElement('div');
+            metaEl.className = 'result-meta';
+            metaEl.textContent = [r.region, r.indexCode].filter(Boolean).join(' • ');
+
+            div.appendChild(symbolEl);
+            div.appendChild(nameEl);
+            div.appendChild(metaEl);
+            container.appendChild(div);
+        });
+
+        container.classList.remove('hidden');
+
+        container.querySelectorAll('.benchmark-result').forEach(item => {
+            item.addEventListener('click', () => {
+                const ticker = item.dataset.ticker;
+                const name = item.dataset.name;
+                container.classList.add('hidden');
+                document.getElementById('benchmark-search-input').value = '';
+                this.addBenchmarkFromSearch(ticker, name);
+            });
+        });
+    },
+
+    /**
+     * Add a benchmark from search results — creates a temporary chip if not a static chip
+     */
+    async addBenchmarkFromSearch(etfTicker, indexName) {
+        const existingChip = document.querySelector(`[data-benchmark="${etfTicker}"]`);
+        if (existingChip) {
+            this.toggleBenchmark(etfTicker, existingChip.textContent.trim(), existingChip);
+            return;
+        }
+
+        const chipsContainer = document.getElementById('benchmark-chips');
+        const tempChip = document.createElement('button');
+        tempChip.className = 'chip chip-benchmark-temp';
+        tempChip.dataset.benchmark = etfTicker;
+        tempChip.textContent = indexName || etfTicker;
+        tempChip.addEventListener('click', () => {
+            this.toggleBenchmark(etfTicker, indexName || etfTicker, tempChip);
+        });
+        chipsContainer.appendChild(tempChip);
+
+        await this.toggleBenchmark(etfTicker, indexName || etfTicker, tempChip);
+    },
+
+    /**
+     * Hide benchmark search results dropdown
+     */
+    hideBenchmarkSearchResults() {
+        document.getElementById('benchmark-search-results').classList.add('hidden');
+        this.benchmarkSearchSelectedIndex = -1;
+    },
+
+    /**
+     * Disable or re-enable all indicator and chart-type controls.
+     * When disabling: saves current checkbox states to this.savedIndicatorState.
+     * When re-enabling: restores from saved state (so user doesn't lose their selections).
+     * @param {boolean} disabled - true to disable, false to re-enable
      */
     disableIndicators(disabled) {
-        const rsiCheckbox = document.getElementById('show-rsi');
-        const macdCheckbox = document.getElementById('show-macd');
-        const bollingerCheckbox = document.getElementById('show-bollinger');
-        const stochasticCheckbox = document.getElementById('show-stochastic');
-        const rsiLabel = document.getElementById('rsi-label');
-        const macdLabel = document.getElementById('macd-label');
-        const bollingerLabel = document.getElementById('bollinger-label');
-        const stochasticLabel = document.getElementById('stochastic-label');
-
-        rsiCheckbox.disabled = disabled;
-        macdCheckbox.disabled = disabled;
-        bollingerCheckbox.disabled = disabled;
-        stochasticCheckbox.disabled = disabled;
+        const checkboxIds = ['show-rsi', 'show-macd', 'show-bollinger', 'show-stochastic', 'ma-20', 'ma-50', 'ma-200'];
+        const labelIds = ['rsi-label', 'macd-label', 'bollinger-label', 'stochastic-label', 'ma-20-label', 'ma-50-label', 'ma-200-label'];
+        const chartTypeSelect = document.getElementById('chart-type');
+        const chartTypeLabel = document.getElementById('chart-type-label');
+        const showMarkersCheckbox = document.getElementById('show-markers');
 
         if (disabled) {
-            // Uncheck and dim the indicators
-            rsiCheckbox.checked = false;
-            macdCheckbox.checked = false;
-            bollingerCheckbox.checked = false;
-            stochasticCheckbox.checked = false;
-            rsiLabel.classList.add('opacity-50', 'cursor-not-allowed');
-            macdLabel.classList.add('opacity-50', 'cursor-not-allowed');
-            bollingerLabel.classList.add('opacity-50', 'cursor-not-allowed');
-            stochasticLabel.classList.add('opacity-50', 'cursor-not-allowed');
+            // Save current state before disabling (only if not already saved)
+            if (!this.savedIndicatorState) {
+                this.savedIndicatorState = {};
+                checkboxIds.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) this.savedIndicatorState[id] = el.checked;
+                });
+                if (chartTypeSelect) {
+                    this.savedIndicatorState['chart-type'] = chartTypeSelect.value;
+                }
+                if (showMarkersCheckbox) {
+                    this.savedIndicatorState['show-markers'] = showMarkersCheckbox.checked;
+                }
+            }
+
+            // Disable and uncheck all indicator checkboxes
+            checkboxIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.disabled = true;
+                    el.checked = false;
+                }
+            });
+
+            // Dim all labels
+            labelIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.add('opacity-50', 'cursor-not-allowed');
+            });
+
+            // Disable chart type selector (force to 'line' in multi-series)
+            if (chartTypeSelect) {
+                chartTypeSelect.disabled = true;
+                chartTypeSelect.value = 'line';
+            }
+            if (chartTypeLabel) {
+                chartTypeLabel.classList.add('opacity-50', 'cursor-not-allowed');
+            }
+
+            // Disable significant move markers
+            if (showMarkersCheckbox) {
+                showMarkersCheckbox.disabled = true;
+                showMarkersCheckbox.checked = false;
+            }
         } else {
-            rsiLabel.classList.remove('opacity-50', 'cursor-not-allowed');
-            macdLabel.classList.remove('opacity-50', 'cursor-not-allowed');
-            bollingerLabel.classList.remove('opacity-50', 'cursor-not-allowed');
-            stochasticLabel.classList.remove('opacity-50', 'cursor-not-allowed');
+            // Re-enable all checkboxes, restoring saved state
+            checkboxIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.disabled = false;
+                    if (this.savedIndicatorState && id in this.savedIndicatorState) {
+                        el.checked = this.savedIndicatorState[id];
+                    }
+                }
+            });
+
+            // Remove dim from labels
+            labelIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.remove('opacity-50', 'cursor-not-allowed');
+            });
+
+            // Re-enable chart type selector
+            if (chartTypeSelect) {
+                chartTypeSelect.disabled = false;
+                if (this.savedIndicatorState && 'chart-type' in this.savedIndicatorState) {
+                    chartTypeSelect.value = this.savedIndicatorState['chart-type'];
+                }
+            }
+            if (chartTypeLabel) {
+                chartTypeLabel.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+
+            // Re-enable significant move markers
+            if (showMarkersCheckbox) {
+                showMarkersCheckbox.disabled = false;
+                if (this.savedIndicatorState && 'show-markers' in this.savedIndicatorState) {
+                    showMarkersCheckbox.checked = this.savedIndicatorState['show-markers'];
+                }
+            }
+
+            // Clear saved state
+            this.savedIndicatorState = null;
         }
     },
 
@@ -1534,12 +2119,18 @@ const App = {
                 stochastic: chartData.stochastic
             };
 
+            // Initialize chartSeries with primary stock
+            this.rebuildChartSeries();
+
             const analysis = this.analysisData;
 
             // Render chart immediately - this is what the user is waiting for
             this.renderPerformance(analysis.performance);
             this.renderChart();
             this.showResults();
+
+            // Restore saved benchmarks (if any)
+            await this.restoreBenchmarks();
 
             // PHASE 2: Load secondary data in background (non-blocking)
             // Start all these requests but don't wait for them
@@ -1747,6 +2338,9 @@ const App = {
      * Render chart
      */
     renderChart() {
+        // Ensure primary series is current
+        this.rebuildChartSeries();
+
         const options = {
             chartType: document.getElementById('chart-type').value,
             showMa20: document.getElementById('ma-20').checked,
@@ -1758,19 +2352,19 @@ const App = {
             showMacd: document.getElementById('show-macd').checked,
             showBollinger: document.getElementById('show-bollinger').checked,
             showStochastic: document.getElementById('show-stochastic').checked,
-            // Comparison data
-            comparisonData: this.comparisonHistoryData,
-            comparisonTicker: this.comparisonTicker
+            // Pass chartSeries directly (charts.js iterates for multi-series rendering)
+            chartSeries: this.chartSeries,
+            comparisonData: null,
+            comparisonTicker: null
         };
 
-        // Adjust chart height based on enabled indicators (only when not comparing)
+        // Adjust chart height based on enabled indicators (only when not in multi-series mode)
         const chartEl = document.getElementById('stock-chart');
         const baseHeight = 400;
         const indicatorHeight = 150;
         let totalHeight = baseHeight;
 
-        // Only add indicator height if not comparing (indicators disabled during comparison)
-        if (!this.comparisonTicker) {
+        if (!this.isMultiSeriesMode()) {
             if (options.showRsi) totalHeight += indicatorHeight;
             if (options.showMacd) totalHeight += indicatorHeight;
             if (options.showStochastic) totalHeight += indicatorHeight;
@@ -1882,10 +2476,16 @@ const App = {
 
         DragMeasure.attach('stock-chart', {
             dataSource: () => this.historyData?.data || [],
-            isComparisonMode: () => !!this.comparisonTicker,
-            getComparisonData: () => this.comparisonHistoryData ? { data: this.comparisonHistoryData.data } : null,
+            isComparisonMode: () => this.isMultiSeriesMode(),
+            getComparisonData: () => {
+                const s = this.chartSeries.find(c => c.type === 'comparison');
+                return s ? { data: s.data.data } : null;
+            },
             getPrimarySymbol: () => this.currentTicker || '',
-            getComparisonSymbol: () => this.comparisonTicker || '',
+            getComparisonSymbol: () => {
+                const s = this.chartSeries.find(c => c.type === 'comparison');
+                return s ? s.ticker : '';
+            },
             onRangeExtend: (fromDate, toDate) => this.extendChartRange(fromDate, toDate)
         });
     },
@@ -1933,11 +2533,12 @@ const App = {
             };
 
             // Also fetch comparison data for the extended range if comparing
-            if (this.comparisonTicker) {
+            const comparisonSeries = this.chartSeries.find(s => s.type === 'comparison');
+            if (comparisonSeries) {
                 try {
-                    const compData = await API.getChartData(this.comparisonTicker, null, fromDate, toDate);
+                    const compData = await API.getChartData(comparisonSeries.ticker, null, fromDate, toDate);
                     if (compData?.data) {
-                        this.comparisonHistoryData = {
+                        comparisonSeries.data = {
                             symbol: compData.symbol,
                             data: compData.data
                         };
