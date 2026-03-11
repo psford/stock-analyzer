@@ -1,6 +1,6 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.71
+**Version:** 2.73
 **Last Updated:** 2026-02-26
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
@@ -3342,6 +3342,7 @@ const newsPromise = API.getAggregatedNews(ticker, 30, 10);
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.73 | 2026-03-10 | **Sparse/stale data API fallback + remove Quick Compare row:** `TryGetFromDatabaseAsync` in `AggregatedStockDataService` now checks two conditions before accepting DB data: (1) sparse coverage — if range >30 trading days but DB has <20% expected points, fall through to API providers; (2) staleness — if most recent DB price is >7 days before requested end date, fall through to API. Fixes benchmark ETFs (DIA/SPY/QQQ) showing only ~1 month of data when DB had sparse records, and stocks (MSFT/AAPL) ending weeks early when DB data was stale. Removed Quick Compare chip row from `index.html` (redundant with comparison input field + benchmark chips). Moved `clear-compare` button inline into compare input wrapper. Removed dead `[data-compare]` click handler from `app.js`. |
 | 2.72 | 2026-03-10 | **Bloomberg terminal UX:** Removed Analyze button. Ticker and comparison inputs now auto-complete top dropdown result on Tab/Enter/blur and trigger analysis automatically. First dropdown result pre-highlighted (index 0). Search debounce reduced from 300ms to 150ms. Arrow key navigation preserved. `_tickerCommittedByKeyboard`/`_compareCommittedByKeyboard` flags prevent double-triggering between keydown and blur handlers. `tickerValueOnFocus`/`compareValueOnFocus` track value changes for blur-triggered analysis. 19 Playwright tests (`helpers/test_bloomberg_ux.py`). |
 | 2.71 | 2026-03-10 | **Fix slow initial load:** Moved `restoreBenchmarks()` from blocking `await` to fire-and-forget in `analyzeStock()`. Phase 2 promises (stock info, significant moves, news) now start immediately after chart render instead of waiting for benchmark restore to complete. Benchmarks restore in background without blocking page load. |
 | 2.70 | 2026-03-10 | **Retro mitigations — parallel restore and test imports:** `restoreBenchmarks()` refactored from sequential `for...of await` to `Promise.allSettled()` for parallel benchmark fetching. Added `module.exports` to `app.js` for Jest import compatibility. `chartSeries.test.js` fully rewritten to import real `App`, `SERIES_PALETTE`, `MAX_BENCHMARKS` from production `app.js` instead of duplicating functions (fixes test theater). All 33 chartSeries tests exercise real production code paths. 4 new Claude Code hooks: `js_test_theater_guard.py` (blocks test files without imports), `spec_staleness_guard.py` (warns on push if specs stale), `plan_phase_count_guard.py` (blocks 5+ phase plans), `retro_trigger_guard.py` (triggers retro on reverts/churn). |

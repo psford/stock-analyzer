@@ -1166,18 +1166,6 @@ const App = {
             }
         });
 
-        // Quick compare benchmark buttons
-        document.querySelectorAll('[data-compare]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                if (!this.currentTicker) {
-                    alert('Please analyze a stock first before comparing.');
-                    return;
-                }
-                const ticker = btn.dataset.compare;
-                this.setComparison(ticker);
-            });
-        });
-
         // Clear comparison button
         document.getElementById('clear-compare').addEventListener('click', () => {
             this.clearComparison();
