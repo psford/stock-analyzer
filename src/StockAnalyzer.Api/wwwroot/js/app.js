@@ -1874,38 +1874,102 @@ const App = {
     },
 
     /**
-     * Enable or disable technical indicator checkboxes
+     * Disable or re-enable all indicator and chart-type controls.
+     * When disabling: saves current checkbox states to this.savedIndicatorState.
+     * When re-enabling: restores from saved state (so user doesn't lose their selections).
+     * @param {boolean} disabled - true to disable, false to re-enable
      */
     disableIndicators(disabled) {
-        const rsiCheckbox = document.getElementById('show-rsi');
-        const macdCheckbox = document.getElementById('show-macd');
-        const bollingerCheckbox = document.getElementById('show-bollinger');
-        const stochasticCheckbox = document.getElementById('show-stochastic');
-        const rsiLabel = document.getElementById('rsi-label');
-        const macdLabel = document.getElementById('macd-label');
-        const bollingerLabel = document.getElementById('bollinger-label');
-        const stochasticLabel = document.getElementById('stochastic-label');
-
-        rsiCheckbox.disabled = disabled;
-        macdCheckbox.disabled = disabled;
-        bollingerCheckbox.disabled = disabled;
-        stochasticCheckbox.disabled = disabled;
+        const checkboxIds = ['show-rsi', 'show-macd', 'show-bollinger', 'show-stochastic', 'ma-20', 'ma-50', 'ma-200'];
+        const labelIds = ['rsi-label', 'macd-label', 'bollinger-label', 'stochastic-label', 'ma-20-label', 'ma-50-label', 'ma-200-label'];
+        const chartTypeSelect = document.getElementById('chart-type');
+        const chartTypeLabel = document.getElementById('chart-type-label');
+        const showMarkersCheckbox = document.getElementById('show-markers');
 
         if (disabled) {
-            // Uncheck and dim the indicators
-            rsiCheckbox.checked = false;
-            macdCheckbox.checked = false;
-            bollingerCheckbox.checked = false;
-            stochasticCheckbox.checked = false;
-            rsiLabel.classList.add('opacity-50', 'cursor-not-allowed');
-            macdLabel.classList.add('opacity-50', 'cursor-not-allowed');
-            bollingerLabel.classList.add('opacity-50', 'cursor-not-allowed');
-            stochasticLabel.classList.add('opacity-50', 'cursor-not-allowed');
+            // Save current state before disabling (only if not already saved)
+            if (!this.savedIndicatorState) {
+                this.savedIndicatorState = {};
+                checkboxIds.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) this.savedIndicatorState[id] = el.checked;
+                });
+                if (chartTypeSelect) {
+                    this.savedIndicatorState['chart-type'] = chartTypeSelect.value;
+                }
+                if (showMarkersCheckbox) {
+                    this.savedIndicatorState['show-markers'] = showMarkersCheckbox.checked;
+                }
+            }
+
+            // Disable and uncheck all indicator checkboxes
+            checkboxIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.disabled = true;
+                    el.checked = false;
+                }
+            });
+
+            // Dim all labels
+            labelIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.add('opacity-50', 'cursor-not-allowed');
+            });
+
+            // Disable chart type selector (force to 'line' in multi-series)
+            if (chartTypeSelect) {
+                chartTypeSelect.disabled = true;
+                chartTypeSelect.value = 'line';
+            }
+            if (chartTypeLabel) {
+                chartTypeLabel.classList.add('opacity-50', 'cursor-not-allowed');
+            }
+
+            // Disable significant move markers
+            if (showMarkersCheckbox) {
+                showMarkersCheckbox.disabled = true;
+                showMarkersCheckbox.checked = false;
+            }
         } else {
-            rsiLabel.classList.remove('opacity-50', 'cursor-not-allowed');
-            macdLabel.classList.remove('opacity-50', 'cursor-not-allowed');
-            bollingerLabel.classList.remove('opacity-50', 'cursor-not-allowed');
-            stochasticLabel.classList.remove('opacity-50', 'cursor-not-allowed');
+            // Re-enable all checkboxes, restoring saved state
+            checkboxIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.disabled = false;
+                    if (this.savedIndicatorState && id in this.savedIndicatorState) {
+                        el.checked = this.savedIndicatorState[id];
+                    }
+                }
+            });
+
+            // Remove dim from labels
+            labelIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.remove('opacity-50', 'cursor-not-allowed');
+            });
+
+            // Re-enable chart type selector
+            if (chartTypeSelect) {
+                chartTypeSelect.disabled = false;
+                if (this.savedIndicatorState && 'chart-type' in this.savedIndicatorState) {
+                    chartTypeSelect.value = this.savedIndicatorState['chart-type'];
+                }
+            }
+            if (chartTypeLabel) {
+                chartTypeLabel.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+
+            // Re-enable significant move markers
+            if (showMarkersCheckbox) {
+                showMarkersCheckbox.disabled = false;
+                if (this.savedIndicatorState && 'show-markers' in this.savedIndicatorState) {
+                    showMarkersCheckbox.checked = this.savedIndicatorState['show-markers'];
+                }
+            }
+
+            // Clear saved state
+            this.savedIndicatorState = null;
         }
     },
 
