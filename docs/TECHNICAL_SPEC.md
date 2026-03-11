@@ -1,6 +1,6 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.74
+**Version:** 2.75
 **Last Updated:** 2026-02-26
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
@@ -3342,6 +3342,7 @@ const newsPromise = API.getAggregatedNews(ticker, 30, 10);
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.75 | 2026-03-11 | **Overlays use effective chart range:** Added `getEffectiveDateRange()` helper that returns the wider of date picker values vs primary stock's actual data range. Used by `toggleBenchmark()`, `setComparison()`, and `restoreBenchmarks()` so overlays added after scroll-zoom cover the full visible range instead of the original date picker range. |
 | 2.74 | 2026-03-10 | **Fix scroll-zoom overlay extension:** `extendChartRange()` now re-fetches all overlay series (comparison + benchmarks) when scroll zoom extends past data bounds, not just the comparison. Uses `Promise.allSettled()` for parallel fetches. Fixes benchmarks and comparisons not extending when zooming out. |
 | 2.73 | 2026-03-10 | **Sparse/stale data API fallback + remove Quick Compare row:** `TryGetFromDatabaseAsync` in `AggregatedStockDataService` now checks two conditions before accepting DB data: (1) sparse coverage — if range >30 trading days but DB has <20% expected points, fall through to API providers; (2) staleness — if most recent DB price is >7 days before requested end date, fall through to API. Fixes benchmark ETFs (DIA/SPY/QQQ) showing only ~1 month of data when DB had sparse records, and stocks (MSFT/AAPL) ending weeks early when DB data was stale. Removed Quick Compare chip row from `index.html` (redundant with comparison input field + benchmark chips). Moved `clear-compare` button inline into compare input wrapper. Removed dead `[data-compare]` click handler from `app.js`. |
 | 2.72 | 2026-03-10 | **Bloomberg terminal UX:** Removed Analyze button. Ticker and comparison inputs now auto-complete top dropdown result on Tab/Enter/blur and trigger analysis automatically. First dropdown result pre-highlighted (index 0). Search debounce reduced from 300ms to 150ms. Arrow key navigation preserved. `_tickerCommittedByKeyboard`/`_compareCommittedByKeyboard` flags prevent double-triggering between keydown and blur handlers. `tickerValueOnFocus`/`compareValueOnFocus` track value changes for blur-triggered analysis. 19 Playwright tests (`helpers/test_bloomberg_ux.py`). |
