@@ -1,7 +1,7 @@
 # Functional Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 3.3
-**Last Updated:** 2026-02-05
+**Version:** 3.10
+**Last Updated:** 2026-03-10
 **Author:** Claude (AI Assistant)
 **Status:** Production
 **Audience:** Business Users, Product Owners, QA Testers
@@ -939,10 +939,10 @@ The dashboard is fully responsive and adapts to mobile devices.
 **Steps:**
 1. User opens application (http://localhost:5000)
 2. User types company name in search box (e.g., "Apple")
-3. System displays autocomplete suggestions after 300ms
-4. User clicks on "AAPL - Apple Inc. (NMS)"
-5. Ticker populates in search box
-6. User clicks "Analyze" button
+3. System displays autocomplete suggestions after 150ms with first result pre-highlighted
+4. User presses Tab or Enter (or clicks a result)
+5. System auto-selects the highlighted dropdown result and populates ticker
+6. System automatically triggers analysis (no Analyze button — Bloomberg terminal style)
 7. System loads chart, company info, metrics, and news
 8. User reviews displayed information
 
@@ -957,7 +957,7 @@ The dashboard is fully responsive and adapts to mobile devices.
 2. User enables SMA-200 checkbox
 3. System updates chart with 200-day moving average line
 4. User changes period to "2y" for longer-term view
-5. User clicks "Analyze" to refresh
+5. System auto-refreshes chart (reanalysis triggers on date change)
 6. User hovers over chart to see values at specific dates
 
 **Success Criteria:** All selected MAs display with correct values
@@ -1109,6 +1109,8 @@ The dashboard is fully responsive and adapts to mobile devices.
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
+| 3.10 | 2026-03-10 | **Data freshness fallback:** Historical data API now falls through to external providers when local database has sparse (<20% coverage) or stale (>7 days behind requested end) data. Removed Quick Compare chip row (redundant with comparison input + benchmark chips). | Claude |
+| 3.9 | 2026-03-10 | **Bloomberg Terminal UX (FR-001):** Removed Analyze button. Search triggers analysis automatically on Tab, Enter, or blur (click away). Autocomplete dropdown pre-highlights first result. Debounce reduced from 300ms to 150ms. Comparison field has identical keyboard-first behavior. User flow 5.1 updated to reflect new interaction model. | Claude |
 | 3.8 | 2026-03-10 | **Benchmark Overlays (FR-018):** New section 3.18 with 16 functional requirements. 10 preset benchmark chips + search typeahead. Max 5 simultaneous benchmarks. Indicator disable/enable with state preservation. Chart type forced to line in multi-series. localStorage persistence with automatic restore on page load. Corrupted data handling. Colorblind-safe Okabe-Ito palette. | Claude |
 | 3.7 | 2026-03-10 | **Chart Benchmarks Phase 5 — indicator disable/enable (FR-012):** MA checkbox labels and chart-type label now have IDs for consistent visual dimming when controls are disabled in multi-series mode. CSS utility classes `.opacity-50` and `.cursor-not-allowed` added. No user-visible change yet — preparation for save/restore indicator state logic. | Claude |
 | 3.6 | 2026-03-10 | **Chart Benchmarks Phase 3 — benchmark UI controls (FR-012):** 10 benchmark toggle chips in options panel (S&P 500 SPY, Nasdaq-100 QQQ, Dow Jones DIA, Russell 2000 IWM, FTSE 100 EWU, DAX 40 EWG, Nikkei 225 EWJ, MSCI EAFE EFA, MSCI EM EEM, MSCI ACWI ACWI). Chips toggle on/off with active highlight. Benchmark index search box with typeahead dropdown. "Clear Benchmarks" and "All Clear" buttons (hidden when inactive). | Claude |

@@ -410,6 +410,30 @@ public class AggregatedStockDataService
                 return null;
             }
 
+            // Check if database data covers enough of the requested range.
+            // Two checks: (1) sparse data, (2) stale data (ends well before requested end).
+            var requestedDays = (endDate - startDate).TotalDays;
+            var expectedTradingDays = requestedDays * 252.0 / 365.25; // ~252 trading days per year
+            if (expectedTradingDays > 30 && prices.Count < expectedTradingDays * 0.20)
+            {
+                _logger?.LogInformation(
+                    "Database has sparse data for {Symbol} ({Count} points for {Expected:F0} expected trading days), falling through to API",
+                    LogSanitizer.Sanitize(symbol), prices.Count, expectedTradingDays);
+                return null;
+            }
+
+            // If the most recent DB price is >7 calendar days before the requested end date,
+            // the data is stale — fall through to API for fresher data.
+            var latestPrice = prices.Max(p => p.EffectiveDate);
+            var staleDays = (endDate - latestPrice).TotalDays;
+            if (staleDays > 7)
+            {
+                _logger?.LogInformation(
+                    "Database data for {Symbol} is stale (latest: {Latest:yyyy-MM-dd}, requested end: {End:yyyy-MM-dd}, gap: {Gap} days), falling through to API",
+                    LogSanitizer.Sanitize(symbol), latestPrice, endDate, (int)staleDays);
+                return null;
+            }
+
             var ohlcvData = prices.Select(p => new OhlcvData
             {
                 Date = p.EffectiveDate,

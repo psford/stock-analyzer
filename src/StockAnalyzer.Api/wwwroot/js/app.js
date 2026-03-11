@@ -889,11 +889,11 @@ const App = {
         const tickerInput = document.getElementById('ticker-input');
         const searchResults = document.getElementById('search-results');
 
-        // Search button
-        document.getElementById('search-btn').addEventListener('click', () => this.analyzeStock());
-
         // Clear button
         document.getElementById('clear-btn').addEventListener('click', () => this.clearAll());
+
+        // Track the ticker value when input gains focus (to detect changes on blur)
+        let tickerValueOnFocus = '';
 
         // Autocomplete on input
         tickerInput.addEventListener('input', (e) => {
@@ -905,11 +905,12 @@ const App = {
                 return;
             }
 
-            // Debounce search
-            this.searchTimeout = setTimeout(() => this.performSearch(query), 300);
+            // Debounce search — fast for Bloomberg-style responsiveness
+            this.searchTimeout = setTimeout(() => this.performSearch(query), 150);
         });
 
-        // Keyboard navigation in ticker input (arrows, Enter, Escape)
+        // Keyboard navigation in ticker input (arrows, Enter, Escape, Tab)
+        // Bloomberg terminal behavior: Enter/Tab auto-selects top result and triggers analysis
         tickerInput.addEventListener('keydown', (e) => {
             const items = searchResults.querySelectorAll('.search-result');
             const isOpen = !searchResults.classList.contains('hidden') && items.length > 0;
@@ -924,38 +925,61 @@ const App = {
                 e.preventDefault();
                 this.searchSelectedIndex = Math.max(this.searchSelectedIndex - 1, -1);
                 this.highlightDropdownItem(items, this.searchSelectedIndex);
-            } else if (e.key === 'Enter') {
-                e.preventDefault();
-                if (isOpen && this.searchSelectedIndex >= 0) {
-                    // Select highlighted item and analyze
-                    const symbol = items[this.searchSelectedIndex].dataset.symbol;
-                    tickerInput.value = symbol;
+            } else if (e.key === 'Enter' || e.key === 'Tab') {
+                // Bloomberg behavior: commit selection and analyze
+                if (isOpen) {
+                    // Auto-select: use highlighted item, or top result (index 0) if nothing highlighted
+                    const selectIndex = this.searchSelectedIndex >= 0 ? this.searchSelectedIndex : 0;
+                    if (items[selectIndex]) {
+                        const symbol = items[selectIndex].dataset.symbol;
+                        tickerInput.value = symbol;
+                    }
                     this.hideSearchResults();
-                    this.analyzeStock();
-                } else {
-                    // No dropdown selection — trigger analysis
-                    this.hideSearchResults();
-                    this.analyzeStock();
                 }
-            } else if (e.key === 'Tab') {
-                if (isOpen && this.searchSelectedIndex >= 0) {
-                    // Select highlighted item, let Tab advance focus naturally
-                    const symbol = items[this.searchSelectedIndex].dataset.symbol;
-                    tickerInput.value = symbol;
-                    this.hideSearchResults();
+
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    tickerInput.blur(); // Move focus out, like Tab
+                }
+
+                // Trigger analysis with whatever is in the input
+                const ticker = tickerInput.value.trim();
+                if (ticker) {
+                    this._tickerCommittedByKeyboard = true;
+                    this.analyzeStock();
                 }
             } else if (e.key === 'Escape') {
                 this.hideSearchResults();
             }
         });
 
-        // Hide results on blur (with delay to allow click)
+        // Blur: auto-select top result and analyze (if value changed since focus)
         tickerInput.addEventListener('blur', () => {
-            setTimeout(() => this.hideSearchResults(), 200);
+            setTimeout(() => {
+                // Auto-select top result from dropdown if still open
+                const items = searchResults.querySelectorAll('.search-result');
+                const isOpen = !searchResults.classList.contains('hidden') && items.length > 0;
+                if (isOpen && items[0]) {
+                    const selectIndex = this.searchSelectedIndex >= 0 ? this.searchSelectedIndex : 0;
+                    if (items[selectIndex]) {
+                        tickerInput.value = items[selectIndex].dataset.symbol;
+                    }
+                }
+                this.hideSearchResults();
+
+                // Analyze if the value changed and wasn't already handled by keydown
+                const currentValue = tickerInput.value.trim();
+                if (currentValue && currentValue !== tickerValueOnFocus && !this._tickerCommittedByKeyboard) {
+                    this.analyzeStock();
+                }
+                this._tickerCommittedByKeyboard = false;
+            }, 150);
         });
 
-        // Show results on focus if there's a query
+        // Track focus value for change detection
         tickerInput.addEventListener('focus', (e) => {
+            tickerValueOnFocus = e.target.value.trim();
+            this._tickerCommittedByKeyboard = false;
             if (e.target.value.trim().length >= 2) {
                 this.performSearch(e.target.value.trim());
             }
@@ -1054,9 +1078,10 @@ const App = {
             });
         });
 
-        // Comparison search input
+        // Comparison search input — same Bloomberg terminal behavior
         const compareInput = document.getElementById('compare-input');
         const compareResults = document.getElementById('compare-results');
+        let compareValueOnFocus = '';
 
         compareInput.addEventListener('input', (e) => {
             const query = e.target.value.trim();
@@ -1068,10 +1093,10 @@ const App = {
             }
 
             // Debounce search
-            this.compareSearchTimeout = setTimeout(() => this.performCompareSearch(query), 300);
+            this.compareSearchTimeout = setTimeout(() => this.performCompareSearch(query), 150);
         });
 
-        // Keyboard navigation in comparison input (arrows, Enter, Escape)
+        // Keyboard navigation in comparison input — Enter/Tab auto-select + trigger
         compareInput.addEventListener('keydown', (e) => {
             const items = compareResults.querySelectorAll('.compare-result');
             const isOpen = !compareResults.classList.contains('hidden') && items.length > 0;
@@ -1086,53 +1111,59 @@ const App = {
                 e.preventDefault();
                 this.compareSelectedIndex = Math.max(this.compareSelectedIndex - 1, -1);
                 this.highlightDropdownItem(items, this.compareSelectedIndex);
-            } else if (e.key === 'Enter') {
-                e.preventDefault();
-                if (isOpen && this.compareSelectedIndex >= 0) {
-                    // Select highlighted item, stay on field
-                    const symbol = items[this.compareSelectedIndex].dataset.symbol;
-                    compareInput.value = symbol;
-                    this.hideCompareResults();
-                } else {
-                    // No dropdown selection — trigger comparison
-                    this.hideCompareResults();
-                    const ticker = compareInput.value.trim().toUpperCase();
-                    if (ticker && this.currentTicker) {
-                        this.setComparison(ticker);
+            } else if (e.key === 'Enter' || e.key === 'Tab') {
+                // Bloomberg behavior: commit selection and trigger comparison
+                if (isOpen) {
+                    const selectIndex = this.compareSelectedIndex >= 0 ? this.compareSelectedIndex : 0;
+                    if (items[selectIndex]) {
+                        const symbol = items[selectIndex].dataset.symbol;
+                        compareInput.value = symbol;
                     }
-                }
-            } else if (e.key === 'Tab') {
-                if (isOpen && this.compareSelectedIndex >= 0) {
-                    // Select highlighted item, let Tab advance focus naturally
-                    const symbol = items[this.compareSelectedIndex].dataset.symbol;
-                    compareInput.value = symbol;
                     this.hideCompareResults();
+                }
+
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    compareInput.blur();
+                }
+
+                const ticker = compareInput.value.trim().toUpperCase();
+                if (ticker && this.currentTicker) {
+                    this._compareCommittedByKeyboard = true;
+                    this.setComparison(ticker);
                 }
             } else if (e.key === 'Escape') {
                 this.hideCompareResults();
             }
         });
 
+        // Blur: auto-select top result and trigger comparison (if value changed)
         compareInput.addEventListener('blur', () => {
-            setTimeout(() => this.hideCompareResults(), 200);
+            setTimeout(() => {
+                const items = compareResults.querySelectorAll('.compare-result');
+                const isOpen = !compareResults.classList.contains('hidden') && items.length > 0;
+                if (isOpen && items[0]) {
+                    const selectIndex = this.compareSelectedIndex >= 0 ? this.compareSelectedIndex : 0;
+                    if (items[selectIndex]) {
+                        compareInput.value = items[selectIndex].dataset.symbol;
+                    }
+                }
+                this.hideCompareResults();
+
+                const currentValue = compareInput.value.trim().toUpperCase();
+                if (currentValue && currentValue !== compareValueOnFocus && !this._compareCommittedByKeyboard && this.currentTicker) {
+                    this.setComparison(currentValue);
+                }
+                this._compareCommittedByKeyboard = false;
+            }, 150);
         });
 
         compareInput.addEventListener('focus', (e) => {
+            compareValueOnFocus = e.target.value.trim().toUpperCase();
+            this._compareCommittedByKeyboard = false;
             if (e.target.value.trim().length >= 2) {
                 this.performCompareSearch(e.target.value.trim());
             }
-        });
-
-        // Quick compare benchmark buttons
-        document.querySelectorAll('[data-compare]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                if (!this.currentTicker) {
-                    alert('Please analyze a stock first before comparing.');
-                    return;
-                }
-                const ticker = btn.dataset.compare;
-                this.setComparison(ticker);
-            });
         });
 
         // Clear comparison button
@@ -1342,6 +1373,11 @@ const App = {
             });
         });
 
+        // Bloomberg behavior: auto-highlight first result so Tab/Enter always has a selection
+        this.searchSelectedIndex = 0;
+        const firstItem = container.querySelector('.search-result');
+        if (firstItem) firstItem.classList.add('highlighted');
+
         container.classList.remove('hidden');
     },
 
@@ -1418,6 +1454,11 @@ const App = {
                 }
             });
         });
+
+        // Bloomberg behavior: auto-highlight first result so Tab/Enter always has a selection
+        this.compareSelectedIndex = 0;
+        const firstItem = container.querySelector('.compare-result');
+        if (firstItem) firstItem.classList.add('highlighted');
 
         container.classList.remove('hidden');
     },
@@ -2135,16 +2176,18 @@ const App = {
             this.renderChart();
             this.showResults();
 
-            // Restore saved benchmarks (if any)
-            await this.restoreBenchmarks();
-
             // PHASE 2: Load secondary data in background (non-blocking)
-            // Start all these requests but don't wait for them
+            // Start all these requests immediately — don't delay behind benchmark restore
             const stockInfoPromise = API.getStockInfo(ticker);
             // Always use chart data's actual date range (not UI state) to ensure moves match the chart
             const significantMovesPromise = API.getSignificantMoves(
                 ticker, this.currentThreshold, null, chartData.startDate, chartData.endDate);
             const newsPromise = API.getAggregatedNews(ticker, 30, 10);
+
+            // Restore saved benchmarks in background (don't block Phase 2)
+            this.restoreBenchmarks().catch(e =>
+                console.warn('Failed to restore benchmarks:', e)
+            );
 
             // Handle stock info when ready
             stockInfoPromise.then(stockInfo => {
