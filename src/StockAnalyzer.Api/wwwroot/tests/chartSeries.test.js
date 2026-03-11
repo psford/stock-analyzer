@@ -596,3 +596,76 @@ describe('Indicator state save/restore (AC6.2, AC6.F1)', () => {
         expect(saved['ma-20']).toBe(true);
     });
 });
+
+// ========================================================
+// Benchmark localStorage persistence (AC7.1, AC7.F1)
+// ========================================================
+
+/**
+ * Pure save function: serializes benchmark tickers to JSON string.
+ * Mirrors saveBenchmarkSelections() logic without DOM/localStorage dependency.
+ */
+function serializeBenchmarks(benchmarkTickers) {
+    return JSON.stringify(benchmarkTickers);
+}
+
+/**
+ * Pure load function: parses and validates benchmark tickers from stored string.
+ * Mirrors loadBenchmarkSelections() logic without localStorage dependency.
+ * @param {string|null} data - Raw string from localStorage
+ * @returns {string[]} Validated array of ticker strings
+ */
+function parseBenchmarks(data) {
+    if (!data) return [];
+    try {
+        const parsed = JSON.parse(data);
+        if (!Array.isArray(parsed)) return [];
+        return parsed.filter(t => typeof t === 'string' && t.length > 0);
+    } catch (error) {
+        return [];
+    }
+}
+
+describe('Benchmark localStorage persistence (AC7.1, AC7.F1)', () => {
+    test('AC7.1: serializeBenchmarks stores tickers as JSON array', () => {
+        const result = serializeBenchmarks(['SPY', 'QQQ']);
+        expect(result).toBe('["SPY","QQQ"]');
+        expect(JSON.parse(result)).toEqual(['SPY', 'QQQ']);
+    });
+
+    test('AC7.1: serializeBenchmarks handles empty array', () => {
+        const result = serializeBenchmarks([]);
+        expect(result).toBe('[]');
+    });
+
+    test('AC7.F1: parseBenchmarks returns empty array for null', () => {
+        expect(parseBenchmarks(null)).toEqual([]);
+    });
+
+    test('AC7.F1: parseBenchmarks returns empty array for non-JSON string', () => {
+        expect(parseBenchmarks('not valid json{')).toEqual([]);
+    });
+
+    test('AC7.F1: parseBenchmarks returns empty array for non-array JSON', () => {
+        expect(parseBenchmarks('{"foo": "bar"}')).toEqual([]);
+        expect(parseBenchmarks('"just a string"')).toEqual([]);
+        expect(parseBenchmarks('42')).toEqual([]);
+    });
+
+    test('AC7.F1: parseBenchmarks filters non-string elements', () => {
+        expect(parseBenchmarks('[1, null, "SPY", "", true, "QQQ"]')).toEqual(['SPY', 'QQQ']);
+    });
+
+    test('round-trip: serialize then parse returns same tickers', () => {
+        const tickers = ['SPY', 'QQQ', 'DIA'];
+        const serialized = serializeBenchmarks(tickers);
+        const restored = parseBenchmarks(serialized);
+        expect(restored).toEqual(tickers);
+    });
+
+    test('round-trip: empty array survives serialize/parse', () => {
+        const serialized = serializeBenchmarks([]);
+        const restored = parseBenchmarks(serialized);
+        expect(restored).toEqual([]);
+    });
+});
