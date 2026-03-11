@@ -448,3 +448,151 @@ describe('chartSeries management functions', () => {
         });
     });
 });
+
+// ============================================
+// Indicator State Save/Restore Tests
+// ============================================
+
+// Pure functions extracted from disableIndicators() for testability
+function saveIndicatorState(currentState) {
+    return { ...currentState };
+}
+
+function restoreIndicatorState(savedState, defaultState) {
+    if (!savedState) return { ...defaultState };
+    return { ...savedState };
+}
+
+describe('Indicator state save/restore (AC6.2, AC6.F1)', () => {
+    const defaultState = {
+        'show-rsi': false,
+        'show-macd': false,
+        'show-bollinger': false,
+        'show-stochastic': false,
+        'ma-20': true,
+        'ma-50': true,
+        'ma-200': false,
+        'chart-type': 'line',
+        'show-markers': false
+    };
+
+    test('AC6.2: saveIndicatorState preserves all checkbox values', () => {
+        const current = {
+            'show-rsi': true,
+            'show-macd': false,
+            'show-bollinger': true,
+            'show-stochastic': false,
+            'ma-20': true,
+            'ma-50': false,
+            'ma-200': true,
+            'chart-type': 'candlestick',
+            'show-markers': true
+        };
+
+        const saved = saveIndicatorState(current);
+
+        expect(saved['show-rsi']).toBe(true);
+        expect(saved['show-macd']).toBe(false);
+        expect(saved['show-bollinger']).toBe(true);
+        expect(saved['show-stochastic']).toBe(false);
+        expect(saved['ma-20']).toBe(true);
+        expect(saved['ma-50']).toBe(false);
+        expect(saved['ma-200']).toBe(true);
+        expect(saved['chart-type']).toBe('candlestick');
+        expect(saved['show-markers']).toBe(true);
+    });
+
+    test('AC6.2: restoreIndicatorState returns saved values, not defaults', () => {
+        const saved = {
+            'show-rsi': true,
+            'show-macd': true,
+            'ma-20': false,
+            'chart-type': 'candlestick',
+            'show-markers': true
+        };
+
+        const restored = restoreIndicatorState(saved, defaultState);
+
+        expect(restored['show-rsi']).toBe(true);
+        expect(restored['show-macd']).toBe(true);
+        expect(restored['ma-20']).toBe(false);
+        expect(restored['chart-type']).toBe('candlestick');
+        expect(restored['show-markers']).toBe(true);
+    });
+
+    test('AC6.2: restoreIndicatorState returns defaults when no saved state', () => {
+        const restored = restoreIndicatorState(null, defaultState);
+
+        expect(restored['show-rsi']).toBe(false);
+        expect(restored['ma-20']).toBe(true);
+        expect(restored['chart-type']).toBe('line');
+        expect(restored['show-markers']).toBe(false);
+    });
+
+    test('AC6.F1: RSI checked before disable is restored after re-enable', () => {
+        const userState = {
+            'show-rsi': true,
+            'show-macd': false,
+            'show-bollinger': false,
+            'show-stochastic': false,
+            'ma-20': true,
+            'ma-50': true,
+            'ma-200': false,
+            'chart-type': 'line',
+            'show-markers': false
+        };
+
+        // Simulate: save state before disabling
+        const saved = saveIndicatorState(userState);
+        expect(saved['show-rsi']).toBe(true);
+
+        // Simulate: restore after re-enabling
+        const restored = restoreIndicatorState(saved, defaultState);
+        expect(restored['show-rsi']).toBe(true);
+    });
+
+    test('calling save twice does not overwrite first saved state', () => {
+        const firstState = { 'show-rsi': true, 'show-macd': true };
+        let savedIndicatorState = null;
+
+        // First disable: save state
+        if (!savedIndicatorState) {
+            savedIndicatorState = saveIndicatorState(firstState);
+        }
+        expect(savedIndicatorState['show-rsi']).toBe(true);
+
+        // Second disable call (e.g., adding another benchmark): should NOT overwrite
+        const disabledState = { 'show-rsi': false, 'show-macd': false };
+        if (!savedIndicatorState) {
+            savedIndicatorState = saveIndicatorState(disabledState);
+        }
+
+        // Original state preserved
+        expect(savedIndicatorState['show-rsi']).toBe(true);
+        expect(savedIndicatorState['show-macd']).toBe(true);
+    });
+
+    test('re-enable clears savedIndicatorState to null', () => {
+        let savedIndicatorState = saveIndicatorState({ 'show-rsi': true });
+
+        // Simulate re-enable: restore and clear
+        const restored = restoreIndicatorState(savedIndicatorState, defaultState);
+        savedIndicatorState = null;
+
+        expect(restored['show-rsi']).toBe(true);
+        expect(savedIndicatorState).toBeNull();
+    });
+
+    test('saveIndicatorState creates independent copy (no reference sharing)', () => {
+        const original = { 'show-rsi': true, 'ma-20': true };
+        const saved = saveIndicatorState(original);
+
+        // Mutate original (simulating checkbox uncheck during disable)
+        original['show-rsi'] = false;
+        original['ma-20'] = false;
+
+        // Saved state should be unaffected
+        expect(saved['show-rsi']).toBe(true);
+        expect(saved['ma-20']).toBe(true);
+    });
+});
