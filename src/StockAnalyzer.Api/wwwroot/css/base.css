@@ -2432,3 +2432,10 @@ input[type="range"]::-moz-range-thumb {
     height: 1rem;
     opacity: 0.7;
 }
+
+/* ========================================
+   UTILITY CLASSES
+   ======================================== */
+
+.opacity-50 { opacity: 0.5; }
+.cursor-not-allowed { cursor: not-allowed; }
