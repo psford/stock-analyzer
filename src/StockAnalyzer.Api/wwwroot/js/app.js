@@ -1486,9 +1486,10 @@ const App = {
         try {
             document.getElementById('compare-input').value = ticker;
 
-            // Fetch comparison history data
+            // Fetch comparison history data (use effective range in case of scroll-zoom)
+            const { startDate, endDate } = this.getEffectiveDateRange();
             const historyData = await API.getHistory(
-                ticker, null, this.resolvedStartDate, this.resolvedEndDate);
+                ticker, null, startDate, endDate);
 
             // Add to chartSeries (replaces any existing comparison)
             this.addSeries(ticker, ticker, 'comparison', historyData);
@@ -1759,11 +1760,12 @@ const App = {
         const savedTickers = this.loadBenchmarkSelections();
         if (savedTickers.length === 0) return;
 
-        // Fetch all benchmarks in parallel
+        // Fetch all benchmarks in parallel (use effective range for scroll-zoom)
+        const { startDate, endDate } = this.getEffectiveDateRange();
         const results = await Promise.allSettled(
             savedTickers.map(async (ticker) => {
                 const historyData = await API.getHistory(
-                    ticker, null, this.resolvedStartDate, this.resolvedEndDate
+                    ticker, null, startDate, endDate
                 );
                 return { ticker, historyData };
             })
@@ -1861,8 +1863,9 @@ const App = {
 
         // Adding a new benchmark — addSeries enforces max 5
         try {
+            const { startDate, endDate } = this.getEffectiveDateRange();
             const historyData = await API.getHistory(
-                etfTicker, null, this.resolvedStartDate, this.resolvedEndDate
+                etfTicker, null, startDate, endDate
             );
 
             const added = this.addSeries(etfTicker, label || etfTicker, 'benchmark', historyData);
@@ -2537,6 +2540,27 @@ const App = {
             },
             onRangeExtend: (fromDate, toDate) => this.extendChartRange(fromDate, toDate)
         });
+    },
+
+    /**
+     * Get the effective date range for fetching overlay data.
+     * Uses the wider of: date picker values vs chart's visible/data range.
+     * This ensures overlays added after scroll-zoom cover the full visible range.
+     */
+    getEffectiveDateRange() {
+        let startDate = this.resolvedStartDate;
+        let endDate = this.resolvedEndDate;
+
+        // Check if primary data extends beyond the date picker range (from scroll-zoom)
+        const data = this.historyData?.data;
+        if (data && data.length > 0) {
+            const dataStart = data[0].date.split('T')[0];
+            const dataEnd = data[data.length - 1].date.split('T')[0];
+            if (dataStart < startDate) startDate = dataStart;
+            if (dataEnd > endDate) endDate = dataEnd;
+        }
+
+        return { startDate, endDate };
     },
 
     /**
