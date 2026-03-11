@@ -2135,16 +2135,18 @@ const App = {
             this.renderChart();
             this.showResults();
 
-            // Restore saved benchmarks (if any)
-            await this.restoreBenchmarks();
-
             // PHASE 2: Load secondary data in background (non-blocking)
-            // Start all these requests but don't wait for them
+            // Start all these requests immediately — don't delay behind benchmark restore
             const stockInfoPromise = API.getStockInfo(ticker);
             // Always use chart data's actual date range (not UI state) to ensure moves match the chart
             const significantMovesPromise = API.getSignificantMoves(
                 ticker, this.currentThreshold, null, chartData.startDate, chartData.endDate);
             const newsPromise = API.getAggregatedNews(ticker, 30, 10);
+
+            // Restore saved benchmarks in background (don't block Phase 2)
+            this.restoreBenchmarks().catch(e =>
+                console.warn('Failed to restore benchmarks:', e)
+            );
 
             // Handle stock info when ready
             stockInfoPromise.then(stockInfo => {
