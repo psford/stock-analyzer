@@ -1726,6 +1726,31 @@ Guard: if (initialized) return; — prevents re-init on subsequent searches
 **Watchlist Dropdown Fix:**
 - `.grid-stack-item[gs-id="tile-info"] .tile-card` and `.tile-body` have `overflow: visible` to prevent clipping
 
+### 6.9 Benchmark Overlay System
+
+**Data Model:** `chartSeries[]` array in `app.js` holds all chart series. Each entry: `{ticker, label, type, data, color, dash}` where `type` is `'primary'`, `'comparison'`, or `'benchmark'`. Maximum 5 benchmarks enforced by `addSeries()`.
+
+**Series Management API:**
+- `buildPrimarySeries()` — creates primary entry from `historyData`/`currentTicker`
+- `rebuildChartSeries()` — rebuilds from current state (called on analyze, reanalysis)
+- `addSeries(ticker, label, type, data)` — adds series, enforces max-5 benchmarks, assigns palette
+- `removeSeries(ticker)` — removes by ticker (cannot remove primary at index 0)
+- `getSeriesByType(type)` — filters by type
+- `clearBenchmarkSeries()` / `clearAllSeries()` — bulk removal
+- `isMultiSeriesMode()` — returns `chartSeries.length > 1`
+
+**Multi-Series Rendering (charts.js):** When `chartSeries.length > 1`, all series normalized to % change from first data point. Rendered as Plotly scatter traces. Zero baseline at y=0. Horizontal legend below chart.
+
+**Color Palette:** Okabe-Ito colorblind-safe palette via CSS variables `--chart-benchmark-1` through `--chart-benchmark-5`. Per-position dash patterns (solid, dash, dot, dashdot, longdash). `getSeriesPalette()` reads theme-aware colors.
+
+**Benchmark UI:** 10 preset chips (SPY, QQQ, DIA, IWM, EWU, EWG, EWJ, EFA, EEM, ACWI) + search typeahead. `toggleBenchmark()` handles add/remove with chip `.active` state. `performBenchmarkSearch()` queries `GET /api/indices/search?q=` with 300ms debounce. Temp chips (`.chip-benchmark-temp`, dashed border) for search results.
+
+**Backend:** `GET /api/indices/search?q=` queries `IndexDefinitions` DbSet with `AsNoTracking()`, filters `ProxyEtfTicker != null`, case-insensitive Contains on IndexName/IndexCode/IndexFamily, `Take(10)`. Returns flat array of `{indexId, indexCode, indexName, indexFamily, region, proxyEtfTicker}`.
+
+**Indicator Disable/Enable:** `disableIndicators(disabled)` saves all checkbox states to `savedIndicatorState` before disabling (RSI, MACD, Bollinger, Stochastic, SMA 20/50/200, chart type, show-markers). On re-enable, restores from saved state. Chart type forced to `line` in multi-series mode. Labels dimmed via `.opacity-50` and `.cursor-not-allowed` utility classes.
+
+**State Persistence:** `localStorage` key `stockAnalyzer_benchmarks` stores JSON array of active benchmark ticker strings. `saveBenchmarkSelections()` called on every toggle, clear, and clearAll. `loadBenchmarkSelections()` parses with defensive validation (returns `[]` for null, non-JSON, non-array, non-string elements; corrupted data silently cleared). `restoreBenchmarks()` called in `analyzeStock()` after initial render — fetches data for each saved ticker, highlights matching chips, silently skips failed fetches.
+
 ---
 
 ## 7. Configuration
@@ -3317,6 +3342,7 @@ const newsPromise = API.getAggregatedNews(ticker, 30, 10);
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.69 | 2026-03-10 | **Chart Benchmarks — complete spec documentation:** Added section 6.9 "Benchmark Overlay System" to TECHNICAL_SPEC.md documenting: `chartSeries[]` data model, series management API (add/remove/clear/getByType/isMultiSeriesMode), multi-series rendering path (% change normalization), Okabe-Ito palette with CSS variables, benchmark UI (10 preset chips + search typeahead), backend `GET /api/indices/search?q=` endpoint, indicator disable/enable with state save/restore, localStorage persistence (`stockAnalyzer_benchmarks` key). Added section 3.18 "Benchmark Overlays (FR-018)" to FUNCTIONAL_SPEC.md with 16 functional requirements (FR-018.1–FR-018.16). FUNCTIONAL_SPEC.md version bumped to 3.8. |
 | 2.68 | 2026-03-10 | **Chart Benchmarks Phase 6 — wire persistence into flows:** Added `this.saveBenchmarkSelections()` calls to: `toggleBenchmark()` toggle-off path (after removeSeries), `toggleBenchmark()` toggle-on path (after addSeries), Clear Benchmarks click handler (after clearBenchmarkSeries), All Clear click handler (after clearBenchmarkSeries), `clearAll()` (after clearAllSeries). Added `await this.restoreBenchmarks()` in `analyzeStock()` after initial chart render and `showResults()` — restores saved benchmarks on page load when a stock is analyzed. Chip active states sync via `restoreBenchmarks()` highlighting matching `[data-benchmark]` elements. Silent skip for missing tickers via try/catch per ticker in `restoreBenchmarks()`. Verifies AC7.2 (restore on load), AC7.3 (chip sync on toggle), AC7.F2 (silent skip). |
 | 2.67 | 2026-03-10 | **Chart Benchmarks Phase 6 — benchmark persistence tests:** 8 new Jest tests in `chartSeries.test.js` for benchmark localStorage persistence. Pure functions `serializeBenchmarks()`/`parseBenchmarks()` extracted for DOM-free testing. Tests: AC7.1 (serializes tickers as JSON array, handles empty array), AC7.F1 (returns `[]` for null, non-JSON, non-array JSON, filters non-string/empty elements), round-trip (serialize then parse returns same tickers, empty array survives). Total: 66 Jest tests passing (41 chartSeries + 25 portfolio). |
 | 2.66 | 2026-03-10 | **Chart Benchmarks Phase 6 — benchmark localStorage persistence:** Added `saveBenchmarkSelections()`, `loadBenchmarkSelections()`, `restoreBenchmarks()`, and `getBenchmarkLabel()` methods to App in `app.js`. `saveBenchmarkSelections()` serializes active benchmark tickers from `getSeriesByType('benchmark')` to `localStorage` key `stockAnalyzer_benchmarks` as JSON array. `loadBenchmarkSelections()` parses with defensive validation: returns `[]` for null, non-JSON, non-array, or non-string elements; corrupted data silently cleared. `restoreBenchmarks()` iterates saved tickers, fetches via `API.getHistory()`, calls `addSeries()`, highlights matching static chips, then calls `disableIndicators(true)` + `renderChart()` if any added. Silently skips failed fetches (delisted/missing tickers). `getBenchmarkLabel()` resolves display label from static chip DOM or falls back to ticker string. Verifies AC7.1 (save), AC7.F1 (corruption handling). |

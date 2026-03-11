@@ -804,6 +804,33 @@ The results section displays stock data in 7 draggable, resizable tiles powered 
 
 ---
 
+### 3.18 Benchmark Overlays (FR-018)
+
+Overlay benchmark index data (e.g., S&P 500, NASDAQ-100) on the stock chart for visual comparison. All series normalized to percentage change from the first data point.
+
+| ID | Requirement |
+|----|-------------|
+| FR-018.1 | 10 preset benchmark chips displayed below the chart: SPY, QQQ, DIA, IWM, EWU, EWG, EWJ, EFA, EEM, ACWI |
+| FR-018.2 | Clicking a chip toggles the benchmark on/off the chart. Active chips are visually highlighted. |
+| FR-018.3 | Maximum 5 simultaneous benchmarks on the chart |
+| FR-018.4 | Search box with typeahead for discovering additional benchmarks by index name, code, or family |
+| FR-018.5 | Search results from non-preset indices create temporary chips with dashed borders |
+| FR-018.6 | "Clear Benchmarks" button removes all benchmarks. "All Clear" removes benchmarks and comparison. |
+| FR-018.7 | In multi-series mode, all technical indicator checkboxes (RSI, MACD, Bollinger, Stochastic, SMA 20/50/200) are disabled and visually grayed out |
+| FR-018.8 | Chart type selector forced to "line" and disabled in multi-series mode |
+| FR-018.9 | Significant move markers disabled in multi-series mode |
+| FR-018.10 | Indicator checkbox states are preserved while disabled; removing all overlays restores previous checked state |
+| FR-018.11 | Indicator subplots (RSI/MACD/Stochastic panels) hidden in multi-series mode; chart uses full height |
+| FR-018.12 | Benchmark colors use Okabe-Ito colorblind-safe palette with distinct dash patterns per series |
+| FR-018.13 | Benchmark selections persist in localStorage across page reloads |
+| FR-018.14 | On page load, saved benchmarks automatically restored after stock analysis completes |
+| FR-018.15 | Corrupted localStorage data silently discarded (defaults to no benchmarks) |
+| FR-018.16 | Saved benchmark tickers that no longer exist are silently skipped during restore |
+
+**User Story:** *As an investor, I want to overlay market benchmarks on my stock chart so I can visually compare my stock's performance against major indices and see relative outperformance or underperformance.*
+
+---
+
 ## 4. User Interface Specifications
 
 ### 4.1 Page Layout
@@ -1082,6 +1109,7 @@ The dashboard is fully responsive and adapts to mobile devices.
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
+| 3.8 | 2026-03-10 | **Benchmark Overlays (FR-018):** New section 3.18 with 16 functional requirements. 10 preset benchmark chips + search typeahead. Max 5 simultaneous benchmarks. Indicator disable/enable with state preservation. Chart type forced to line in multi-series. localStorage persistence with automatic restore on page load. Corrupted data handling. Colorblind-safe Okabe-Ito palette. | Claude |
 | 3.7 | 2026-03-10 | **Chart Benchmarks Phase 5 — indicator disable/enable (FR-012):** MA checkbox labels and chart-type label now have IDs for consistent visual dimming when controls are disabled in multi-series mode. CSS utility classes `.opacity-50` and `.cursor-not-allowed` added. No user-visible change yet — preparation for save/restore indicator state logic. | Claude |
 | 3.6 | 2026-03-10 | **Chart Benchmarks Phase 3 — benchmark UI controls (FR-012):** 10 benchmark toggle chips in options panel (S&P 500 SPY, Nasdaq-100 QQQ, Dow Jones DIA, Russell 2000 IWM, FTSE 100 EWU, DAX 40 EWG, Nikkei 225 EWJ, MSCI EAFE EFA, MSCI EM EEM, MSCI ACWI ACWI). Chips toggle on/off with active highlight. Benchmark index search box with typeahead dropdown. "Clear Benchmarks" and "All Clear" buttons (hidden when inactive). | Claude |
 | 3.5 | 2026-03-10 | **Chart Benchmarks Phase 2 (FR-012):** Comparison and benchmark colors now use Okabe-Ito colorblind-safe palette (`--chart-series-primary` #0072B2, `--chart-series-comparison` #E69F00, `--chart-benchmark-1` through `--chart-benchmark-5`). Colors are theme-overridable CSS variables. Chart renderer iterates `chartSeries[]` for a single multi-series rendering path with zero baseline, horizontal legend, and % change y-axis. | Claude |
