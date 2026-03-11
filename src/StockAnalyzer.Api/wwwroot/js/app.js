@@ -1674,6 +1674,88 @@ const App = {
     },
 
     /**
+     * Save active benchmark tickers to localStorage.
+     * Called on every benchmark toggle.
+     */
+    saveBenchmarkSelections() {
+        try {
+            const benchmarkTickers = this.getSeriesByType('benchmark')
+                .map(s => s.ticker);
+            localStorage.setItem('stockAnalyzer_benchmarks', JSON.stringify(benchmarkTickers));
+        } catch (error) {
+            console.error('Failed to save benchmark selections:', error);
+        }
+    },
+
+    /**
+     * Load saved benchmark tickers from localStorage.
+     * Returns empty array on corrupted/missing data.
+     * @returns {string[]} Array of ticker strings
+     */
+    loadBenchmarkSelections() {
+        try {
+            const data = localStorage.getItem('stockAnalyzer_benchmarks');
+            if (!data) return [];
+            const parsed = JSON.parse(data);
+            if (!Array.isArray(parsed)) return [];
+            return parsed.filter(t => typeof t === 'string' && t.length > 0);
+        } catch (error) {
+            console.warn('Corrupted benchmark data in localStorage, clearing:', error);
+            localStorage.removeItem('stockAnalyzer_benchmarks');
+            return [];
+        }
+    },
+
+    /**
+     * Restore saved benchmarks after stock analysis completes.
+     * Fetches data for each saved ticker and adds to chart.
+     * Silently skips tickers that fail to load (e.g., delisted).
+     */
+    async restoreBenchmarks() {
+        const savedTickers = this.loadBenchmarkSelections();
+        if (savedTickers.length === 0) return;
+
+        let anyAdded = false;
+
+        for (const ticker of savedTickers) {
+            try {
+                const historyData = await API.getHistory(
+                    ticker, null, this.resolvedStartDate, this.resolvedEndDate
+                );
+
+                const label = this.getBenchmarkLabel(ticker);
+                const added = this.addSeries(ticker, label, 'benchmark', historyData);
+
+                if (added) {
+                    anyAdded = true;
+                    const chip = document.querySelector(`[data-benchmark="${ticker}"]`);
+                    if (chip) chip.classList.add('active');
+                }
+            } catch (error) {
+                console.warn(`Failed to restore benchmark ${ticker}, skipping:`, error);
+            }
+        }
+
+        if (anyAdded) {
+            this.disableIndicators(true);
+            this.updateClearButtonVisibility();
+            this.renderChart();
+            this.attachChartHoverListeners();
+            this.attachDragMeasure();
+        }
+    },
+
+    /**
+     * Get display label for a benchmark ticker.
+     * Checks static chips first, falls back to ticker string.
+     */
+    getBenchmarkLabel(ticker) {
+        const chip = document.querySelector(`[data-benchmark="${ticker}"]`);
+        if (chip) return chip.textContent.trim();
+        return ticker;
+    },
+
+    /**
      * Whether the chart is in multi-series mode (more than just the primary stock).
      */
     isMultiSeriesMode() {
