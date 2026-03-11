@@ -1152,6 +1152,7 @@ const App = {
         // Clear Benchmarks button
         document.getElementById('clear-benchmarks').addEventListener('click', () => {
             this.clearBenchmarkSeries();
+            this.saveBenchmarkSelections();
             document.querySelectorAll('[data-benchmark]').forEach(btn => {
                 btn.classList.remove('active');
             });
@@ -1174,6 +1175,7 @@ const App = {
         document.getElementById('clear-all-overlays').addEventListener('click', () => {
             this.clearComparison();
             this.clearBenchmarkSeries();
+            this.saveBenchmarkSelections();
             document.querySelectorAll('[data-benchmark]').forEach(btn => {
                 btn.classList.remove('active');
             });
@@ -1510,6 +1512,7 @@ const App = {
 
         // Clear all non-primary series
         this.clearAllSeries();
+        this.saveBenchmarkSelections();
         document.getElementById('compare-input').value = '';
         document.getElementById('clear-compare').classList.add('hidden');
 
@@ -1804,6 +1807,7 @@ const App = {
             this.renderChart();
             this.attachChartHoverListeners();
             this.attachDragMeasure();
+            this.saveBenchmarkSelections();
             this._benchmarkFetchInProgress = false;
             return;
         }
@@ -1825,6 +1829,7 @@ const App = {
             this.renderChart();
             this.attachChartHoverListeners();
             this.attachDragMeasure();
+            this.saveBenchmarkSelections();
         } catch (error) {
             console.error(`Failed to fetch benchmark data for ${LogSanitizer.sanitize(etfTicker)}:`, error);
             alert(`Failed to load benchmark data for ${etfTicker}`);
@@ -2123,6 +2128,9 @@ const App = {
             this.renderPerformance(analysis.performance);
             this.renderChart();
             this.showResults();
+
+            // Restore saved benchmarks (if any)
+            await this.restoreBenchmarks();
 
             // PHASE 2: Load secondary data in background (non-blocking)
             // Start all these requests but don't wait for them
