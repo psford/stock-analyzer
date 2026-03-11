@@ -1,6 +1,6 @@
 # Functional Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 3.10
+**Version:** 3.11
 **Last Updated:** 2026-03-10
 **Author:** Claude (AI Assistant)
 **Status:** Production
@@ -1109,6 +1109,7 @@ The dashboard is fully responsive and adapts to mobile devices.
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
+| 3.11 | 2026-03-10 | **Scroll-zoom extends all overlays:** Zooming out on the chart now extends benchmark and comparison lines to fill the new date range (previously only the primary stock extended). | Claude |
 | 3.10 | 2026-03-10 | **Data freshness fallback:** Historical data API now falls through to external providers when local database has sparse (<20% coverage) or stale (>7 days behind requested end) data. Removed Quick Compare chip row (redundant with comparison input + benchmark chips). | Claude |
 | 3.9 | 2026-03-10 | **Bloomberg Terminal UX (FR-001):** Removed Analyze button. Search triggers analysis automatically on Tab, Enter, or blur (click away). Autocomplete dropdown pre-highlights first result. Debounce reduced from 300ms to 150ms. Comparison field has identical keyboard-first behavior. User flow 5.1 updated to reflect new interaction model. | Claude |
 | 3.8 | 2026-03-10 | **Benchmark Overlays (FR-018):** New section 3.18 with 16 functional requirements. 10 preset benchmark chips + search typeahead. Max 5 simultaneous benchmarks. Indicator disable/enable with state preservation. Chart type forced to line in multi-series. localStorage persistence with automatic restore on page load. Corrupted data handling. Colorblind-safe Okabe-Ito palette. | Claude |

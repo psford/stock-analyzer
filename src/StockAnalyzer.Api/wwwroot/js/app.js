@@ -2581,18 +2581,21 @@ const App = {
                 stochastic: chartData.stochastic
             };
 
-            // Also fetch comparison data for the extended range if comparing
-            const comparisonSeries = this.chartSeries.find(s => s.type === 'comparison');
-            if (comparisonSeries) {
-                try {
-                    const compData = await API.getChartData(comparisonSeries.ticker, null, fromDate, toDate);
-                    if (compData?.data) {
-                        comparisonSeries.data = {
-                            symbol: compData.symbol,
-                            data: compData.data
-                        };
-                    }
-                } catch { /* comparison extension is best-effort */ }
+            // Also fetch comparison and benchmark data for the extended range
+            const overlays = this.chartSeries.filter(s => s.type === 'comparison' || s.type === 'benchmark');
+            if (overlays.length > 0) {
+                const fetches = overlays.map(async (series) => {
+                    try {
+                        const overlayData = await API.getHistory(series.ticker, null, fromDate, toDate);
+                        if (overlayData?.data) {
+                            series.data = {
+                                symbol: overlayData.symbol || series.ticker,
+                                data: overlayData.data
+                            };
+                        }
+                    } catch { /* overlay extension is best-effort */ }
+                });
+                await Promise.allSettled(fetches);
             }
 
             // Re-render chart with the full extended dataset
