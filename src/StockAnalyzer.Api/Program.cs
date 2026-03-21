@@ -4224,3 +4224,6 @@ public class ResetTrackedRequest
     public string? Source { get; set; }
     public int? Priority { get; set; }
 }
+
+// Required for WebApplicationFactory<Program> in integration tests
+public partial class Program { }
