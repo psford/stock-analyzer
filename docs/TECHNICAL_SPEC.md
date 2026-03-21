@@ -1810,7 +1810,7 @@ The `DesignTimeDbContextFactory` provides a connection string for EF Core migrat
    - Uses the admin login (`wsl_claude_admin`) for DDL permissions required by migrations
 
 **Version History:**
-- **v2.76 (2026-03-21):** Added environment variable support (`SA_DESIGN_CONNECTION`) for WSL2 TCP connectivity while preserving Windows LocalDB fallback. Updated `eodhd_rebuild_guard.py` hook to detect WSL2 and provide platform-appropriate rebuild instructions (manual Windows rebuild for WSL2 sessions, inline rebuild for Windows sessions). Tracked all `.claude/hooks/` as version-controlled business logic (gitignore exceptions for infrastructure hooks).
+- **v2.76 (2026-03-21):** Added environment variable support (`SA_DESIGN_CONNECTION`) for WSL2 TCP connectivity while preserving Windows LocalDB fallback. Updated `eodhd_rebuild_guard.py` hook to detect WSL2 and provide platform-appropriate rebuild instructions (manual Windows rebuild for WSL2 sessions, inline rebuild for Windows sessions). Tracked all `.claude/hooks/` as version-controlled business logic (gitignore exceptions for infrastructure hooks). Fixed code review issues: removed unused `import platform` from hook (is_wsl() uses direct /proc/version read), corrected script-audit.md category counts (22 Windows-only + 9 Python-equivalent, added refresh_summary.ps1), fixed unquoted variables in wsl-setup.sh.
 
 ### 7.4 Program.cs Configuration
 
