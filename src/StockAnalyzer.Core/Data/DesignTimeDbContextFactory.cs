@@ -12,12 +12,14 @@ public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<StockAnaly
 {
     public StockAnalyzerDbContext CreateDbContext(string[] args)
     {
-        var optionsBuilder = new DbContextOptionsBuilder<StockAnalyzerDbContext>();
+        // SA_DESIGN_CONNECTION: Used in WSL2 with TCP connection to Windows SQL Express.
+        // Uses the admin login (wsl_claude_admin) because migrations need DDL permissions.
+        // Fallback: Windows localdb for existing Windows development workflow.
+        var connectionString = Environment.GetEnvironmentVariable("SA_DESIGN_CONNECTION")
+            ?? "Server=(localdb)\\mssqllocaldb;Database=StockAnalyzer_Design;Trusted_Connection=True;";
 
-        // Use a dummy connection string for design-time migrations
-        // The actual connection string comes from Azure configuration at runtime
-        optionsBuilder.UseSqlServer(
-            "Server=(localdb)\\mssqllocaldb;Database=StockAnalyzer_Design;Trusted_Connection=True;");
+        var optionsBuilder = new DbContextOptionsBuilder<StockAnalyzerDbContext>();
+        optionsBuilder.UseSqlServer(connectionString);
 
         return new StockAnalyzerDbContext(optionsBuilder.Options);
     }

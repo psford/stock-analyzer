@@ -1,7 +1,7 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.75
-**Last Updated:** 2026-02-26
+**Version:** 2.76
+**Last Updated:** 2026-03-21
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
 
@@ -1787,7 +1787,32 @@ Guard: if (initialized) return; — prevents re-init on subsequent searches
 }
 ```
 
-### 7.3 Program.cs Configuration
+### 7.3 EF Core Design-Time Factory Configuration
+
+**File:** `StockAnalyzer.Core/Data/DesignTimeDbContextFactory.cs`
+
+The `DesignTimeDbContextFactory` provides a connection string for EF Core migrations via the `dotnet ef` CLI. It supports both Windows development (local named pipes) and WSL2 development (TCP over network).
+
+**Connection String Resolution:**
+
+1. **Windows Development (Default):**
+   - Checks environment variable: `SA_DESIGN_CONNECTION`
+   - Falls back to: `Server=(localdb)\mssqllocaldb;Database=StockAnalyzer_Design;Trusted_Connection=True;`
+   - Uses LocalDB for zero-configuration Windows development
+
+2. **WSL2 Development (TCP):**
+   - Set `SA_DESIGN_CONNECTION` before running migrations:
+     ```bash
+     export SA_DESIGN_CONNECTION="Server=127.0.0.1,1433;Database=StockAnalyzer;User Id=wsl_claude_admin;Password=<password>;TrustServerCertificate=True;"
+     dotnet ef migrations list --project ../StockAnalyzer.Core --startup-project .
+     ```
+   - Enables migrations from WSL2 to Windows SQL Express over TCP/IP
+   - Uses the admin login (`wsl_claude_admin`) for DDL permissions required by migrations
+
+**Version History:**
+- **v2.76 (2026-03-21):** Added environment variable support (`SA_DESIGN_CONNECTION`) for WSL2 TCP connectivity while preserving Windows LocalDB fallback
+
+### 7.4 Program.cs Configuration
 
 ```csharp
 // CORS for frontend
