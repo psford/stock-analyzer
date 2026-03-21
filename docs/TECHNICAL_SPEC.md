@@ -1,6 +1,6 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.79
+**Version:** 2.80
 **Last Updated:** 2026-03-22
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
