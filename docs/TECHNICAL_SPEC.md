@@ -1,6 +1,6 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.78
+**Version:** 2.79
 **Last Updated:** 2026-03-21
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
@@ -3367,6 +3367,7 @@ const newsPromise = API.getAggregatedNews(ticker, 30, 10);
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.79 | 2026-03-21 | **SDLC retro mitigations:** Added `stderr_suppression_guard.py` (blocks `2>/dev/null` on substantive commands), `plan_config_drift_guard.py` (blocks commits when plan docs contradict implementation), ShellCheck pre-commit hook for `.sh` files. |
 | 2.78 | 2026-03-21 | **Hook Test Suite — PostToolUse coverage:** Added `test_post_hook()` helper to `projects/hook-test/test_hooks.py` for testing PostToolUse hooks (stdin JSON, stdout additionalContext check, exit code check). Added test cases for `eodhd_rebuild_guard.py` (silence on non-commit Bash and non-Bash tools) and `spec_staleness_guard.py` (silence on non-push Bash and non-Bash tools). Added `is_wsl()` unit test via `importlib.util` module loading. Suite now covers 52 cases across PreToolUse and PostToolUse hooks. |
 | 2.77 | 2026-03-21 | **WSL2 runtime connection string support:** `Program.cs` checks `WSL_SQL_CONNECTION` environment variable before falling back to `appsettings` `ConnectionStrings:DefaultConnection`. Enables running from WSL2 with TCP/SQL auth without modifying appsettings. |
 | 2.75 | 2026-03-11 | **Overlays use effective chart range:** Added `getEffectiveDateRange()` helper that returns the wider of date picker values vs primary stock's actual data range. Used by `toggleBenchmark()`, `setComparison()`, and `restoreBenchmarks()` so overlays added after scroll-zoom cover the full visible range instead of the original date picker range. |
