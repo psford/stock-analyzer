@@ -66,8 +66,12 @@ jobs:
 
     - name: Run ShellCheck on all shell scripts
       run: |
-        find . -name '*.sh' -not -path './node_modules/*' -not -path './.git/*' \
-          | xargs shellcheck --severity=warning --shell=bash
+        SCRIPTS=$(find . -name '*.sh' -not -path './node_modules/*' -not -path './.git/*')
+        if [ -z "$SCRIPTS" ]; then
+          echo "No shell scripts found — skipping ShellCheck"
+          exit 0
+        fi
+        echo "$SCRIPTS" | xargs shellcheck --severity=warning --shell=bash
 
   build-and-test:
     runs-on: ubuntu-latest
