@@ -1,0 +1,36 @@
+name: Deploy Docs to GitHub Pages
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'docs/**'
+      - 'CLAUDE.md'
+  workflow_dispatch:
+
+jobs:
+  sync-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Sync source docs to Pages folder
+        run: |
+          # Copy latest docs to the GitHub Pages folder
+          cp -f CLAUDE.md docs/CLAUDE.md
+
+          # Check if any docs changed
+          if git diff --quiet docs/; then
+            echo "No doc changes to deploy"
+          else
+            echo "DOCS_CHANGED=true" >> $GITHUB_ENV
+          fi
+
+      - name: Commit synced docs
+        if: env.DOCS_CHANGED == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/
+          git commit -m "Sync docs for GitHub Pages deployment"
+          git push
