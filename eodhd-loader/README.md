@@ -44,9 +44,7 @@ A standalone Windows WPF application for managing stock index constituents and e
 
 The application looks for a `.env` file in the following locations (in order):
 1. Application directory
-2. `c:\Users\patri\Documents\claudeProjects\projects\eodhd-loader\.env`
-3. `c:\Users\patri\Documents\claudeProjects\projects\stock-analyzer\.env`
-4. `c:\Users\patri\Documents\claudeProjects\.env`
+2. Repository root directory
 
 ### Required Environment Variables
 
@@ -75,14 +73,14 @@ If not specified, defaults are:
 ## Building
 
 ```powershell
-cd c:\Users\patri\Documents\claudeProjects\projects\eodhd-loader
+cd eodhd-loader
 dotnet build
 ```
 
 ## Running
 
 ```powershell
-cd c:\Users\patri\Documents\claudeProjects\projects\eodhd-loader\src\EodhdLoader
+cd eodhd-loader/src/EodhdLoader
 dotnet run
 ```
 

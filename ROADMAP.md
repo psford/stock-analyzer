@@ -185,6 +185,8 @@ Planned features and improvements for the Stock Analyzer .NET application.
 
 ## Version History
 
+**Note:** Version history entries before March 2026 reference the pre-split monorepo structure (`projects/stock-analyzer/`, `projects/eodhd-loader/`). After the repo split in March 2026, paths refer to the current repo structure.
+
 | Date | Change |
 |------|--------|
 | 02/04/2026 | **v4.0.0** - Neon Noir theme complete: vaporwave ambient music synthesizer (Web Audio API, Dm7→Am7→Em7→Gmaj7 progression), enhanced CRT bloom effects, themed primary buttons, framework-first CSS variables for all theme elements |

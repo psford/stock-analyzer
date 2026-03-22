@@ -77,8 +77,6 @@ If main and develop diverge, merge develop into main via PR — never the revers
 1. Check: `gh pr list --head develop --base main --state open`
 2. No open PR → create NEW one. NEVER reference old PR numbers without checking state.
 
-Hooks: `merged_pr_guard.py` blocks edits to merged PRs. `post_push_pr_check.py` checks after every push.
-
 ### Pre-Commit Protocol
 
 Before every commit, show Patrick:
@@ -210,7 +208,7 @@ Both fall back to Windows defaults (appsettings / localdb) when unset, so Window
 | **Log sanitization** | ALL user strings in C# logs wrapped in `LogSanitizer.Sanitize()` (CWE-117). Enforced by hook. |
 | **Cross-browser / local CSS** | Standard APIs and CSS only. Locally compiled CSS, CDN only for large libs with SRI hashes. |
 | **Fetch before comparing** | ALWAYS `git fetch origin` first. Compare `origin/main` not local `main`. |
-| **Validate doc links** | Run `python helpers/check_links.py --all` before committing doc changes. |
+| **Validate doc links** | Validate documentation links are correct and working before committing doc changes. |
 | **Audit the class** | When a bug is found as "we forgot X in location Y," immediately search for every other location where X might also be missing. Don't fix one instance — fix the class. |
 | **Preserve original media** | Never degrade user-uploaded images/media. Store originals at full quality. Use resized/compressed versions for display performance (thumbnails, map previews), but always provide a way to view or download the original. |
 
@@ -226,7 +224,7 @@ Both fall back to Windows defaults (appsettings / localdb) when unset, so Window
 - **Checkpoints:** Save to `sessionState.md` after major tasks, every 10-15 exchanges, before complex work
 - **Context efficiency:** Only load files actively needed. Exception: CLAUDE.md always loaded.
 - **Plan hygiene:** Delete completed plan files. Verify git state before working from plans.
-- **Between tasks:** Check Slack (`python helpers/slack_bot.py status`), review WYA, check ROADMAP, suggest 2-3 items.
+- **Between tasks:** Review WYA, check ROADMAP, suggest 2-3 items.
 - **Slack triggers:** Check after deployments, PR merges, multi-step tasks, idle moments, before reporting "done".
 - **Post-compaction:** Track what info was lost, update docs with reusable context that survives compaction.
 
@@ -243,7 +241,7 @@ Both fall back to Windows defaults (appsettings / localdb) when unset, so Window
 - JavaScript/TypeScript: `camelCase`
 - Python: `snake_case` (PEP 8)
 - Docs: GitHub-flavored Markdown
-- **Testing:** Code compiling is NOT sufficient. Use Playwright (`helpers/ui_test.py`) for UI. Run responsive tests (`helpers/responsive_test.py`) at mobile (390x844) / tablet (768x1024) / desktop (1400x900) before committing CSS changes. Test external dependencies before integrating.
+- **Testing:** Code compiling is NOT sufficient. Use Playwright for UI testing. Run responsive tests at mobile (390x844) / tablet (768x1024) / desktop (1400x900) before committing CSS changes. Test external dependencies before integrating.
 - **Specs:** Update incrementally as you code, not after. Stage with code commits.
 
 ### Model Delegation
