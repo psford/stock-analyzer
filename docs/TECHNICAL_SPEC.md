@@ -1088,16 +1088,16 @@ The documentation page provides six tabs:
 
 **Documentation Source: GitHub Pages**
 
-Documentation is served from GitHub Pages at `https://psford.github.io/claudeProjects/`. The app's `docs.html` fetches markdown files client-side via CORS, allowing documentation updates without container rebuilds.
+Documentation is served from GitHub Pages at `https://psford.github.io/stock-analyzer/`. The app's `docs.html` fetches markdown files client-side via CORS, allowing documentation updates without container rebuilds.
 
 | Document | GitHub Pages URL |
 |----------|------------------|
-| App Explanation | `https://psford.github.io/claudeProjects/APP_EXPLANATION.md` |
-| Project Guidelines | `https://psford.github.io/claudeProjects/claude_disp.md` |
-| Functional Spec | `https://psford.github.io/claudeProjects/FUNCTIONAL_SPEC.md` |
-| Technical Spec | `https://psford.github.io/claudeProjects/TECHNICAL_SPEC.md` |
-| Security Overview | `https://psford.github.io/claudeProjects/SECURITY_OVERVIEW.md` |
-| Diagrams | `https://psford.github.io/claudeProjects/diagrams/*.mmd` |
+| App Explanation | `https://psford.github.io/stock-analyzer/APP_EXPLANATION.md` |
+| Project Guidelines | `https://psford.github.io/stock-analyzer/claude_disp.md` |
+| Functional Spec | `https://psford.github.io/stock-analyzer/FUNCTIONAL_SPEC.md` |
+| Technical Spec | `https://psford.github.io/stock-analyzer/TECHNICAL_SPEC.md` |
+| Security Overview | `https://psford.github.io/stock-analyzer/SECURITY_OVERVIEW.md` |
+| Diagrams | `https://psford.github.io/stock-analyzer/diagrams/*.mmd` |
 
 **To update production docs:** Push changes to the `/docs` folder on main branch. GitHub Pages deploys automatically.
 
@@ -3408,7 +3408,7 @@ const newsPromise = API.getAggregatedNews(ticker, 30, 10);
 | 2.10 | 2026-01-22 | **Persistent Image Cache:** Database-backed image cache replaces in-memory ConcurrentQueue for persistence across restarts. CachedImageEntity model with EF Core migration, ICachedImageRepository interface with SqlCachedImageRepository (random selection via `ORDER BY NEWID()`). ImageCacheService refactored to use IServiceScopeFactory for scoped DbContext access. Cache increased to 1000 images per type. Status page fixed: dynamic maxSize from API, added TwelveData/FMP health check cards. |
 | 2.9 | 2026-01-21 | **Local Symbol Database for Fast Search:** Sub-10ms ticker search via Azure SQL cache of ~10K US stock symbols. SymbolEntity model with EF Core migration, ISymbolRepository interface with SqlSymbolRepository implementation (multi-tier ranking: exact > prefix > contains), SymbolRefreshService BackgroundService (daily Finnhub sync at 2 AM UTC, auto-seed on startup if empty), AggregatedStockDataService now queries local DB first with API fallback. Admin endpoints: POST /api/admin/symbols/refresh, GET /api/admin/symbols/status. 18 new unit tests for repository. |
 | 2.8 | 2026-01-21 | **Log Injection Prevention:** Added LogSanitizer utility to sanitize user input (ticker symbols, search queries) before logging. Prevents log forging attacks via control character injection. Applied to AggregatedStockDataService, TwelveDataService, FmpService, and YahooFinanceService. Resolves 21 CodeQL security alerts. |
-| 2.7 | 2026-01-21 | **GitHub Pages Documentation Refactor:** Documentation now served from GitHub Pages (psford.github.io/claudeProjects/) instead of bundled in container. Enables doc updates without container rebuild. Removed wwwroot/docs folder and MSBuild copy targets. docs.html fetches markdown client-side via CORS. Custom domain SSL (psfordtest.com) with Azure managed certificates. |
+| 2.7 | 2026-01-21 | **GitHub Pages Documentation Refactor:** Documentation now served from GitHub Pages (psford.github.io/stock-analyzer/) instead of bundled in container. Enables doc updates without container rebuild. Removed wwwroot/docs folder and MSBuild copy targets. docs.html fetches markdown client-side via CORS. Custom domain SSL (psfordtest.com) with Azure managed certificates. |
 | 2.6 | 2026-01-19 | **Multi-Source News Aggregation + ML Scoring:** MarketauxService (alternative news source), HeadlineRelevanceService (weighted relevance scoring: ticker 35%, company name 25%, recency 20%, sentiment 10%, source quality 10%), AggregatedNewsService (combines sources with Jaccard deduplication), NewsItem model extended (RelevanceScore, SourceApi fields), new aggregated news endpoints, ImageProcessingService quality control (0.50 confidence threshold, 20% minimum detection size, reject images without valid detection), image cache increased to 100/30, 52 new unit tests |
 | 2.5 | 2026-01-19 | **Security Hardening:** CORS restricted to known origins, HSTS header, ticker input validation (regex pattern), removed unused DirectoryBrowser |
 | 2.4 | 2026-01-19 | **App Service Migration + Key Vault:** Migrated from ACI to App Service B1 for zero-downtime deploys, Azure Key Vault for secrets management, manual workflow_dispatch for production deploys, GitHub repo made public for CodeQL, GitHub link added to footer |

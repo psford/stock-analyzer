@@ -136,7 +136,7 @@ If we change this policy, we'll update the date at the top. For significant chan
 
 ## Contact
 
-Questions? Open an issue on [GitHub](https://github.com/psford/claudeProjects).
+Questions? Open an issue on [GitHub](https://github.com/psford/stock-analyzer).
 
 ---
 
