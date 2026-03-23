@@ -12,9 +12,7 @@ public class ConfigurationService
     private static readonly string[] EnvSearchPaths =
     [
         Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ".env"),
-        @"c:\Users\patri\Documents\claudeProjects\projects\eodhd-loader\.env",
-        @"c:\Users\patri\Documents\claudeProjects\projects\stock-analyzer\.env",
-        @"c:\Users\patri\Documents\claudeProjects\.env"
+        Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", ".env")
     ];
 
     public string? EodhdApiKey { get; private set; }

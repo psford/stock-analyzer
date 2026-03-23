@@ -234,7 +234,7 @@
 Phase 4 completes the iShares constituent loader with comprehensive verification of rate limiting enforcement, pipeline output parity with Python reference implementation, codebase cleanup of all Wikipedia scraper references, and full build validation.
 
 ### Task 1: Rate Limiting Verification Tests (AC6.1)
-**File**: `projects/eodhd-loader/tests/EodhdLoader.Tests/Integration/RateLimitingTests.cs`
+**File**: `eodhd-loader/tests/EodhdLoader.Tests/Integration/RateLimitingTests.cs`
 
 Implements three tests verifying minimum 2-second gaps between consecutive iShares HTTP requests:
 
@@ -248,7 +248,7 @@ Implements three tests verifying minimum 2-second gaps between consecutive iShar
 **Status**: Passing
 
 ### Task 2: Pipeline Parity Tests (AC6.2)
-**File**: `projects/eodhd-loader/tests/EodhdLoader.Tests/Integration/PipelineParityTests.cs`
+**File**: `eodhd-loader/tests/EodhdLoader.Tests/Integration/PipelineParityTests.cs`
 
 Implements 4 tests verifying C# parser output matches Python pipeline reference output using Phase 1 test fixtures:
 
@@ -267,23 +267,23 @@ Implements 4 tests verifying C# parser output matches Python pipeline reference 
 **Files**: No new files — verification only
 
 Automated codebase scan using 4 grep searches:
-1. `grep -ri "wikipedia" projects/eodhd-loader/src/` → **0 matches**
-2. `grep -ri "IndexService" projects/eodhd-loader/src/` → **0 matches**
-3. `grep -ri "IndexConstituentsResponse" projects/eodhd-loader/src/` → **0 matches**
-4. `grep -ri "en.wikipedia.org" projects/eodhd-loader/src/` → **0 matches**
+1. `grep -ri "wikipedia" eodhd-loader/src/` → **0 matches**
+2. `grep -ri "IndexService" eodhd-loader/src/` → **0 matches**
+3. `grep -ri "IndexConstituentsResponse" eodhd-loader/src/` → **0 matches**
+4. `grep -ri "en.wikipedia.org" eodhd-loader/src/` → **0 matches**
 
 **Status**: Clean. All references to Wikipedia scraper successfully removed in Phase 2.
 
 ### Task 4: Full Build and Smoke Test (AC6.4)
 **Step 1: Clean Build**
 ```
-dotnet build projects/eodhd-loader/EodhdLoader.sln -c Release --no-incremental
+dotnet build eodhd-loader/EodhdLoader.sln -c Release --no-incremental
 Result: Build succeeded, 0 errors
 ```
 
 **Step 2: Test Suite**
 ```
-dotnet test projects/eodhd-loader/tests/EodhdLoader.Tests/ --verbosity normal
+dotnet test eodhd-loader/tests/EodhdLoader.Tests/ --verbosity normal
 Result: 60/60 tests passing
 ```
 

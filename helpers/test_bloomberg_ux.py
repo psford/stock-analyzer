@@ -283,9 +283,9 @@ def run_tests():
                    f"{len(js_errors)} errors: {'; '.join(js_errors[:3])}" if js_errors else "Clean")
 
         # Take final screenshot
-        page.screenshot(path="c:/Users/patri/Documents/claudeProjects/projects/stock-analyzer/bloomberg_ux_test.png",
-                        full_page=True)
-        print("\nScreenshot saved: bloomberg_ux_test.png")
+        screenshot_path = "bloomberg_ux_test.png"
+        page.screenshot(path=screenshot_path, full_page=True)
+        print(f"\nScreenshot saved: {screenshot_path}")
 
         browser.close()
 

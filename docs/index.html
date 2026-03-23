@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Analyzer Documentation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --accent: #3b82f6;
+            --border: #334155;
+        }
+
+        body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+        }
+
+        .prose {
+            color: var(--text-primary);
+        }
+
+        .prose h1, .prose h2, .prose h3 {
+            color: var(--text-primary);
+        }
+
+        .prose a {
+            color: var(--accent);
+        }
+
+        .prose code {
+            background: var(--bg-primary);
+            padding: 0.2em 0.4em;
+            border-radius: 0.25rem;
+        }
+
+        .prose pre {
+            background: var(--bg-primary);
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+        }
+
+        .prose table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .prose th, .prose td {
+            border: 1px solid var(--border);
+            padding: 0.5rem;
+        }
+
+        .prose th {
+            background: var(--bg-primary);
+        }
+
+        .tab-active {
+            border-bottom: 2px solid var(--accent);
+            color: var(--accent);
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+    <header class="border-b border-slate-700 py-4">
+        <div class="container mx-auto px-4">
+            <h1 class="text-2xl font-bold">Stock Analyzer Documentation</h1>
+            <p class="text-slate-400 mt-1">Technical and functional specifications</p>
+        </div>
+    </header>
+
+    <nav class="border-b border-slate-700">
+        <div class="container mx-auto px-4 flex gap-4 flex-wrap">
+            <button class="tab-btn py-3 px-4 tab-active" data-doc="APP_EXPLANATION">App Explanation</button>
+            <button class="tab-btn py-3 px-4 hover:text-blue-400" data-doc="TECHNICAL_SPEC">Technical Spec</button>
+            <button class="tab-btn py-3 px-4 hover:text-blue-400" data-doc="FUNCTIONAL_SPEC">Functional Spec</button>
+            <button class="tab-btn py-3 px-4 hover:text-blue-400" data-doc="CLAUDE">Project Guidelines</button>
+            <button class="tab-btn py-3 px-4 hover:text-blue-400" data-doc="DEPLOYMENT_AZURE">Azure Deployment</button>
+            <button class="tab-btn py-3 px-4 hover:text-blue-400" data-doc="SECURITY_OVERVIEW">Security Overview</button>
+        </div>
+    </nav>
+
+    <main class="container mx-auto px-4 py-8">
+        <div id="content" class="prose prose-invert max-w-none">
+            <p class="text-slate-400">Loading documentation...</p>
+        </div>
+    </main>
+
+    <footer class="border-t border-slate-700 py-4 mt-8">
+        <div class="container mx-auto px-4 text-center text-slate-400">
+            <p>&copy; 2026 Stock Analyzer | <a href="https://psfordtaurus.com" class="text-blue-400 hover:underline">Back to App</a></p>
+        </div>
+    </footer>
+
+    <script>
+        const docFiles = {
+            'APP_EXPLANATION': 'APP_EXPLANATION.md',
+            'TECHNICAL_SPEC': 'TECHNICAL_SPEC.md',
+            'FUNCTIONAL_SPEC': 'FUNCTIONAL_SPEC.md',
+            'CLAUDE': 'claude_disp.md',
+            'DEPLOYMENT_AZURE': 'DEPLOYMENT_AZURE.md',
+            'SECURITY_OVERVIEW': 'SECURITY_OVERVIEW.md'
+        };
+
+        async function loadDoc(docName) {
+            const content = document.getElementById('content');
+            content.innerHTML = '<p class="text-slate-400">Loading...</p>';
+
+            try {
+                const response = await fetch(docFiles[docName]);
+                if (!response.ok) throw new Error('Document not found');
+                const markdown = await response.text();
+                content.innerHTML = marked.parse(markdown);
+            } catch (error) {
+                content.innerHTML = `<p class="text-red-400">Error loading document: ${error.message}</p>`;
+            }
+        }
+
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('tab-active'));
+                btn.classList.add('tab-active');
+                loadDoc(btn.dataset.doc);
+            });
+        });
+
+        // Load initial doc
+        loadDoc('APP_EXPLANATION');
+    </script>
+</body>
+</html>

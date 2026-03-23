@@ -1088,16 +1088,16 @@ The documentation page provides six tabs:
 
 **Documentation Source: GitHub Pages**
 
-Documentation is served from GitHub Pages at `https://psford.github.io/claudeProjects/`. The app's `docs.html` fetches markdown files client-side via CORS, allowing documentation updates without container rebuilds.
+Documentation is served from GitHub Pages at `https://psford.github.io/stock-analyzer/`. The app's `docs.html` fetches markdown files client-side via CORS, allowing documentation updates without container rebuilds.
 
 | Document | GitHub Pages URL |
 |----------|------------------|
-| App Explanation | `https://psford.github.io/claudeProjects/APP_EXPLANATION.md` |
-| Project Guidelines | `https://psford.github.io/claudeProjects/claude_disp.md` |
-| Functional Spec | `https://psford.github.io/claudeProjects/FUNCTIONAL_SPEC.md` |
-| Technical Spec | `https://psford.github.io/claudeProjects/TECHNICAL_SPEC.md` |
-| Security Overview | `https://psford.github.io/claudeProjects/SECURITY_OVERVIEW.md` |
-| Diagrams | `https://psford.github.io/claudeProjects/diagrams/*.mmd` |
+| App Explanation | `https://psford.github.io/stock-analyzer/APP_EXPLANATION.md` |
+| Project Guidelines | `https://psford.github.io/stock-analyzer/claude_disp.md` |
+| Functional Spec | `https://psford.github.io/stock-analyzer/FUNCTIONAL_SPEC.md` |
+| Technical Spec | `https://psford.github.io/stock-analyzer/TECHNICAL_SPEC.md` |
+| Security Overview | `https://psford.github.io/stock-analyzer/SECURITY_OVERVIEW.md` |
+| Diagrams | `https://psford.github.io/stock-analyzer/diagrams/*.mmd` |
 
 **To update production docs:** Push changes to the `/docs` folder on main branch. GitHub Pages deploys automatically.
 
@@ -2878,7 +2878,7 @@ Maintains the historical price database with automatic daily updates.
 
 **EODHD Loader (WPF Desktop Client):**
 
-Location: `projects/eodhd-loader/src/EodhdLoader/`
+Location: `eodhd-loader/src/EodhdLoader/`
 
 WPF desktop application (.NET 8, `net8.0-windows10.0.19041`) for managing price data loading. Connects to the Stock Analyzer API.
 
@@ -3425,7 +3425,7 @@ const newsPromise = API.getAggregatedNews(ticker, 30, 10);
 | 2.22 | 2026-01-26 | **Gap Count Query Fix:** The `/api/admin/prices/gaps` endpoint was incorrectly counting `trackedWithGaps` and `untrackedWithGaps` from the LIMITED results (TOP N) instead of actual totals. Added separate count query to compute true totals of all securities with gaps. This fix ensures the crawler UI displays accurate counts even when more gaps exist than the limit parameter. |
 | 2.21 | 2026-01-26 | **Gap Detection Includes Zero-Data Securities:** `/api/admin/prices/gaps` endpoint now uses UNION query to include both (1) securities with internal gaps in existing price data, and (2) untracked securities with zero price records. Securities with no data use 2-year lookback window for expected date range. `/api/admin/prices/gaps/{securityAlias}` endpoint updated to return business days for securities with no prices (2-year range). Enables crawler to populate historical data for previously untouched securities. |
 | 2.20 | 2026-01-26 | **Two-Phase Gap Detection for Crawler:** `/api/admin/prices/gaps` endpoint now supports `includeUntracked` parameter. Default behavior (false) returns only tracked securities. When true, returns all active securities with tracked ones prioritized first. Response includes `isTracked` flag per security and separate counts (`trackedWithGaps`, `untrackedWithGaps`). EODHD Loader (Boris) crawler updated with two-phase operation: Phase 1 fills tracked securities, then automatically switches to Phase 2 for untracked securities. UI shows current phase indicator. |
-| 2.19 | 2026-01-25 | **Local Jenkins CI Integration:** Pre-push hook (`helpers/hooks/jenkins_pre_push.py`) triggers local Jenkins build before every `git push`. Blocks push if build fails. Helper scripts: `jenkins-local.ps1` (start/stop/build/status), `jenkins-console.ps1` (fetch logs), `jenkins-reload.ps1` (reload config). Jenkinsfile updated with correct paths (`projects/stock-analyzer/`) and JavaScript test stage. Jenkins API token authentication via `.env` credentials. Pre-commit config extended with pre-push stage. |
+| 2.19 | 2026-01-25 | **Local Jenkins CI Integration:** Pre-push hook (`helpers/hooks/jenkins_pre_push.py`) triggers local Jenkins build before every `git push`. Blocks push if build fails. Helper scripts: `jenkins-local.ps1` (start/stop/build/status), `jenkins-console.ps1` (fetch logs), `jenkins-reload.ps1` (reload config). Jenkinsfile updated with correct paths and JavaScript test stage. Jenkins API token authentication via `.env` credentials. Pre-commit config extended with pre-push stage. |
 | 2.15 | 2026-01-22 | **Sentiment-Filtered News:** SentimentAnalyzer.cs static utility with keyword-based sentiment analysis (~50 positive/negative keywords). NewsService.GetNewsForDateWithSentimentAsync() filters headlines to match price direction. AnalysisService.DetectSignificantMovesAsync() uses sentiment-aware news. Fallback cascade: sentiment-matched company news → any company news → market news. SentimentAnalyzerTests.cs (32 tests) covers positive/negative/neutral headlines, price matching, real-world Ford "Soars" bug scenario. |
 | 2.18 | 2026-01-24 | **Database Protection & Coverage API:** Bicep template modified to NOT manage the production database (prevents overwriting 3.5M+ price records from BACPAC import). Database name corrected from `stockanalyzerdb` to `stockanalyzer-db`. New `/api/admin/prices/coverage-dates` endpoint returns distinct dates with price data for coverage analysis. `GetDistinctDatesAsync()` method added to IPriceRepository. SecurityMaster extended with Country, Currency, ISIN columns via EF Core migration. EodhdService extended with `GetExchangeSymbolsAsync()` method to sync EODHD symbol metadata. |
 | 2.17 | 2026-01-23 | **Sentiment-Filtered News & Production Deployment:** Deployed v3.0 to production with database-first price lookup. Fixed image prefetch thread exhaustion (reduced initial load from 50 to 5). |
@@ -3436,7 +3436,7 @@ const newsPromise = API.getAggregatedNews(ticker, 30, 10);
 | 2.10 | 2026-01-22 | **Persistent Image Cache:** Database-backed image cache replaces in-memory ConcurrentQueue for persistence across restarts. CachedImageEntity model with EF Core migration, ICachedImageRepository interface with SqlCachedImageRepository (random selection via `ORDER BY NEWID()`). ImageCacheService refactored to use IServiceScopeFactory for scoped DbContext access. Cache increased to 1000 images per type. Status page fixed: dynamic maxSize from API, added TwelveData/FMP health check cards. |
 | 2.9 | 2026-01-21 | **Local Symbol Database for Fast Search:** Sub-10ms ticker search via Azure SQL cache of ~10K US stock symbols. SymbolEntity model with EF Core migration, ISymbolRepository interface with SqlSymbolRepository implementation (multi-tier ranking: exact > prefix > contains), SymbolRefreshService BackgroundService (daily Finnhub sync at 2 AM UTC, auto-seed on startup if empty), AggregatedStockDataService now queries local DB first with API fallback. Admin endpoints: POST /api/admin/symbols/refresh, GET /api/admin/symbols/status. 18 new unit tests for repository. |
 | 2.8 | 2026-01-21 | **Log Injection Prevention:** Added LogSanitizer utility to sanitize user input (ticker symbols, search queries) before logging. Prevents log forging attacks via control character injection. Applied to AggregatedStockDataService, TwelveDataService, FmpService, and YahooFinanceService. Resolves 21 CodeQL security alerts. |
-| 2.7 | 2026-01-21 | **GitHub Pages Documentation Refactor:** Documentation now served from GitHub Pages (psford.github.io/claudeProjects/) instead of bundled in container. Enables doc updates without container rebuild. Removed wwwroot/docs folder and MSBuild copy targets. docs.html fetches markdown client-side via CORS. Custom domain SSL (psfordtest.com) with Azure managed certificates. |
+| 2.7 | 2026-01-21 | **GitHub Pages Documentation Refactor:** Documentation now served from GitHub Pages (psford.github.io/stock-analyzer/) instead of bundled in container. Enables doc updates without container rebuild. Removed wwwroot/docs folder and MSBuild copy targets. docs.html fetches markdown client-side via CORS. Custom domain SSL (psfordtest.com) with Azure managed certificates. |
 | 2.6 | 2026-01-19 | **Multi-Source News Aggregation + ML Scoring:** MarketauxService (alternative news source), HeadlineRelevanceService (weighted relevance scoring: ticker 35%, company name 25%, recency 20%, sentiment 10%, source quality 10%), AggregatedNewsService (combines sources with Jaccard deduplication), NewsItem model extended (RelevanceScore, SourceApi fields), new aggregated news endpoints, ImageProcessingService quality control (0.50 confidence threshold, 20% minimum detection size, reject images without valid detection), image cache increased to 100/30, 52 new unit tests |
 | 2.5 | 2026-01-19 | **Security Hardening:** CORS restricted to known origins, HSTS header, ticker input validation (regex pattern), removed unused DirectoryBrowser |
 | 2.4 | 2026-01-19 | **App Service Migration + Key Vault:** Migrated from ACI to App Service B1 for zero-downtime deploys, Azure Key Vault for secrets management, manual workflow_dispatch for production deploys, GitHub repo made public for CodeQL, GitHub link added to footer |

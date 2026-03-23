@@ -1,0 +1,333 @@
+name: Deploy to Azure Production
+
+# PRODUCTION DEPLOYMENT - Manual trigger only
+# This workflow builds, tests, and deploys to production.
+# It requires manual approval via workflow_dispatch.
+
+on:
+  # Remove automatic push trigger - production deploys are manual only
+  # push:
+  #   branches: [master, main]
+
+  # Manual trigger with confirmation
+  workflow_dispatch:
+    inputs:
+      confirm_deploy:
+        description: 'Type "deploy" to confirm production deployment'
+        required: true
+        type: string
+      reason:
+        description: 'Reason for deployment (shown in logs)'
+        required: true
+        type: string
+
+env:
+  AZURE_WEBAPP_NAME: app-stockanalyzer-prod
+  DOTNET_VERSION: '8.0.x'
+  ACR_NAME: acrstockanalyzerer34ug
+  ACR_LOGIN_SERVER: acrstockanalyzerer34ug.azurecr.io
+
+jobs:
+  # Validate deployment confirmation and test credentials BEFORE building
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate confirmation
+        if: ${{ github.event.inputs.confirm_deploy != 'deploy' }}
+        run: |
+          echo "::error::Deployment not confirmed. You must type 'deploy' to proceed."
+          exit 1
+
+      - name: Log deployment reason
+        run: |
+          echo "## Production Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Reason:** ${{ github.event.inputs.reason }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+
+      - uses: actions/checkout@v6
+
+      # Test Azure credentials BEFORE doing expensive build/push
+      - name: Test Azure credentials
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Verify Azure access
+        run: |
+          echo "Testing Azure resource group access..."
+          az group show --name rg-stockanalyzer-prod --query "name" -o tsv
+          echo "✅ Azure credentials valid and resource group accessible"
+
+      - name: Verify Bicep matches live Azure config
+        run: |
+          echo "Checking Bicep declarations against live Azure state..."
+          BICEP="infrastructure/azure/main.bicep"
+          DRIFT=0
+
+          # Extract declared values from Bicep
+          BICEP_SKU=$(grep "name: '" "$BICEP" | head -1 | sed "s/.*name: '\\(.*\\)'/\\1/")
+          BICEP_ALWAYS_ON=$(grep "alwaysOn:" "$BICEP" | sed 's/.*alwaysOn: \(true\|false\).*/\1/')
+
+          # Get live values from Azure
+          LIVE_SKU=$(az appservice plan show \
+            --name asp-stockanalyzer \
+            --resource-group rg-stockanalyzer-prod \
+            --query "sku.name" -o tsv)
+          LIVE_ALWAYS_ON=$(az webapp config show \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group rg-stockanalyzer-prod \
+            --query "alwaysOn" -o tsv)
+
+          echo "  SKU:       Bicep=$BICEP_SKU  Azure=$LIVE_SKU"
+          echo "  AlwaysOn:  Bicep=$BICEP_ALWAYS_ON  Azure=$LIVE_ALWAYS_ON"
+
+          if [ "$BICEP_SKU" != "$LIVE_SKU" ]; then
+            echo "::warning::Bicep SKU ($BICEP_SKU) does not match live Azure SKU ($LIVE_SKU). Update main.bicep!"
+            DRIFT=1
+          fi
+          if [ "$BICEP_ALWAYS_ON" != "$LIVE_ALWAYS_ON" ]; then
+            echo "::warning::Bicep alwaysOn ($BICEP_ALWAYS_ON) does not match live Azure ($LIVE_ALWAYS_ON). Update main.bicep!"
+            DRIFT=1
+          fi
+
+          if [ $DRIFT -eq 0 ]; then
+            echo "✅ Bicep matches live Azure config"
+          else
+            echo "::error::Bicep drift detected! Update infrastructure/azure/main.bicep before deploying."
+            exit 1
+          fi
+
+      - name: Test ACR credentials
+        run: |
+          echo "Testing ACR access..."
+          az acr login --name ${{ env.ACR_NAME }} --expose-token --output none
+          echo "✅ ACR credentials valid"
+
+      - name: Azure Logout
+        if: always()
+        run: az logout || true
+
+  build-and-test:
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore StockAnalyzer.sln
+
+      - name: Build
+        run: dotnet build StockAnalyzer.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test StockAnalyzer.sln --configuration Release --no-build --verbosity normal
+
+  build-container:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: prod-${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Log in to ACR
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Build and push to ACR
+        run: |
+          cd .
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/stockanalyzer:latest .
+          docker tag ${{ env.ACR_LOGIN_SERVER }}/stockanalyzer:latest ${{ env.ACR_LOGIN_SERVER }}/stockanalyzer:prod-${{ github.run_number }}
+          docker push ${{ env.ACR_LOGIN_SERVER }}/stockanalyzer:latest
+          docker push ${{ env.ACR_LOGIN_SERVER }}/stockanalyzer:prod-${{ github.run_number }}
+
+      - name: Record image info for rollback
+        run: |
+          echo "## Container Image" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** prod-${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Registry:** ${{ env.ACR_LOGIN_SERVER }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          PREV_RUN=$(( ${{ github.run_number }} - 1 ))
+          echo "To rollback, redeploy with tag: \`prod-${PREV_RUN}\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Azure Logout
+        if: always()
+        run: az logout || true
+
+  deploy:
+    needs: build-container
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://psfordtaurus.com
+    steps:
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to App Service
+        run: |
+          echo "Deploying image: ${{ env.ACR_LOGIN_SERVER }}/stockanalyzer:prod-${{ github.run_number }}"
+
+          # Update the container image
+          az webapp config container set \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group rg-stockanalyzer-prod \
+            --container-image-name ${{ env.ACR_LOGIN_SERVER }}/stockanalyzer:prod-${{ github.run_number }} \
+            --container-registry-url https://${{ env.ACR_LOGIN_SERVER }} \
+            --container-registry-user ${{ env.ACR_NAME }} \
+            --container-registry-password ${{ secrets.ACR_PASSWORD }}
+
+          # Restart to pick up new image
+          az webapp restart \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group rg-stockanalyzer-prod
+
+          echo "✅ Container image updated"
+
+      - name: Wait for container startup
+        run: |
+          echo "Waiting for App Service to start new container..."
+          sleep 30
+
+      - name: Debug runner IP
+        run: |
+          echo "Runner public IP address:"
+          curl -s https://api.ipify.org
+          echo ""
+          echo "Checking if IP is in GitHub Actions ranges..."
+
+      - name: Health check with retry
+        run: |
+          for i in 1 2 3 4 5; do
+            echo "Health check attempt $i..."
+            # Show verbose output for debugging
+            response=$(curl -s -o /dev/null -w "%{http_code}" https://psfordtaurus.com/health/live --max-time 30 || echo "000")
+            if [ "$response" = "200" ]; then
+              echo "✅ Basic health check passed!"
+              exit 0
+            fi
+            echo "Health check returned $response, waiting 30s..."
+            sleep 30
+          done
+          echo "::error::Health check failed after 5 attempts"
+          exit 1
+
+      - name: Warm up application caches
+        run: |
+          echo "Warming up application caches..."
+          BASE_URL="https://psfordtaurus.com"
+
+          # Each call primes a different subsystem. We don't fail the build here —
+          # the smoke tests that follow will catch real failures.
+          warmup() {
+            local name="$1" url="$2"
+            echo -n "  Warming $name... "
+            start=$(date +%s.%N)
+            code=$(curl -s -o /dev/null -w "%{http_code}" "$url" --max-time 90 2>/dev/null || echo "000")
+            end=$(date +%s.%N)
+            duration=$(echo "$end - $start" | bc)
+            echo "HTTP $code (${duration}s)"
+          }
+
+          # 1. Static files + HTML
+          warmup "static files" "$BASE_URL/"
+
+          # 2. Search — forces SymbolCache to load (~30K symbols from Finnhub)
+          warmup "symbol cache (search)" "$BASE_URL/api/search?q=apple"
+
+          # 3. Stock history — warms DB connection pool + data provider connections
+          warmup "DB pool (history)" "$BASE_URL/api/stock/AAPL/history?period=1mo"
+
+          # 4. Full health — confirms all subsystems are ready
+          warmup "full health check" "$BASE_URL/health"
+
+          echo "✅ Warmup complete — all caches primed"
+
+      - name: API endpoint smoke tests
+        run: |
+          echo "Running API endpoint smoke tests..."
+          BASE_URL="https://psfordtaurus.com"
+          FAILED=0
+
+          # Function to test endpoint with timeout, retry, and response time tracking
+          # $1 = name, $2 = url, $3 = max_time (default 60), $4 = accept_codes (default "200")
+          # Retries up to 3 times on 502/503/000 (transient startup errors) with 5s delay
+          test_endpoint() {
+            local name="$1"
+            local url="$2"
+            local max_time="${3:-60}"
+            local accept_codes="${4:-200}"
+            local retries=3
+            local retry_delay=5
+
+            for attempt in $(seq 1 $retries); do
+              echo -n "Testing $name"
+              [ "$attempt" -gt 1 ] && echo -n " (retry $attempt/$retries)"
+              echo -n "... "
+
+              start=$(date +%s.%N)
+              response=$(curl -s -o /dev/null -w "%{http_code}" "$url" --max-time "$max_time" 2>/dev/null || echo "000")
+              end=$(date +%s.%N)
+              duration=$(echo "$end - $start" | bc)
+
+              # Check if response is in accepted codes list
+              if echo "$accept_codes" | grep -q "$response"; then
+                echo "✅ OK (HTTP $response, ${duration}s)"
+                return 0
+              fi
+
+              # Retry on transient errors (502 Bad Gateway, 503 Service Unavailable, 000 timeout)
+              if [ "$attempt" -lt "$retries" ] && echo "502 503 000" | grep -q "$response"; then
+                echo "⚠️ HTTP $response (${duration}s) - retrying in ${retry_delay}s..."
+                sleep $retry_delay
+              else
+                echo "❌ FAILED (HTTP $response, ${duration}s)"
+                return 1
+              fi
+            done
+          }
+
+          # Test critical endpoints
+          # Increased timeouts to 60s for cold-start scenarios
+          # Health accepts 200 (Healthy) or 503 (Degraded due to external API issues)
+          test_endpoint "Static files (index.html)" "$BASE_URL/" 60 || FAILED=$((FAILED+1))
+          test_endpoint "Health endpoint" "$BASE_URL/health" 60 "200 503" || FAILED=$((FAILED+1))
+          test_endpoint "Stock quote (AAPL)" "$BASE_URL/api/stock/AAPL" 60 || FAILED=$((FAILED+1))
+          test_endpoint "Stock history" "$BASE_URL/api/stock/AAPL/history?period=1mo" 60 || FAILED=$((FAILED+1))
+          test_endpoint "Stock analysis" "$BASE_URL/api/stock/AAPL/analysis?period=1mo" 60 || FAILED=$((FAILED+1))
+          test_endpoint "Significant moves" "$BASE_URL/api/stock/AAPL/significant?threshold=5&period=1mo" 60 || FAILED=$((FAILED+1))
+          test_endpoint "News (aggregated)" "$BASE_URL/api/stock/AAPL/news/aggregated?days=7&limit=3" 60 || FAILED=$((FAILED+1))
+          test_endpoint "Market news" "$BASE_URL/api/news/market" 60 || FAILED=$((FAILED+1))
+          test_endpoint "Search" "$BASE_URL/api/search?q=apple" 60 || FAILED=$((FAILED+1))
+          test_endpoint "Watchlists" "$BASE_URL/api/watchlists" 60 || FAILED=$((FAILED+1))
+
+          echo ""
+          echo "## API Smoke Test Results" >> $GITHUB_STEP_SUMMARY
+          if [ $FAILED -eq 0 ]; then
+            echo "✅ All 10 endpoints passed" >> $GITHUB_STEP_SUMMARY
+            echo "## Deployment Successful" >> $GITHUB_STEP_SUMMARY
+            echo "Production is live at https://psfordtaurus.com" >> $GITHUB_STEP_SUMMARY
+            echo "**Image:** prod-${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ $FAILED endpoint(s) failed" >> $GITHUB_STEP_SUMMARY
+            echo "::error::$FAILED API endpoint(s) failed smoke test"
+            exit 1
+          fi
+
+      - name: Azure Logout
+        if: always()
+        run: az logout || true

@@ -41,7 +41,7 @@
     <None Include="MLModels\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <!-- Documentation is now served from GitHub Pages (https://psford.github.io/claudeProjects/) -->
+  <!-- Documentation is now served from GitHub Pages (https://psford.github.io/stock-analyzer/) -->
   <!-- No longer need to copy docs during build - they're fetched client-side -->
 
   <!-- Build Tailwind CSS before build (if node_modules exists and node is available) -->

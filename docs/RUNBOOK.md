@@ -13,7 +13,7 @@ Operational procedures for Stock Analyzer production environment.
 | **Production URL** | https://psfordtaurus.com |
 | **App Service URL** | https://app-stockanalyzer-prod.azurewebsites.net |
 | **Health Check** | https://psfordtaurus.com/health/live |
-| **GitHub Actions** | https://github.com/psford/claudeProjects/actions |
+| **GitHub Actions** | https://github.com/psford/stock-analyzer/actions |
 | **Azure Portal** | https://portal.azure.com |
 | **Cloudflare** | https://dash.cloudflare.com |
 
@@ -25,7 +25,7 @@ Operational procedures for Stock Analyzer production environment.
 
 Production deployments are **manual only** via GitHub Actions.
 
-1. Go to [GitHub Actions](https://github.com/psford/claudeProjects/actions)
+1. Go to [GitHub Actions](https://github.com/psford/stock-analyzer/actions)
 2. Select "Deploy to Azure Production" workflow
 3. Click "Run workflow"
 4. Fill in:

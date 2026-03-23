@@ -1,0 +1,169 @@
+name: .NET CI
+
+on:
+  push:
+    branches: [ master, main, develop ]
+    paths:
+      - '**'
+      - '.github/workflows/dotnet-ci.yml'
+  pull_request:
+    branches: [ master, main, develop ]
+    # Only trigger on actual code/workflow changes — NOT docs, hooks, or config.
+    # For non-triggering PRs, include a trivial triggering-path change (see CLAUDE.md).
+    paths:
+      - '**'
+      - '.github/workflows/dotnet-ci.yml'
+      - '.github/workflows/azure-deploy.yml'
+      - '.github/workflows/test-connectivity.yml'
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  NODE_VERSION: '20.x'
+  SOLUTION_PATH: 'StockAnalyzer.sln'
+  FRONTEND_PATH: 'src/StockAnalyzer.Api/wwwroot'
+
+jobs:
+  # JavaScript unit tests for frontend portfolio calculations
+  frontend-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    - name: Install dependencies
+      run: npm install
+      working-directory: ${{ env.FRONTEND_PATH }}
+
+    - name: Run JavaScript tests
+      run: npm test -- --ci --coverage
+      working-directory: ${{ env.FRONTEND_PATH }}
+
+    - name: Upload coverage report
+      uses: actions/upload-artifact@v6
+      if: always()
+      with:
+        name: js-coverage
+        path: ${{ env.FRONTEND_PATH }}/coverage
+        retention-days: 30
+
+  # ShellCheck — static analysis for bash scripts
+  shell-lint:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Install ShellCheck
+      run: sudo apt-get install -y shellcheck
+
+    - name: Run ShellCheck on all shell scripts
+      run: |
+        SCRIPTS=$(find . -name '*.sh' -not -path './node_modules/*' -not -path './.git/*')
+        if [ -z "$SCRIPTS" ]; then
+          echo "No shell scripts found — skipping ShellCheck"
+          exit 0
+        fi
+        echo "$SCRIPTS" | xargs shellcheck --severity=warning --shell=bash
+
+  build-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: "without-sql"
+            wsl_sql_connection: ""
+          - name: "with-sql"
+            wsl_sql_connection: "Server=localhost;Database=Test;Trusted_Connection=True;TrustServerCertificate=True;"
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Set WSL_SQL_CONNECTION
+      if: matrix.wsl_sql_connection != ''
+      run: echo "WSL_SQL_CONNECTION=${{ matrix.wsl_sql_connection }}" >> $GITHUB_ENV
+
+    - name: Restore dependencies
+      run: dotnet restore ${{ env.SOLUTION_PATH }}
+
+    - name: Build
+      run: dotnet build ${{ env.SOLUTION_PATH }} --configuration Release --no-restore
+
+    - name: Run tests
+      run: dotnet test ${{ env.SOLUTION_PATH }} --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx"
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v6
+      if: always()  # Upload even if tests fail
+      with:
+        name: test-results-${{ matrix.name }}
+        path: '**/TestResults/*.trx'
+        retention-days: 30
+
+  # Security: Dependency vulnerability scanning
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restore dependencies
+      run: dotnet restore ${{ env.SOLUTION_PATH }}
+
+    - name: OWASP Dependency Check
+      uses: dependency-check/Dependency-Check_Action@main
+      id: depcheck
+      with:
+        project: 'StockAnalyzer'
+        path: '.'
+        format: 'HTML'
+        args: >
+          --failOnCVSS 7
+          --enableRetired
+
+    - name: Upload Dependency Check Report
+      uses: actions/upload-artifact@v6
+      if: always()
+      with:
+        name: dependency-check-report
+        path: ${{ github.workspace }}/reports
+        retention-days: 30
+
+  # Optional: Build for Windows to ensure cross-platform compatibility
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restore dependencies
+      run: dotnet restore ${{ env.SOLUTION_PATH }}
+
+    - name: Build
+      run: dotnet build ${{ env.SOLUTION_PATH }} --configuration Release --no-restore

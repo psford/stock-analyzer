@@ -16,7 +16,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\stock-analyzer\src\StockAnalyzer.Core\StockAnalyzer.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\StockAnalyzer.Core\StockAnalyzer.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
