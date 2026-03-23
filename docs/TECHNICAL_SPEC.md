@@ -1,7 +1,7 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.75
-**Last Updated:** 2026-02-26
+**Version:** 2.80
+**Last Updated:** 2026-03-22
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
 
@@ -1787,7 +1787,32 @@ Guard: if (initialized) return; — prevents re-init on subsequent searches
 }
 ```
 
-### 7.3 Program.cs Configuration
+### 7.3 EF Core Design-Time Factory Configuration
+
+**File:** `StockAnalyzer.Core/Data/DesignTimeDbContextFactory.cs`
+
+The `DesignTimeDbContextFactory` provides a connection string for EF Core migrations via the `dotnet ef` CLI. It supports both Windows development (local named pipes) and WSL2 development (TCP over network).
+
+**Connection String Resolution:**
+
+1. **Windows Development (Default):**
+   - Checks environment variable: `SA_DESIGN_CONNECTION`
+   - Falls back to: `Server=(localdb)\mssqllocaldb;Database=StockAnalyzer_Design;Trusted_Connection=True;`
+   - Uses LocalDB for zero-configuration Windows development
+
+2. **WSL2 Development (TCP):**
+   - Set `SA_DESIGN_CONNECTION` before running migrations:
+     ```bash
+     export SA_DESIGN_CONNECTION="Server=127.0.0.1,1433;Database=StockAnalyzer;User Id=wsl_claude_admin;Password=<password>;TrustServerCertificate=True;"
+     dotnet ef migrations list --project ../StockAnalyzer.Core --startup-project .
+     ```
+   - Enables migrations from WSL2 to Windows SQL Express over TCP/IP
+   - Uses the admin login (`wsl_claude_admin`) for DDL permissions required by migrations
+
+**Version History:**
+- **v2.76 (2026-03-21):** Added environment variable support (`SA_DESIGN_CONNECTION`) for WSL2 TCP connectivity while preserving Windows LocalDB fallback. Updated `eodhd_rebuild_guard.py` hook to detect WSL2 and provide platform-appropriate rebuild instructions (manual Windows rebuild for WSL2 sessions, inline rebuild for Windows sessions). Tracked all `.claude/hooks/` as version-controlled business logic (gitignore exceptions for infrastructure hooks). Fixed code review issues: removed unused `import platform` from hook (is_wsl() uses direct /proc/version read), corrected script-audit.md category counts (22 Windows-only + 9 Python-equivalent, added refresh_summary.ps1), fixed unquoted variables in wsl-setup.sh.
+
+### 7.4 Program.cs Configuration
 
 ```csharp
 // CORS for frontend
@@ -3342,6 +3367,9 @@ const newsPromise = API.getAggregatedNews(ticker, 30, 10);
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.79 | 2026-03-21 | **SDLC retro mitigations:** Added `stderr_suppression_guard.py` (blocks `2>/dev/null` on substantive commands), `plan_config_drift_guard.py` (blocks commits when plan docs contradict implementation), ShellCheck pre-commit hook for `.sh` files. |
+| 2.78 | 2026-03-21 | **Hook Test Suite — PostToolUse coverage:** Added `test_post_hook()` helper to `projects/hook-test/test_hooks.py` for testing PostToolUse hooks (stdin JSON, stdout additionalContext check, exit code check). Added test cases for `eodhd_rebuild_guard.py` (silence on non-commit Bash and non-Bash tools) and `spec_staleness_guard.py` (silence on non-push Bash and non-Bash tools). Added `is_wsl()` unit test via `importlib.util` module loading. Suite now covers 52 cases across PreToolUse and PostToolUse hooks. |
+| 2.77 | 2026-03-21 | **WSL2 runtime connection string support:** `Program.cs` checks `WSL_SQL_CONNECTION` environment variable before falling back to `appsettings` `ConnectionStrings:DefaultConnection`. Enables running from WSL2 with TCP/SQL auth without modifying appsettings. |
 | 2.75 | 2026-03-11 | **Overlays use effective chart range:** Added `getEffectiveDateRange()` helper that returns the wider of date picker values vs primary stock's actual data range. Used by `toggleBenchmark()`, `setComparison()`, and `restoreBenchmarks()` so overlays added after scroll-zoom cover the full visible range instead of the original date picker range. |
 | 2.74 | 2026-03-10 | **Fix scroll-zoom overlay extension:** `extendChartRange()` now re-fetches all overlay series (comparison + benchmarks) when scroll zoom extends past data bounds, not just the comparison. Uses `Promise.allSettled()` for parallel fetches. Fixes benchmarks and comparisons not extending when zooming out. |
 | 2.73 | 2026-03-10 | **Sparse/stale data API fallback + remove Quick Compare row:** `TryGetFromDatabaseAsync` in `AggregatedStockDataService` now checks two conditions before accepting DB data: (1) sparse coverage — if range >30 trading days but DB has <20% expected points, fall through to API providers; (2) staleness — if most recent DB price is >7 days before requested end date, fall through to API. Fixes benchmark ETFs (DIA/SPY/QQQ) showing only ~1 month of data when DB had sparse records, and stocks (MSFT/AAPL) ending weeks early when DB data was stale. Removed Quick Compare chip row from `index.html` (redundant with comparison input field + benchmark chips). Moved `clear-compare` button inline into compare input wrapper. Removed dead `[data-compare]` click handler from `app.js`. |

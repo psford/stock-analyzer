@@ -114,6 +114,10 @@ Planned features and improvements for the Stock Analyzer .NET application.
 | Anonymous API monitoring | Track popular stocks anonymously (similar to heat scores) to pre-cache news for common searches | Planned |
 | Staging environment | Azure staging slot for pre-production testing (separate DB, same infra) | Planned |
 | Brinson attribution analysis | Major feature for mutual fund performance evaluation | Planned |
+| Compact Boris data loader | Small always-running app to populate production price table using EODHD 75K API calls/day budget, with data visualization | Planned |
+| FX rate table | Foreign exchange rate table for currency conversion | Planned |
+| PRICE table partitioning | Table could reach 1B+ rows, need partitioning strategy | Planned |
+| Add listing date to SecurityMaster | Enables per-security coverage metrics (expected trading days from listing to present) | Planned |
 
 ### Medium Priority
 
@@ -137,6 +141,10 @@ Planned features and improvements for the Stock Analyzer .NET application.
 | Stock split chart indicators | Visual annotations (vertical lines/markers) on charts showing where stock splits occurred. Good candidate for Playwright testing. | Planned |
 | Export to Excel | Export analysis data to .xlsx format | Planned |
 | Search scoring telemetry | Collect anonymous, fuzzed search patterns to tune relevance scoring weights based on actual user behavior | Planned |
+| Cloudflare rate-limiting/timeout audit | Audit all admin endpoints for Cloudflare 524 timeouts, determine maintenance bypass strategy (direct origin access, Cloudflare API rules, or both) | Planned |
+| Theme caching + dynamic menu | Cache available themes from Azure on load, menu adjusts to theme count (scroll if needed), new theme = drop JSON file | Planned |
+| Hover-news cards theming | Significant move marker hover cards need refactoring to inherit from theme system via CSS variables | Planned |
+| Theme Editor Azure upload/share | Final step of theme editor: upload custom themes to Azure Blob for sharing | Planned |
 
 ### Low Priority / Nice to Have
 
@@ -155,7 +163,7 @@ Planned features and improvements for the Stock Analyzer .NET application.
 
 | Feature | Description | Status |
 |---------|-------------|--------|
-| Separate project repos | Extract stock-analyzer to its own git repo with main claudeProjects using git submodules for isolation and independent versioning | Future |
+| ~~Separate project repos~~ | ~~Extract stock-analyzer to its own git repo~~ | **Done 03/22/2026** |
 | Staging environment | Azure App Service deployment slot or separate app for pre-prod testing | Planned |
 | Cloudflare IP allowlist | Update App Service to only allow Cloudflare IPs for enhanced security | Planned |
 | VNet + Private Endpoint | Deploy App Service into VNet with SQL private endpoint for enhanced security | Planned |

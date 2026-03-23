@@ -127,7 +127,10 @@ builder.Services.AddSingleton(sp =>
 });
 
 // Register watchlist services - use SQL if connection string present, otherwise JSON file
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+// WSL_SQL_CONNECTION: TCP connection string for WSL2 development (from .env).
+// Falls back to appsettings ConnectionStrings:DefaultConnection for Windows/production.
+var connectionString = Environment.GetEnvironmentVariable("WSL_SQL_CONNECTION")
+    ?? builder.Configuration.GetConnectionString("DefaultConnection");
 if (!string.IsNullOrEmpty(connectionString))
 {
     // Azure SQL / SQL Server mode
@@ -4221,3 +4224,6 @@ public class ResetTrackedRequest
     public string? Source { get; set; }
     public int? Priority { get; set; }
 }
+
+// Required for WebApplicationFactory<Program> in integration tests
+public partial class Program { }
