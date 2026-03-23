@@ -113,6 +113,19 @@ jobs:
         path: '**/TestResults/*.trx'
         retention-days: 30
 
+  # Gate job — single required check that passes when all matrix variants pass
+  build-and-test-gate:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: always()
+    steps:
+    - name: Check matrix results
+      run: |
+        if [ "${{ needs.build-and-test.result }}" != "success" ]; then
+          echo "build-and-test matrix failed: ${{ needs.build-and-test.result }}"
+          exit 1
+        fi
+
   # Security: Dependency vulnerability scanning
   security-scan:
     runs-on: ubuntu-latest
