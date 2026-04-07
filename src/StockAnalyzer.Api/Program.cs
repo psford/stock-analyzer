@@ -5,6 +5,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using Serilog.Events;
+using StockAnalyzer.Api;
 using StockAnalyzer.Core.Data;
 using StockAnalyzer.Core.Data.Entities;
 using StockAnalyzer.Core.Helpers;
@@ -59,20 +60,14 @@ builder.Services.AddCors(options =>
 // Priority: TwelveData (1) → FMP (2) → Yahoo (3)
 builder.Services.AddSingleton<IStockDataProvider>(sp =>
 {
-    var config = sp.GetRequiredService<IConfiguration>();
     var logger = sp.GetRequiredService<ILogger<TwelveDataService>>();
-    var apiKey = config["StockDataProviders:TwelveData:ApiKey"]
-              ?? Environment.GetEnvironmentVariable("TWELVEDATA_API_KEY")
-              ?? "";
+    var apiKey = EndpointRegistry.Resolve("twelveData.apiKey");
     return new TwelveDataService(apiKey, logger);
 });
 builder.Services.AddSingleton<IStockDataProvider>(sp =>
 {
-    var config = sp.GetRequiredService<IConfiguration>();
     var logger = sp.GetRequiredService<ILogger<FmpService>>();
-    var apiKey = config["StockDataProviders:FMP:ApiKey"]
-              ?? Environment.GetEnvironmentVariable("FMP_API_KEY")
-              ?? "";
+    var apiKey = EndpointRegistry.Resolve("fmp.apiKey");
     return new FmpService(apiKey, logger);
 });
 builder.Services.AddSingleton<IStockDataProvider>(sp =>
@@ -102,14 +97,12 @@ builder.Services.AddSingleton(sp =>
 // Register news services
 builder.Services.AddSingleton(sp =>
 {
-    var config = sp.GetRequiredService<IConfiguration>();
-    var apiKey = config["Finnhub:ApiKey"] ?? Environment.GetEnvironmentVariable("FINNHUB_API_KEY") ?? "";
+    var apiKey = EndpointRegistry.Resolve("finnhub.apiKey");
     return new NewsService(apiKey);
 });
 builder.Services.AddSingleton(sp =>
 {
-    var config = sp.GetRequiredService<IConfiguration>();
-    var apiToken = config["Marketaux:ApiToken"] ?? Environment.GetEnvironmentVariable("MARKETAUX_API_TOKEN") ?? "";
+    var apiToken = EndpointRegistry.Resolve("marketaux.apiKey");
     return new MarketauxService(apiToken);
 });
 builder.Services.AddSingleton<HeadlineRelevanceService>();
@@ -127,10 +120,17 @@ builder.Services.AddSingleton(sp =>
 });
 
 // Register watchlist services - use SQL if connection string present, otherwise JSON file
-// WSL_SQL_CONNECTION: TCP connection string for WSL2 development (from .env).
-// Falls back to appsettings ConnectionStrings:DefaultConnection for Windows/production.
-var connectionString = Environment.GetEnvironmentVariable("WSL_SQL_CONNECTION")
-    ?? builder.Configuration.GetConnectionString("DefaultConnection");
+// Database connection resolved via EndpointRegistry from endpoints.json
+string? connectionString = null;
+try
+{
+    connectionString = EndpointRegistry.Resolve("database");
+}
+catch (InvalidOperationException ex) when (ex.Message.Contains("not set") || ex.Message.Contains("Environment variable"))
+{
+    // Database connection not configured - will use JSON fallback
+    Log.Information("Database connection not configured, will use JSON file for watchlist storage");
+}
 if (!string.IsNullOrEmpty(connectionString))
 {
     // Azure SQL / SQL Server mode
@@ -256,7 +256,15 @@ builder.Services.AddSingleton(sp =>
     var httpClient = new HttpClient();
     var logger = sp.GetRequiredService<ILogger<EodhdService>>();
     var config = sp.GetRequiredService<IConfiguration>();
-    return new EodhdService(httpClient, logger, config);
+
+    // Resolve EODHD API key from registry and add to configuration
+    var eodhdApiKey = EndpointRegistry.Resolve("eodhd.apiKey");
+    var eodhdConfig = new ConfigurationBuilder()
+        .AddConfiguration(config)
+        .AddInMemoryCollection(new Dictionary<string, string?> { ["EodhdApiKey"] = eodhdApiKey })
+        .Build();
+
+    return new EodhdService(httpClient, logger, eodhdConfig);
 });
 
 // Register PriceRefreshService (background service for daily price updates)
@@ -280,6 +288,17 @@ builder.Services.AddHealthChecks()
 // Serve static files from wwwroot
 
 var app = builder.Build();
+
+// Validate all endpoints - but allow database to be missing in development (JSON mode)
+try
+{
+    EndpointRegistry.ValidateAll();
+}
+catch (AggregateException ex) when (ex.InnerExceptions.Any(e => e.Message.Contains("WSL_SQL_CONNECTION") && e.Message.Contains("not set")))
+{
+    // Database connection not configured - this is OK in development/JSON mode
+    Log.Information("Note: Database connection not configured. Using JSON file mode for watchlist storage.");
+}
 
 // Apply database migrations automatically in production (Azure)
 if (!string.IsNullOrEmpty(connectionString))

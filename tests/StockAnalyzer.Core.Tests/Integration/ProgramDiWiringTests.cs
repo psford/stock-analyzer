@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using StockAnalyzer.Api;
 using StockAnalyzer.Core.Data;
 using StockAnalyzer.Core.Data.Entities;
 using StockAnalyzer.Core.Services;
@@ -169,7 +170,19 @@ public class JsonBranchFactory : WebApplicationFactory<Program>
 {
     public JsonBranchFactory()
     {
-        Environment.SetEnvironmentVariable("WSL_SQL_CONNECTION", null);
+        // Explicitly clear WSL_SQL_CONNECTION to test JSON mode
+        // Setting to null doesn't work - use empty string
+        Environment.SetEnvironmentVariable("WSL_SQL_CONNECTION", "");
+
+        // Set dummy values for all required API keys so EndpointRegistry validation passes
+        Environment.SetEnvironmentVariable("TWELVEDATA_API_KEY", "test-dummy-key");
+        Environment.SetEnvironmentVariable("FMP_API_KEY", "test-dummy-key");
+        Environment.SetEnvironmentVariable("FINNHUB_API_KEY", "test-dummy-key");
+        Environment.SetEnvironmentVariable("EODHD_API_KEY", "test-dummy-key");
+        Environment.SetEnvironmentVariable("MARKETAUX_API_TOKEN", "test-dummy-key");
+
+        // Reset EndpointRegistry so it reloads with updated env vars
+        EndpointRegistry.Reset();
     }
 
     protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
@@ -188,6 +201,15 @@ public class SqlBranchFactory : WebApplicationFactory<Program>
     {
         Environment.SetEnvironmentVariable("WSL_SQL_CONNECTION",
             "Server=localhost;Database=Test;Trusted_Connection=True;TrustServerCertificate=True;");
+        // Set dummy values for all required API keys so EndpointRegistry validation passes
+        Environment.SetEnvironmentVariable("TWELVEDATA_API_KEY", "test-dummy-key");
+        Environment.SetEnvironmentVariable("FMP_API_KEY", "test-dummy-key");
+        Environment.SetEnvironmentVariable("FINNHUB_API_KEY", "test-dummy-key");
+        Environment.SetEnvironmentVariable("EODHD_API_KEY", "test-dummy-key");
+        Environment.SetEnvironmentVariable("MARKETAUX_API_TOKEN", "test-dummy-key");
+
+        // Reset EndpointRegistry so it reloads with updated env vars
+        EndpointRegistry.Reset();
     }
 
     protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
