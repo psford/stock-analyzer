@@ -4,12 +4,48 @@ using Xunit;
 
 namespace StockAnalyzer.Core.Tests;
 
-public class EndpointRegistryTests
+public class EndpointRegistryTests : IDisposable
 {
     private readonly string _fixturesPath = Path.Combine(
         Directory.GetCurrentDirectory(),
         "Fixtures",
         "test-endpoints.json");
+
+    // Store original environment values to restore after tests
+    private readonly string? _originalDotnetEnv;
+    private readonly string? _originalAspnetcoreEnv;
+    private readonly Dictionary<string, string?> _originalTestEnvVars = new();
+
+    public EndpointRegistryTests()
+    {
+        // Save original environment values
+        _originalDotnetEnv = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
+        _originalAspnetcoreEnv = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+
+        // Save original test-specific environment variables
+        var testEnvVarNames = new[] { "TEST_DB_CONNECTION", "TEST_TWELVEDATA_KEY" };
+        foreach (var varName in testEnvVarNames)
+        {
+            _originalTestEnvVars[varName] = Environment.GetEnvironmentVariable(varName);
+        }
+    }
+
+    public void Dispose()
+    {
+        // Reset EndpointRegistry state
+        EndpointRegistry.OverrideFilePath = null;
+        EndpointRegistry.Reset();
+
+        // Restore original environment variables
+        Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", _originalDotnetEnv);
+        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", _originalAspnetcoreEnv);
+
+        // Restore original test environment variables
+        foreach (var kvp in _originalTestEnvVars)
+        {
+            Environment.SetEnvironmentVariable(kvp.Key, kvp.Value);
+        }
+    }
 
     [Fact]
     public void Resolve_LiteralSource_ReturnsInlineValue()
