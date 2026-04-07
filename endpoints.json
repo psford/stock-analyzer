@@ -1,0 +1,81 @@
+{
+  "$schema": "./endpoints.schema.json",
+  "project": "stock-analyzer",
+  "environments": {
+    "dev": {
+      "database": {
+        "source": "env",
+        "key": "WSL_SQL_CONNECTION",
+        "description": "Stock-analyzer SQL Server (local dev via WSL2)"
+      },
+      "twelveData": {
+        "baseUrl": { "source": "literal", "value": "https://api.twelvedata.com" },
+        "apiKey": { "source": "env", "key": "TWELVEDATA_API_KEY" },
+        "description": "TwelveData stock data API"
+      },
+      "fmp": {
+        "baseUrl": { "source": "literal", "value": "https://financialmodelingprep.com/stable" },
+        "apiKey": { "source": "env", "key": "FMP_API_KEY" },
+        "description": "Financial Modeling Prep API"
+      },
+      "finnhub": {
+        "baseUrl": { "source": "literal", "value": "https://finnhub.io/api/v1" },
+        "apiKey": { "source": "env", "key": "FINNHUB_API_KEY" },
+        "description": "Finnhub stock data and news API"
+      },
+      "eodhd": {
+        "baseUrl": { "source": "literal", "value": "https://eodhd.com/api" },
+        "apiKey": { "source": "env", "key": "EODHD_API_KEY" },
+        "description": "EODHD historical data API"
+      },
+      "marketaux": {
+        "baseUrl": { "source": "literal", "value": "https://api.marketaux.com/v1" },
+        "apiKey": { "source": "env", "key": "MARKETAUX_API_TOKEN" },
+        "description": "Marketaux news API"
+      },
+      "wikipedia": {
+        "summaryUrl": { "source": "literal", "value": "https://en.wikipedia.org/api/rest_v1/page/summary/" },
+        "searchUrl": { "source": "literal", "value": "https://en.wikipedia.org/w/api.php" },
+        "description": "Wikipedia API (public, no auth)"
+      }
+    },
+    "prod": {
+      "database": {
+        "source": "keyvault",
+        "vault": "kv-stockanalyzer-prod",
+        "secret": "DbConnectionString",
+        "description": "Azure SQL for stock-analyzer"
+      },
+      "twelveData": {
+        "baseUrl": { "source": "literal", "value": "https://api.twelvedata.com" },
+        "apiKey": { "source": "keyvault", "vault": "kv-stockanalyzer-prod", "secret": "TwelveDataApiKey" },
+        "description": "TwelveData stock data API"
+      },
+      "fmp": {
+        "baseUrl": { "source": "literal", "value": "https://financialmodelingprep.com/stable" },
+        "apiKey": { "source": "keyvault", "vault": "kv-stockanalyzer-prod", "secret": "FmpApiKey" },
+        "description": "Financial Modeling Prep API"
+      },
+      "finnhub": {
+        "baseUrl": { "source": "literal", "value": "https://finnhub.io/api/v1" },
+        "apiKey": { "source": "keyvault", "vault": "kv-stockanalyzer-prod", "secret": "FinnhubApiKey" },
+        "description": "Finnhub stock data and news API"
+      },
+      "eodhd": {
+        "baseUrl": { "source": "literal", "value": "https://eodhd.com/api" },
+        "apiKey": { "source": "keyvault", "vault": "kv-stockanalyzer-prod", "secret": "EodhdApiKey" },
+        "description": "EODHD historical data API"
+      },
+      "marketaux": {
+        "baseUrl": { "source": "literal", "value": "https://api.marketaux.com/v1" },
+        "apiKey": { "source": "keyvault", "vault": "kv-stockanalyzer-prod", "secret": "MarketauxApiToken" },
+        "description": "Marketaux news API"
+      },
+      "wikipedia": {
+        "summaryUrl": { "source": "literal", "value": "https://en.wikipedia.org/api/rest_v1/page/summary/" },
+        "searchUrl": { "source": "literal", "value": "https://en.wikipedia.org/w/api.php" },
+        "description": "Wikipedia API (public, no auth)"
+      }
+    }
+  }
+}

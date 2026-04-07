@@ -10,6 +10,8 @@
 
   <ItemGroup>
     <PackageReference Include="AspNetCore.HealthChecks.Uris" Version="9.0.0" />
+    <PackageReference Include="Azure.Identity" Version="1.13.2" />
+    <PackageReference Include="Azure.Security.KeyVault.Secrets" Version="4.6.0" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.23" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.23">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -39,6 +41,11 @@
   <!-- Copy ML models to output directory -->
   <ItemGroup>
     <None Include="MLModels\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Copy endpoints.json to output directory -->
+  <ItemGroup>
+    <None Include="..\..\endpoints.json" CopyToOutputDirectory="PreserveNewest" Link="endpoints.json" />
   </ItemGroup>
 
   <!-- Documentation is now served from GitHub Pages (https://psford.github.io/stock-analyzer/) -->

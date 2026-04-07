@@ -30,4 +30,9 @@
     <ProjectReference Include="..\..\src\StockAnalyzer.Api\StockAnalyzer.Api.csproj" />
   </ItemGroup>
 
+  <!-- Copy test fixtures to output directory -->
+  <ItemGroup>
+    <None Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
