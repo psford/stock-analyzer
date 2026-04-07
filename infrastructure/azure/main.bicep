@@ -227,7 +227,8 @@ resource keyVaultAccessPolicy 'Microsoft.Authorization/roleAssignments@2022-04-0
   }
 }
 
-// Grant GitHub Actions deploy SP access to Key Vault (preflight validation)
+// Grant GitHub Actions deploy SPs access to Key Vault (preflight validation)
+// github-stockanalyzer SP
 param deploySpObjectId string = 'a88d6fbe-7a79-43a1-b765-8b1ec77f1433'
 resource keyVaultDeployAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(keyVault.id, 'github-stockanalyzer', 'Key Vault Secrets User')
@@ -235,6 +236,18 @@ resource keyVaultDeployAccess 'Microsoft.Authorization/roleAssignments@2022-04-0
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6') // Key Vault Secrets User
     principalId: deploySpObjectId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// github-deploy SP (subscription-level Contributor used by AZURE_CREDENTIALS)
+param globalDeploySpObjectId string = '9c7eb26a-75f0-4359-ad5b-9146558530fb'
+resource keyVaultGlobalDeployAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(keyVault.id, 'github-deploy', 'Key Vault Secrets User')
+  scope: keyVault
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6') // Key Vault Secrets User
+    principalId: globalDeploySpObjectId
     principalType: 'ServicePrincipal'
   }
 }
