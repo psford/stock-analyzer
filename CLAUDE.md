@@ -166,8 +166,8 @@ Production applies on startup. Start local SQL Express: `net start MSSQL$SQLEXPR
 
 All connection strings and API keys resolve through `EndpointRegistry.Resolve("name")` backed by `endpoints.json` (repo root). Never read env vars directly for endpoint keys.
 
-- **Dev**: Env vars (`WSL_SQL_CONNECTION`, `SA_DESIGN_CONNECTION`, plus API keys `TWELVE_DATA_API_KEY`, `FMP_API_KEY`, `FINNHUB_API_KEY`, `EODHD_API_KEY`, `MARKETAUX_API_KEY`)
-- **Prod**: Azure Key Vault secrets (vault `kv-stockanalyzer-prod`)
+- **Dev**: Env vars (`WSL_SQL_CONNECTION`, `SA_DESIGN_CONNECTION`, plus API keys `TWELVEDATA_API_KEY`, `FMP_API_KEY`, `FINNHUB_API_KEY`, `EODHD_API_KEY`, `MARKETAUX_API_TOKEN`)
+- **Prod**: Azure Key Vault secrets (vault `kv-stk-{suffix}` — dynamically generated via Bicep, check `az keyvault list --resource-group rg-stock-analyzer` for actual name)
 - **Resolution**: `EndpointRegistry.Resolve("database")`, `EndpointRegistry.Resolve("twelveData.apiKey")`, etc.
 - **Enforcement**: `endpoint_registry_guard.py` (claude-env hook) blocks commits with hardcoded connection strings or direct env var reads for endpoint keys
 

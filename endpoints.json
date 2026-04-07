@@ -40,7 +40,6 @@
       }
     },
     "prod": {
-      "_note": "PLACEHOLDER: Replace 'kv-stk-prod' with actual Key Vault name from 'az keyvault list --resource-group rg-stock-analyzer' (dynamically generated via Bicep as 'kv-stk-{suffix}')",
       "database": {
         "source": "keyvault",
         "vault": "kv-stk-prod",
