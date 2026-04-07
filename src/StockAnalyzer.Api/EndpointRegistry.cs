@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 
@@ -9,6 +10,8 @@ public static class EndpointRegistry
 {
     private static JsonDocument? _doc;
     private static readonly object _lock = new();
+    private static readonly Azure.Identity.DefaultAzureCredential _credential = new();
+    private static readonly ConcurrentDictionary<string, Azure.Security.KeyVault.Secrets.SecretClient> _secretClients = new();
 
     internal static string? OverrideFilePath { get; set; }
 
@@ -160,9 +163,10 @@ public static class EndpointRegistry
 
         try
         {
-            var client = new Azure.Security.KeyVault.Secrets.SecretClient(
-                new Uri($"https://{vaultName}.vault.azure.net"),
-                new Azure.Identity.DefaultAzureCredential());
+            var client = _secretClients.GetOrAdd(vaultName, vn =>
+                new Azure.Security.KeyVault.Secrets.SecretClient(
+                    new Uri($"https://{vn}.vault.azure.net"),
+                    _credential));
 
             var secret = client.GetSecret(secretName);
             return secret.Value.Value;

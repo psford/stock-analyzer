@@ -42,33 +42,33 @@
     "prod": {
       "database": {
         "source": "keyvault",
-        "vault": "kv-stk-prod",
+        "vault": "kv-stockanalyzer-prod",
         "secret": "DbConnectionString",
         "description": "Azure SQL for stock-analyzer"
       },
       "twelveData": {
         "baseUrl": { "source": "literal", "value": "https://api.twelvedata.com" },
-        "apiKey": { "source": "keyvault", "vault": "kv-stk-prod", "secret": "TwelveDataApiKey" },
+        "apiKey": { "source": "keyvault", "vault": "kv-stockanalyzer-prod", "secret": "TwelveDataApiKey" },
         "description": "TwelveData stock data API"
       },
       "fmp": {
         "baseUrl": { "source": "literal", "value": "https://financialmodelingprep.com/stable" },
-        "apiKey": { "source": "keyvault", "vault": "kv-stk-prod", "secret": "FmpApiKey" },
+        "apiKey": { "source": "keyvault", "vault": "kv-stockanalyzer-prod", "secret": "FmpApiKey" },
         "description": "Financial Modeling Prep API"
       },
       "finnhub": {
         "baseUrl": { "source": "literal", "value": "https://finnhub.io/api/v1" },
-        "apiKey": { "source": "keyvault", "vault": "kv-stk-prod", "secret": "FinnhubApiKey" },
+        "apiKey": { "source": "keyvault", "vault": "kv-stockanalyzer-prod", "secret": "FinnhubApiKey" },
         "description": "Finnhub stock data and news API"
       },
       "eodhd": {
         "baseUrl": { "source": "literal", "value": "https://eodhd.com/api" },
-        "apiKey": { "source": "keyvault", "vault": "kv-stk-prod", "secret": "EodhdApiKey" },
+        "apiKey": { "source": "keyvault", "vault": "kv-stockanalyzer-prod", "secret": "EodhdApiKey" },
         "description": "EODHD historical data API"
       },
       "marketaux": {
         "baseUrl": { "source": "literal", "value": "https://api.marketaux.com/v1" },
-        "apiKey": { "source": "keyvault", "vault": "kv-stk-prod", "secret": "MarketauxApiToken" },
+        "apiKey": { "source": "keyvault", "vault": "kv-stockanalyzer-prod", "secret": "MarketauxApiToken" },
         "description": "Marketaux news API"
       },
       "wikipedia": {
