@@ -22,6 +22,18 @@ param finnhubApiKey string
 @secure()
 param eodhdApiKey string
 
+@description('TwelveData API key')
+@secure()
+param twelveDataApiKey string
+
+@description('FMP API key')
+@secure()
+param fmpApiKey string
+
+@description('Marketaux API token')
+@secure()
+param marketauxApiToken string
+
 // Resource naming - shortened for Azure constraints
 var appName = 'stockanalyzer'
 var shortSuffix = substring(uniqueString(resourceGroup().id), 0, 6)
@@ -81,11 +93,23 @@ resource appService 'Microsoft.Web/sites@2023-01-01' = {
           name: 'Eodhd__ApiKey'
           value: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=EodhdApiKey)'
         }
+        {
+          name: 'StockDataProviders__TwelveData__ApiKey'
+          value: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=TwelveDataApiKey)'
+        }
+        {
+          name: 'StockDataProviders__FMP__ApiKey'
+          value: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=FmpApiKey)'
+        }
+        {
+          name: 'Marketaux__ApiToken'
+          value: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=MarketauxApiToken)'
+        }
       ]
       connectionStrings: [
         {
           name: 'DefaultConnection'
-          connectionString: 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabaseName};User ID=${sqlAdminUsername};Password=${sqlAdminPassword};Encrypt=true;TrustServerCertificate=false;Connection Timeout=30;Min Pool Size=2;'
+          connectionString: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=DbConnectionString)'
           type: 'SQLAzure'
         }
       ]
@@ -153,6 +177,42 @@ resource eodhdSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   name: 'EodhdApiKey'
   properties: {
     value: eodhdApiKey
+  }
+}
+
+// Store TwelveData API key in Key Vault
+resource twelveDataSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'TwelveDataApiKey'
+  properties: {
+    value: twelveDataApiKey
+  }
+}
+
+// Store FMP API key in Key Vault
+resource fmpSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'FmpApiKey'
+  properties: {
+    value: fmpApiKey
+  }
+}
+
+// Store Marketaux API token in Key Vault
+resource marketauxSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'MarketauxApiToken'
+  properties: {
+    value: marketauxApiToken
+  }
+}
+
+// Store database connection string in Key Vault
+resource dbConnectionSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'DbConnectionString'
+  properties: {
+    value: 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabaseName};User ID=${sqlAdminUsername};Password=${sqlAdminPassword};Encrypt=true;TrustServerCertificate=false;Connection Timeout=30;Min Pool Size=2;'
   }
 }
 
