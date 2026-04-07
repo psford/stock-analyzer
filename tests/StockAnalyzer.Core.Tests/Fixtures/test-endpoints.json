@@ -1,0 +1,60 @@
+{
+  "$schema": "./endpoints.schema.json",
+  "project": "stock-analyzer-test",
+  "environments": {
+    "dev": {
+      "database": {
+        "source": "literal",
+        "value": "Server=localhost;Database=test_db;Integrated Security=true;",
+        "description": "Test database"
+      },
+      "twelveData": {
+        "baseUrl": { "source": "literal", "value": "https://api.twelvedata.com" },
+        "apiKey": { "source": "literal", "value": "test-twelve-data-key" },
+        "description": "TwelveData test"
+      },
+      "fmp": {
+        "baseUrl": { "source": "literal", "value": "https://financialmodelingprep.com/stable" },
+        "apiKey": { "source": "literal", "value": "test-fmp-key" },
+        "description": "FMP test"
+      },
+      "finnhub": {
+        "baseUrl": { "source": "literal", "value": "https://finnhub.io/api/v1" },
+        "apiKey": { "source": "literal", "value": "test-finnhub-key" },
+        "description": "Finnhub test"
+      },
+      "eodhd": {
+        "baseUrl": { "source": "literal", "value": "https://eodhd.com/api" },
+        "apiKey": { "source": "literal", "value": "test-eodhd-key" },
+        "description": "EODHD test"
+      },
+      "marketaux": {
+        "baseUrl": { "source": "literal", "value": "https://api.marketaux.com/v1" },
+        "apiKey": { "source": "literal", "value": "test-marketaux-key" },
+        "description": "Marketaux test"
+      },
+      "wikipedia": {
+        "summaryUrl": { "source": "literal", "value": "https://en.wikipedia.org/api/rest_v1/page/summary/" },
+        "searchUrl": { "source": "literal", "value": "https://en.wikipedia.org/w/api.php" },
+        "description": "Wikipedia test"
+      }
+    },
+    "test": {
+      "database": {
+        "source": "env",
+        "key": "TEST_DB_CONNECTION",
+        "description": "Test environment database"
+      },
+      "twelveData": {
+        "baseUrl": { "source": "literal", "value": "https://api.twelvedata.com" },
+        "apiKey": { "source": "env", "key": "TEST_TWELVEDATA_KEY" },
+        "description": "TwelveData env test"
+      },
+      "simpleEndpoint": {
+        "source": "literal",
+        "value": "https://example.com",
+        "description": "Simple endpoint for testing"
+      }
+    }
+  }
+}
