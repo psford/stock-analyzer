@@ -31,6 +31,8 @@ Enforced by Claude Code hooks. Violations are blocked automatically.
 
 ## About
 
+Last verified: 2026-04-07
+
 **User:** Patrick — business analyst background, experience with Matlab, Python, Ruby, C# (.NET).
 **Project:** Stock Analyzer (.NET) — web application for stock market analysis.
 
@@ -160,11 +162,20 @@ Production applies on startup. Start local SQL Express: `net start MSSQL$SQLEXPR
 - **Azure CLI path:** `& 'C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd'`
 - **Periodic cleanup:** orphaned Azure SQL databases, old container registry tags (keep latest + 5), local orphaned files, storage blobs
 
+### Endpoint Registry
+
+All connection strings and API keys resolve through `EndpointRegistry.Resolve("name")` backed by `endpoints.json` (repo root). Never read env vars directly for endpoint keys.
+
+- **Dev**: Env vars (`WSL_SQL_CONNECTION`, `SA_DESIGN_CONNECTION`, plus API keys `TWELVE_DATA_API_KEY`, `FMP_API_KEY`, `FINNHUB_API_KEY`, `EODHD_API_KEY`, `MARKETAUX_API_KEY`)
+- **Prod**: Azure Key Vault secrets (vault `kv-stockanalyzer-prod`)
+- **Resolution**: `EndpointRegistry.Resolve("database")`, `EndpointRegistry.Resolve("twelveData.apiKey")`, etc.
+- **Enforcement**: `endpoint_registry_guard.py` (claude-env hook) blocks commits with hardcoded connection strings or direct env var reads for endpoint keys
+
 ### WSL2 Claude Code Sandbox
 
 WSL2 provides an isolated Linux environment for Claude Code.
 
-**Environment variables (set in `.env`):**
+**Environment variables (set in `.env`):** Referenced by `endpoints.json` for dev environment resolution.
 
 | Variable | Purpose |
 |----------|---------|
@@ -290,6 +301,8 @@ Both fall back to Windows defaults (appsettings / localdb) when unset, so Window
 | `ROADMAP.md` | Feature roadmap |
 | `FUNCTIONAL_SPEC.md` | User requirements in `docs/` |
 | `TECHNICAL_SPEC.md` | Technical details in `docs/` |
+| `endpoints.json` | Single source of truth for all remote resource endpoints (DB, APIs, blob) |
+| `src/StockAnalyzer.Api/EndpointRegistry.cs` | Static resolver for endpoints.json (env vars, Key Vault) |
 | `helpers/` | Python scripts (theme management, DTU testing, CI helpers) |
 | `docs/RUNBOOK.md` | Deployment and rollback procedures |
 | `docs/decisions.md` | Product and architecture decisions |
