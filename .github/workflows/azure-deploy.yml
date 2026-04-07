@@ -99,6 +99,13 @@ jobs:
             exit 1
           fi
 
+      - name: Debug - show logged-in identity
+        run: |
+          echo "Logged-in identity:"
+          az account show --query '{user:user.name, type:user.type, tenantId:tenantId}' -o json
+          echo "Testing Key Vault access directly:"
+          az keyvault secret show --vault-name kv-stockanalyzer-prod --name FinnhubApiKey --query name -o tsv 2>&1 || echo "FAILED - see error above"
+
       - name: Validate endpoint registry Key Vault secrets
         run: |
           echo "::group::Validating endpoint registry secrets"
