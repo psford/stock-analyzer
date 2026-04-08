@@ -43,7 +43,7 @@ var sqlServerName = 'sql-${appName}-${shortSuffix}'
 // IMPORTANT: This database contains pre-loaded BACPAC data (3.5M+ price records).
 // DO NOT change this name or recreate the database - it would destroy production data.
 var sqlDatabaseName = 'stockanalyzer-db'
-var keyVaultName = 'kv-stk-${shortSuffix}' // Must be 3-24 chars
+var keyVaultName = 'kv-stockanalyzer-prod'
 
 // App Service Plan (Linux, B1 Basic tier — enables Always On to eliminate cold starts)
 resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
