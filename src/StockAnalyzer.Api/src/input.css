@@ -1395,6 +1395,24 @@ span.flatpickr-weekday { color: var(--fp-text-muted) !important; }
     z-index: 10;
 }
 
+/* ===== Plotly Modebar Tooltip Fix ===== */
+/* Reposition data-title tooltips below icons to prevent blocking adjacent buttons */
+
+.modebar-btn[data-title]::before {
+    top: 100%;
+    bottom: auto;
+    margin-top: 8px;
+    pointer-events: none;
+}
+
+.modebar-btn[data-title]::after {
+    top: 100%;
+    bottom: auto;
+    margin-top: 2px;
+    pointer-events: none;
+    transform: rotate(180deg);
+}
+
 /* ============================================
    Tile Dashboard — GridStack Integration
    ============================================ */
