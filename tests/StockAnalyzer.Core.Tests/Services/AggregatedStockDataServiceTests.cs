@@ -17,6 +17,139 @@ namespace StockAnalyzer.Core.Tests.Services;
 public class AggregatedStockDataServiceTests
 {
     /// <summary>
+    /// Builder fixture for creating test instances with fluent setup.
+    /// Reduces boilerplate by allowing tests to override only relevant mocks.
+    /// </summary>
+    private class AggregatedStockDataServiceTestFixture
+    {
+        private readonly Mock<IPriceRepository> _mockPriceRepo;
+        private readonly Mock<ISecurityMasterRepository> _mockSecurityRepo;
+        private readonly List<(IStockDataProvider Instance, Mock<IStockDataProvider> Mock)> _providersWithMocks;
+        private IMemoryCache? _cache;
+
+        public AggregatedStockDataServiceTestFixture()
+        {
+            _mockPriceRepo = new Mock<IPriceRepository>();
+            _mockSecurityRepo = new Mock<ISecurityMasterRepository>();
+            _providersWithMocks = new List<(IStockDataProvider, Mock<IStockDataProvider>)>();
+            _cache = null; // Will create in Build() if not set
+        }
+
+        public AggregatedStockDataServiceTestFixture WithDefaultSecuritySetup(string symbol, int securityAlias = 1)
+        {
+            _mockSecurityRepo.Setup(r => r.GetByTickerAsync(It.IsAny<string>()))
+                .ReturnsAsync(new SecurityMasterEntity
+                {
+                    SecurityAlias = securityAlias,
+                    TickerSymbol = symbol,
+                    IssueName = $"{symbol} Inc."
+                });
+            return this;
+        }
+
+        public AggregatedStockDataServiceTestFixture WithPriceRepositorySetup(
+            List<PriceEntity> prices,
+            int? bulkInsertReturnCount = null)
+        {
+            _mockPriceRepo.Setup(r => r.GetPricesAsync(It.IsAny<int>(), It.IsAny<DateTime>(), It.IsAny<DateTime>()))
+                .ReturnsAsync(prices);
+
+            if (bulkInsertReturnCount.HasValue)
+            {
+                _mockPriceRepo.Setup(r => r.BulkInsertAsync(It.IsAny<IEnumerable<PriceCreateDto>>()))
+                    .ReturnsAsync(bulkInsertReturnCount.Value);
+            }
+
+            return this;
+        }
+
+        public AggregatedStockDataServiceTestFixture WithPriceRepositoryNoBulkInsert()
+        {
+            // Don't set up BulkInsertAsync at all, so verify calls can detect it wasn't called
+            return this;
+        }
+
+        public AggregatedStockDataServiceTestFixture WithProviderReturningData(
+            string providerName,
+            HistoricalDataResult data,
+            int priority = 1)
+        {
+            var mockProvider = new Mock<IStockDataProvider>();
+            mockProvider.Setup(p => p.IsAvailable).Returns(true);
+            mockProvider.Setup(p => p.ProviderName).Returns(providerName);
+            mockProvider.Setup(p => p.Priority).Returns(priority);
+            // Use Callback to match any invocation and return the data
+            mockProvider
+                .Setup(p => p.GetHistoricalDataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(data);
+            _providersWithMocks.Add((mockProvider.Object, mockProvider));
+            return this;
+        }
+
+        public AggregatedStockDataServiceTestFixture WithProviderReturningDataForPeriod(
+            string providerName,
+            string expectedPeriod,
+            HistoricalDataResult data,
+            int priority = 1)
+        {
+            var mockProvider = new Mock<IStockDataProvider>();
+            mockProvider.Setup(p => p.IsAvailable).Returns(true);
+            mockProvider.Setup(p => p.ProviderName).Returns(providerName);
+            mockProvider.Setup(p => p.Priority).Returns(priority);
+            // Setup to match when period equals expectedPeriod
+            mockProvider
+                .Setup(p => p.GetHistoricalDataAsync(It.IsAny<string>(), expectedPeriod, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(data);
+            _providersWithMocks.Add((mockProvider.Object, mockProvider));
+            return this;
+        }
+
+        public AggregatedStockDataServiceTestFixture WithProviderReturningNull(string providerName, int priority = 1)
+        {
+            var mockProvider = new Mock<IStockDataProvider>();
+            mockProvider.Setup(p => p.IsAvailable).Returns(true);
+            mockProvider.Setup(p => p.ProviderName).Returns(providerName);
+            mockProvider.Setup(p => p.Priority).Returns(priority);
+            // Return null for any invocation
+            mockProvider
+                .Setup(p => p.GetHistoricalDataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((HistoricalDataResult?)null);
+            _providersWithMocks.Add((mockProvider.Object, mockProvider));
+            return this;
+        }
+
+        public AggregatedStockDataServiceTestFixture WithCache(IMemoryCache cache)
+        {
+            _cache = cache;
+            return this;
+        }
+
+        public Mock<IPriceRepository> GetMockPriceRepository() => _mockPriceRepo;
+        public Mock<ISecurityMasterRepository> GetMockSecurityRepository() => _mockSecurityRepo;
+        public List<IStockDataProvider> GetProviders() => _providersWithMocks.Select(p => p.Instance).ToList();
+        public Mock<IStockDataProvider> GetMockProvider(int index) => _providersWithMocks[index].Mock;
+
+        public AggregatedStockDataService Build()
+        {
+            _cache ??= new MemoryCache(new MemoryCacheOptions());
+
+            var mockServiceProvider = new Mock<IServiceProvider>();
+            mockServiceProvider.Setup(sp => sp.GetService(typeof(IPriceRepository)))
+                .Returns(_mockPriceRepo.Object);
+            mockServiceProvider.Setup(sp => sp.GetService(typeof(ISecurityMasterRepository)))
+                .Returns(_mockSecurityRepo.Object);
+
+            var mockScope = new Mock<IServiceScope>();
+            mockScope.Setup(s => s.ServiceProvider).Returns(mockServiceProvider.Object);
+
+            var mockScopeFactory = new Mock<IServiceScopeFactory>();
+            mockScopeFactory.Setup(f => f.CreateScope()).Returns(mockScope.Object);
+
+            return new AggregatedStockDataService(GetProviders(), _cache, null, mockScopeFactory.Object);
+        }
+    }
+
+    /// <summary>
     /// Helper to create a mock service scope factory with mocked repositories.
     /// </summary>
     private static Mock<IServiceScopeFactory> CreateMockScopeFactory(
@@ -186,25 +319,27 @@ public class AggregatedStockDataServiceTests
 
     #endregion
 
-    #region AC2.3 - Gap-fill with API success returns merged result
+    #region AC2.3 - Gap-fill with API success returns merged result and persists data
 
     [Fact]
-    public async Task GetHistoricalDataAsync_WithGapFillSuccess_ReturnsCachedResult()
+    public async Task GetHistoricalDataAsync_WithGapFillSuccess_PersistsMergedDataAndReturnsCachedResult()
     {
         // Arrange
         var symbol = "GOOGL";
-        var endDate = DateTime.Today;
+        var today = new DateTime(2026, 4, 8);  // Use fixed date for consistency
+        var endDate = today;
         var startDate = endDate.AddYears(-5);
 
-        // Create stale DB data (latest 5 days ago)
+        // Create stale DB data (latest 5 days ago, but with enough data to pass sparsity check)
+        // For 5 years, need at least 20% of ~1254 trading days = 251 records
         var dbPrices = new List<PriceEntity>();
-        var fiveDaysAgo = DateTime.Today.AddDays(-5);
-        for (int i = 0; i < 50; i++)
+        var latestDbDate = today.AddDays(-5);  // April 3
+        for (int i = 0; i < 300; i++)  // 300 records to safely pass sparsity check
         {
             dbPrices.Add(new PriceEntity
             {
                 SecurityAlias = 3,
-                EffectiveDate = fiveDaysAgo.AddDays(-i),
+                EffectiveDate = latestDbDate.AddDays(-i),
                 Open = 100m,
                 High = 101m,
                 Low = 99m,
@@ -214,58 +349,48 @@ public class AggregatedStockDataServiceTests
         }
         dbPrices = dbPrices.OrderBy(p => p.EffectiveDate).ToList();
 
-        var security = new SecurityMasterEntity
+        // Fresh API data: gap starts at April 4 (latest + 1 day), so API data starts April 5
+        // API will return 5 days of data starting April 5: April 5-9
+        var apiStartDate = today.AddDays(-2);  // April 6
+        var apiData = new List<OhlcvData>
         {
-            SecurityAlias = 3,
-            TickerSymbol = symbol,
-            IssueName = "Alphabet Inc."
+            new() { Date = apiStartDate, Open = 150m, High = 151m, Low = 149m, Close = 150m, Volume = 1000000 },
+            new() { Date = apiStartDate.AddDays(1), Open = 151m, High = 152m, Low = 150m, Close = 151m, Volume = 1000000 },
+            new() { Date = apiStartDate.AddDays(2), Open = 152m, High = 153m, Low = 151m, Close = 152m, Volume = 1000000 },
         };
 
-        var mockPriceRepo = new Mock<IPriceRepository>();
-        mockPriceRepo.Setup(r => r.GetPricesAsync(It.IsAny<int>(), It.IsAny<DateTime>(), It.IsAny<DateTime>()))
-            .ReturnsAsync(dbPrices);
-        mockPriceRepo.Setup(r => r.BulkInsertAsync(It.IsAny<IEnumerable<PriceCreateDto>>()))
-            .ReturnsAsync(5);
-
-        var mockSecurityRepo = new Mock<ISecurityMasterRepository>();
-        mockSecurityRepo.Setup(r => r.GetByTickerAsync(It.IsAny<string>()))
-            .ReturnsAsync(security);
-
-        var mockScopeFactory = CreateMockScopeFactory(mockPriceRepo, mockSecurityRepo);
-
-        // Fresh API data
-        var apiData = TestDataFactory.CreateOhlcvDataList(5, startPrice: 105m, startDate: DateTime.Today.AddDays(-4));
-
-        var mockProviders = new List<IStockDataProvider>();
-        var mockProvider = new Mock<IStockDataProvider>();
-        mockProvider.Setup(p => p.IsAvailable).Returns(true);
-        mockProvider.Setup(p => p.ProviderName).Returns("TestProvider");
-        mockProvider.Setup(p => p.Priority).Returns(1);
-        mockProvider.Setup(p => p.GetHistoricalDataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new HistoricalDataResult
+        var fixture = new AggregatedStockDataServiceTestFixture()
+            .WithDefaultSecuritySetup(symbol, 3)
+            .WithPriceRepositorySetup(dbPrices, bulkInsertReturnCount: apiData.Count)
+            .WithProviderReturningData("TestProvider", new HistoricalDataResult
             {
                 Symbol = symbol,
                 Period = "1mo",
                 StartDate = apiData.First().Date,
                 EndDate = apiData.Last().Date,
                 Data = apiData
-            });
-        mockProviders.Add(mockProvider.Object);
+            })
+            .WithCache(new MemoryCache(new MemoryCacheOptions()));
 
-        var cache = new MemoryCache(new MemoryCacheOptions());
-        var sut = new AggregatedStockDataService(mockProviders, cache, null, mockScopeFactory.Object);
+        var mockPriceRepo = fixture.GetMockPriceRepository();
+        var sut = fixture.Build();
 
         // Act
         var result = await sut.GetHistoricalDataAsync(symbol, startDate, endDate);
 
-        // Assert: Should cache merged result with both DB and API data
+        // Assert: Should persist merged data via BulkInsertAsync
         result.Should().NotBeNull();
         result!.Data.Should().NotBeEmpty();
-        // Second call should hit cache without calling provider again
+        // Verify BulkInsertAsync was called exactly once to persist gap-fill prices
+        mockPriceRepo.Verify(r => r.BulkInsertAsync(It.IsAny<IEnumerable<PriceCreateDto>>()), Times.Once);
+        // Merged result should contain more data than DB-only data
+        result.Data.Count.Should().BeGreaterThan(dbPrices.Count);
+
+        // Second call should hit cache without calling BulkInsertAsync again
         var result2 = await sut.GetHistoricalDataAsync(symbol, startDate, endDate);
         result2.Should().BeEquivalentTo(result);
-        // Provider should only be called once for gap-fill
-        mockProvider.Verify(p => p.GetHistoricalDataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        // BulkInsertAsync should still be called only once (not again on cache hit)
+        mockPriceRepo.Verify(r => r.BulkInsertAsync(It.IsAny<IEnumerable<PriceCreateDto>>()), Times.Once);
     }
 
     #endregion
@@ -273,14 +398,14 @@ public class AggregatedStockDataServiceTests
     #region AC2.4 - Sparse DB data falls back to full API
 
     [Fact]
-    public async Task GetHistoricalDataAsync_WithSparseDbData_FallsBackToFullApiCascade()
+    public async Task GetHistoricalDataAsync_WithSparseDbData_FallsBackToFullApiCascadeWithFullPeriod()
     {
         // Arrange
         var symbol = "TSLA";
         var endDate = DateTime.Today;
         var startDate = endDate.AddYears(-5);
 
-        // Create very sparse DB data (only 5 records for 5 years)
+        // Create very sparse DB data (only 5 records for 5 years, <1% coverage)
         var dbPrices = new List<PriceEntity>
         {
             new PriceEntity { SecurityAlias = 4, EffectiveDate = startDate, Open = 100m, High = 101m, Low = 99m, Close = 100m, Volume = 1000000 },
@@ -290,70 +415,51 @@ public class AggregatedStockDataServiceTests
             new PriceEntity { SecurityAlias = 4, EffectiveDate = endDate, Open = 140m, High = 141m, Low = 139m, Close = 140m, Volume = 1000000 }
         };
 
-        var security = new SecurityMasterEntity
-        {
-            SecurityAlias = 4,
-            TickerSymbol = symbol,
-            IssueName = "Tesla Inc."
-        };
-
-        var mockPriceRepo = new Mock<IPriceRepository>();
-        mockPriceRepo.Setup(r => r.GetPricesAsync(It.IsAny<int>(), It.IsAny<DateTime>(), It.IsAny<DateTime>()))
-            .ReturnsAsync(dbPrices);
-
-        var mockSecurityRepo = new Mock<ISecurityMasterRepository>();
-        mockSecurityRepo.Setup(r => r.GetByTickerAsync(It.IsAny<string>()))
-            .ReturnsAsync(security);
-
-        var mockScopeFactory = CreateMockScopeFactory(mockPriceRepo, mockSecurityRepo);
-
         var apiData = TestDataFactory.CreateOhlcvDataList(252, startPrice: 150m, startDate: startDate);
 
-        var mockProviders = new List<IStockDataProvider>();
-        var mockProvider = new Mock<IStockDataProvider>();
-        mockProvider.Setup(p => p.IsAvailable).Returns(true);
-        mockProvider.Setup(p => p.ProviderName).Returns("TestProvider");
-        mockProvider.Setup(p => p.Priority).Returns(1);
-        mockProvider.Setup(p => p.GetHistoricalDataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new HistoricalDataResult
+        var fixture = new AggregatedStockDataServiceTestFixture()
+            .WithDefaultSecuritySetup(symbol, 4)
+            .WithPriceRepositorySetup(dbPrices)
+            .WithProviderReturningDataForPeriod("TestProvider", "5y", new HistoricalDataResult
             {
                 Symbol = symbol,
                 Period = "5y",
                 StartDate = apiData.First().Date,
                 EndDate = apiData.Last().Date,
                 Data = apiData
-            });
-        mockProviders.Add(mockProvider.Object);
+            })
+            .WithCache(new MemoryCache(new MemoryCacheOptions()));
 
-        var cache = new MemoryCache(new MemoryCacheOptions());
-        var sut = new AggregatedStockDataService(mockProviders, cache, null, mockScopeFactory.Object);
+        var mockProvider = fixture.GetMockProvider(0);
+        var sut = fixture.Build();
 
         // Act
         var result = await sut.GetHistoricalDataAsync(symbol, startDate, endDate);
 
-        // Assert
+        // Assert: Should fall back to full API cascade with full period (5y), not a gap period
         result.Should().NotBeNull();
-        // Verify provider was called with full period (5y), not a gap period
-        mockProvider.Verify(p => p.GetHistoricalDataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
         result!.Data.Count.Should().BeGreaterThan(10);
+        // Verify provider was called with the full period "5y", confirming full fallback
+        mockProvider.Verify(p => p.GetHistoricalDataAsync(symbol, "5y", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     #endregion
 
-    #region AC2.5 - Stale data with gap triggers gap-fill attempt
+    #region AC2.5 - When API gap-fill fails, DB-only data is returned (partial is better than nothing)
 
     [Fact]
-    public async Task GetHistoricalDataAsync_WithStaleDataGap_AttempsGapFill()
+    public async Task GetHistoricalDataAsync_WhenApiGapFillFails_ReturnsDbOnlyData()
     {
-        // Arrange: Verify gap detection and gap-fill attempt even without full merge verification
+        // Arrange: API gap-fill provider returns null (failure scenario)
         var symbol = "AMZN";
         var endDate = DateTime.Today;
-        var startDate = endDate.AddYears(-5);
+        var startDate = endDate.AddYears(-1);  // 1 year, not 5 (shorter range to avoid sparse check)
 
-        // Create very stale DB data (10 days old, triggering gap-fill)
+        // Create stale DB data (10 days old, triggering gap-fill attempt)
+        // For 1 year (~252 trading days), need at least 20% coverage = 50+ records
         var dbPrices = new List<PriceEntity>();
         var tenDaysAgo = DateTime.Today.AddDays(-10);
-        for (int i = 0; i < 100; i++)
+        for (int i = 0; i < 200; i++)  // Enough records to pass 20% sparsity threshold
         {
             dbPrices.Add(new PriceEntity
             {
@@ -367,55 +473,30 @@ public class AggregatedStockDataServiceTests
             });
         }
         dbPrices = dbPrices.OrderBy(p => p.EffectiveDate).ToList();
+        int dbOnlyCount = dbPrices.Count;
 
-        var security = new SecurityMasterEntity
-        {
-            SecurityAlias = 5,
-            TickerSymbol = symbol,
-            IssueName = "Amazon.com Inc."
-        };
+        var fixture = new AggregatedStockDataServiceTestFixture()
+            .WithDefaultSecuritySetup(symbol, 5)
+            .WithPriceRepositorySetup(dbPrices)
+            .WithProviderReturningNull("TestProvider")  // API gap-fill fails
+            .WithCache(new MemoryCache(new MemoryCacheOptions()));
 
-        var mockPriceRepo = new Mock<IPriceRepository>();
-        mockPriceRepo.Setup(r => r.GetPricesAsync(It.IsAny<int>(), It.IsAny<DateTime>(), It.IsAny<DateTime>()))
-            .ReturnsAsync(dbPrices);
-        mockPriceRepo.Setup(r => r.BulkInsertAsync(It.IsAny<IEnumerable<PriceCreateDto>>()))
-            .ReturnsAsync(0);
-
-        var mockSecurityRepo = new Mock<ISecurityMasterRepository>();
-        mockSecurityRepo.Setup(r => r.GetByTickerAsync(It.IsAny<string>()))
-            .ReturnsAsync(security);
-
-        var mockScopeFactory = CreateMockScopeFactory(mockPriceRepo, mockSecurityRepo);
-
-        var mockProviders = new List<IStockDataProvider>();
-        var mockProvider = new Mock<IStockDataProvider>();
-        mockProvider.Setup(p => p.IsAvailable).Returns(true);
-        mockProvider.Setup(p => p.ProviderName).Returns("TestProvider");
-        mockProvider.Setup(p => p.Priority).Returns(1);
-        // API provides data for gap-fill
-        var apiData = TestDataFactory.CreateOhlcvDataList(5, startPrice: 150m, startDate: DateTime.Today.AddDays(-4));
-        mockProvider.Setup(p => p.GetHistoricalDataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new HistoricalDataResult
-            {
-                Symbol = symbol,
-                Period = "1mo",
-                StartDate = apiData.First().Date,
-                EndDate = apiData.Last().Date,
-                Data = apiData
-            });
-        mockProviders.Add(mockProvider.Object);
-
-        var cache = new MemoryCache(new MemoryCacheOptions());
-        var sut = new AggregatedStockDataService(mockProviders, cache, null, mockScopeFactory.Object);
+        var mockPriceRepo = fixture.GetMockPriceRepository();
+        var mockProvider = fixture.GetMockProvider(0);
+        var sut = fixture.Build();
 
         // Act
         var result = await sut.GetHistoricalDataAsync(symbol, startDate, endDate);
 
-        // Assert: Should return result (DB-only or merged) and attempt gap-fill
+        // Assert: Should return DB-only data when API gap-fill fails
         result.Should().NotBeNull();
         result!.Data.Should().NotBeEmpty();
+        // Result should contain exactly the DB data count (no merge happened)
+        result.Data.Count.Should().Be(dbOnlyCount);
         // Verify gap-fill was attempted (provider called)
         mockProvider.Verify(p => p.GetHistoricalDataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        // Verify BulkInsertAsync was NOT called (no new data to persist)
+        mockPriceRepo.Verify(r => r.BulkInsertAsync(It.IsAny<IEnumerable<PriceCreateDto>>()), Times.Never);
     }
 
     #endregion
