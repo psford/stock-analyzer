@@ -24,6 +24,11 @@ namespace StockAnalyzer.Core.Services;
 /// </summary>
 public class AggregatedStockDataService
 {
+    /// <summary>
+    /// Result of fetching data from the database, including gap information.
+    /// </summary>
+    private record DatabaseFetchResult(HistoricalDataResult Result, int GapDays, DateTime GapStartDate, int SecurityAlias);
+
     private readonly IEnumerable<IStockDataProvider> _providers;
     private readonly IMemoryCache _cache;
     private readonly ILogger<AggregatedStockDataService>? _logger;
@@ -160,15 +165,131 @@ public class AggregatedStockDataService
         // Check database for pre-loaded prices
         if (_serviceScopeFactory != null)
         {
-            var dbResult = await TryGetFromDatabaseAsync(upperSymbol, startDate, endDate);
-            if (dbResult != null)
+            var dbFetchResult = await TryGetFromDatabaseAsync(upperSymbol, startDate, endDate);
+            if (dbFetchResult != null)
             {
-                dbResult = AdjustForSplits(dbResult);
-                _logger?.LogInformation(
-                    "Got history for {Symbol} from database ({Count} points)",
-                    LogSanitizer.Sanitize(upperSymbol), dbResult.Data.Count);
-                _cache.Set(cacheKey, dbResult, SymbolCacheOptions(upperSymbol, HistoryCacheDuration));
-                return dbResult;
+                // Case 1: Fresh data (gap <= 0) — return DB data as-is
+                if (dbFetchResult.GapDays <= 0)
+                {
+                    var result = AdjustForSplits(dbFetchResult.Result);
+                    _logger?.LogInformation(
+                        "Got fresh history for {Symbol} from database ({Count} points)",
+                        LogSanitizer.Sanitize(upperSymbol), result.Data.Count);
+                    _cache.Set(cacheKey, result, SymbolCacheOptions(upperSymbol, HistoryCacheDuration));
+                    return result;
+                }
+
+                // Case 2: Stale data (gap > 0) — attempt gap-fill
+                _logger?.LogDebug(
+                    "Attempting gap-fill for {Symbol} ({GapDays} trading days)",
+                    LogSanitizer.Sanitize(upperSymbol), dbFetchResult.GapDays);
+
+                // Calculate the smallest period string that covers the gap
+                var gapCalendarDays = (endDate - dbFetchResult.GapStartDate).TotalDays;
+                var gapPeriod = gapCalendarDays switch
+                {
+                    <= 30 => "1mo",
+                    <= 90 => "3mo",
+                    <= 180 => "6mo",
+                    <= 365 => "1y",
+                    _ => "2y"
+                };
+
+                // Try gap-fill from API providers
+                var gapFillSucceeded = false;
+                var gapFillData = new List<OhlcvData>();
+
+                foreach (var provider in _providers.Where(p => p.IsAvailable))
+                {
+                    _logger?.LogDebug("Trying gap-fill from {Provider} for {Symbol} ({Period})",
+                        provider.ProviderName, LogSanitizer.Sanitize(upperSymbol), gapPeriod);
+
+                    var providerResult = await provider.GetHistoricalDataAsync(upperSymbol, gapPeriod);
+                    if (providerResult != null && providerResult.Data.Count > 0)
+                    {
+                        // Filter to dates after gap start date
+                        gapFillData = providerResult.Data
+                            .Where(d => d.Date > dbFetchResult.GapStartDate)
+                            .ToList();
+
+                        if (gapFillData.Count > 0)
+                        {
+                            gapFillSucceeded = true;
+                            _logger?.LogDebug("Gap-fill succeeded from {Provider}: {Count} records",
+                                provider.ProviderName, gapFillData.Count);
+                            break; // Use first successful provider
+                        }
+                    }
+                }
+
+                if (gapFillSucceeded)
+                {
+                    // Merge: concatenate, deduplicate by date (prefer API), sort ascending
+                    var mergedData = new Dictionary<DateTime, OhlcvData>();
+
+                    // Add DB data first
+                    foreach (var row in dbFetchResult.Result.Data)
+                    {
+                        mergedData[row.Date] = row;
+                    }
+
+                    // Overwrite with API gap-fill data (API is fresher)
+                    foreach (var row in gapFillData)
+                    {
+                        mergedData[row.Date] = row;
+                    }
+
+                    var sortedMergedData = mergedData.Values.OrderBy(d => d.Date).ToList();
+
+                    // Persist gap-filled prices to DB
+                    try
+                    {
+                        using var persistScope = _serviceScopeFactory.CreateScope();
+                        var priceRepo = persistScope.ServiceProvider.GetService<IPriceRepository>();
+                        if (priceRepo != null)
+                        {
+                            var priceDtos = gapFillData.Select(d => new PriceCreateDto
+                            {
+                                SecurityAlias = dbFetchResult.SecurityAlias,
+                                EffectiveDate = d.Date,
+                                Open = d.Open,
+                                High = d.High,
+                                Low = d.Low,
+                                Close = d.Close,
+                                Volume = d.Volume,
+                                AdjustedClose = d.AdjustedClose
+                            }).ToList();
+
+                            await priceRepo.BulkInsertAsync(priceDtos);
+                            _logger?.LogDebug("Persisted {Count} gap-filled prices to database for {Symbol}",
+                                priceDtos.Count, LogSanitizer.Sanitize(upperSymbol));
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogWarning(ex, "Failed to persist gap-filled prices for {Symbol}",
+                            LogSanitizer.Sanitize(upperSymbol));
+                    }
+
+                    // Apply split adjustment and cache merged result
+                    var mergedResult = dbFetchResult.Result with { Data = sortedMergedData };
+                    var adjustedResult = AdjustForSplits(mergedResult);
+                    _logger?.LogInformation(
+                        "Got history for {Symbol} from database + gap-fill ({Count} points)",
+                        LogSanitizer.Sanitize(upperSymbol), adjustedResult.Data.Count);
+                    _cache.Set(cacheKey, adjustedResult, SymbolCacheOptions(upperSymbol, HistoryCacheDuration));
+                    return adjustedResult;
+                }
+                else
+                {
+                    // API gap-fill failed — return DB-only data (partial is better than nothing)
+                    _logger?.LogWarning(
+                        "API gap-fill failed for {Symbol}, returning database-only data ({Count} points)",
+                        LogSanitizer.Sanitize(upperSymbol), dbFetchResult.Result.Data.Count);
+                    var result = AdjustForSplits(dbFetchResult.Result);
+                    _cache.Set(cacheKey, result, SymbolCacheOptions(upperSymbol, HistoryCacheDuration));
+                    return result;
+                }
             }
         }
 
@@ -375,14 +496,9 @@ public class AggregatedStockDataService
 
     /// <summary>
     /// Try to get historical data from the database (pre-loaded prices).
+    /// Returns gap information for targeted gap-fill retrieval from API.
     /// </summary>
-    private async Task<HistoricalDataResult?> TryGetFromDatabaseAsync(string symbol, string period)
-    {
-        var (startDate, endDate) = GetDateRangeForPeriod(period);
-        return await TryGetFromDatabaseAsync(symbol, startDate, endDate, period);
-    }
-
-    private async Task<HistoricalDataResult?> TryGetFromDatabaseAsync(string symbol, DateTime startDate, DateTime endDate, string? period = null)
+    private async Task<DatabaseFetchResult?> TryGetFromDatabaseAsync(string symbol, DateTime startDate, DateTime endDate, string? period = null)
     {
         if (_serviceScopeFactory == null) return null;
 
@@ -410,8 +526,8 @@ public class AggregatedStockDataService
                 return null;
             }
 
-            // Check if database data covers enough of the requested range.
-            // Two checks: (1) sparse data, (2) stale data (ends well before requested end).
+            // Check if database data covers enough of the requested range (sparsity check).
+            // Reject genuinely empty DB data and fall back to full API cascade.
             var requestedDays = (endDate - startDate).TotalDays;
             var expectedTradingDays = requestedDays * 252.0 / 365.25; // ~252 trading days per year
             if (expectedTradingDays > 30 && prices.Count < expectedTradingDays * 0.20)
@@ -422,17 +538,16 @@ public class AggregatedStockDataService
                 return null;
             }
 
-            // If the most recent DB price is >7 calendar days before the requested end date,
-            // the data is stale — fall through to API for fresher data.
+            // Detect gap: calculate trading days missing between latest price and requested end date.
+            // If gap > 0, attempt gap-fill; if gap <= 0, data is fresh.
             var latestPrice = prices.Max(p => p.EffectiveDate);
-            var staleDays = (endDate - latestPrice).TotalDays;
-            if (staleDays > 7)
-            {
-                _logger?.LogInformation(
-                    "Database data for {Symbol} is stale (latest: {Latest:yyyy-MM-dd}, requested end: {End:yyyy-MM-dd}, gap: {Gap} days), falling through to API",
-                    LogSanitizer.Sanitize(symbol), latestPrice, endDate, (int)staleDays);
-                return null;
-            }
+            var gapCalendarDays = (endDate - latestPrice).TotalDays;
+            var gapDays = (int)(gapCalendarDays * 252.0 / 365.25);
+            var gapStartDate = latestPrice.AddDays(1);
+
+            _logger?.LogDebug(
+                "Database data for {Symbol} gap detection: latest: {Latest:yyyy-MM-dd}, requested end: {End:yyyy-MM-dd}, gap: {GapDays} trading days",
+                LogSanitizer.Sanitize(symbol), latestPrice, endDate, gapDays);
 
             var ohlcvData = prices.Select(p => new OhlcvData
             {
@@ -445,7 +560,7 @@ public class AggregatedStockDataService
                 AdjustedClose = p.AdjustedClose
             }).OrderBy(d => d.Date).ToList();
 
-            return new HistoricalDataResult
+            var result = new HistoricalDataResult
             {
                 Symbol = symbol,
                 Period = period ?? "custom",
@@ -453,6 +568,8 @@ public class AggregatedStockDataService
                 EndDate = ohlcvData.Last().Date,
                 Data = ohlcvData
             };
+
+            return new DatabaseFetchResult(result, gapDays, gapStartDate, security.SecurityAlias);
         }
         catch (Exception ex)
         {
