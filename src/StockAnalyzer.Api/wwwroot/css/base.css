@@ -2587,16 +2587,21 @@ input[type="range"]::-moz-range-thumb {
    ======================================== */
 
 .modebar-btn[data-title]::before {
-    top: 100%;
-    bottom: auto;
-    margin-top: 8px;
-    pointer-events: none;
+    top: 100% !important;
+    bottom: auto !important;
+    margin-top: 8px !important;
+    pointer-events: none !important;
+    transform: none !important;
 }
 
 .modebar-btn[data-title]::after {
-    top: 100%;
-    bottom: auto;
-    margin-top: 2px;
-    pointer-events: none;
-    transform: rotate(180deg);
+    top: 100% !important;
+    bottom: auto !important;
+    margin-top: 2px !important;
+    pointer-events: none !important;
+    border-top-color: transparent !important;
+    border-bottom-color: #69738a !important;
+    border-top-width: 0 !important;
+    border-bottom-width: 6px !important;
+    transform: none !important;
 }
