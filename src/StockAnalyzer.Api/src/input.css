@@ -1861,44 +1861,6 @@ span.flatpickr-weekday { color: var(--fp-text-muted) !important; }
     transform: translateX(1rem);
 }
 
-/* === Music Toggle === */
-.music-toggle {
-    position: relative;
-}
-
-.music-toggle.active {
-    background-color: var(--music-active-bg);
-    box-shadow: var(--music-active-glow);
-}
-
-.music-toggle.active .music-icon {
-    color: var(--music-active-color);
-}
-
-.music-visualizer {
-    display: flex;
-    align-items: flex-end;
-    gap: 2px;
-    height: 1rem;
-}
-
-.viz-bar {
-    width: 3px;
-    background-color: var(--viz-bar-color);
-    box-shadow: var(--viz-bar-glow);
-    animation: visualizer 0.4s ease-in-out infinite alternate;
-}
-
-.viz-bar:nth-child(1) { height: 40%; animation-delay: 0s; }
-.viz-bar:nth-child(2) { height: 70%; animation-delay: 0.1s; }
-.viz-bar:nth-child(3) { height: 100%; animation-delay: 0.2s; }
-.viz-bar:nth-child(4) { height: 60%; animation-delay: 0.3s; }
-.viz-bar:nth-child(5) { height: 30%; animation-delay: 0.4s; }
-
-@keyframes visualizer {
-    to { height: 20%; }
-}
-
 /* === Benchmark Chips Container === */
 .benchmark-chips {
     display: flex;
