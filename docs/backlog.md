@@ -15,4 +15,5 @@ _(none currently)_
 
 ## Technical Debt
 
+- **Remove Tailwind CSS:** The app still uses Tailwind (input.css → npm run build:css → styles.css). Replace with plain CSS to eliminate the Node.js build dependency.
 - **Scheduled Azure price refresh:** Replace the desktop crawler tool (built for initial backfill) with a scheduled Azure process that populates daily prices automatically. Ensures the DB stays fresh without manual intervention, which also prevents the staleness-triggered API fallback in `AggregatedStockDataService`.
