@@ -191,6 +191,14 @@ const TileDashboard = (() => {
         const saved = loadSavedLayout();
         if (!saved) return;
 
+        // Update tileGridOpts from saved layout BEFORE any tiles are removed.
+        // This ensures reopenTile has correct sizes even for tiles that were hidden.
+        saved.tiles.forEach(t => {
+            if (t.id && tileGridOpts[t.id]) {
+                Object.assign(tileGridOpts[t.id], { x: t.x, y: t.y, w: t.w, h: t.h });
+            }
+        });
+
         // Enable float to apply saved positions without collision resolution
         grid.float(true);
         grid.batchUpdate();
@@ -255,9 +263,12 @@ const TileDashboard = (() => {
         const el = document.querySelector(`[gs-id="${tileId}"]`);
         if (!el || !grid) return;
 
-        // Before removing: expand row neighbor(s) to fill the gap horizontally
+        // Save the tile's current size/position so reopenTile restores it
         const node = el.gridstackNode;
         if (node) {
+            tileGridOpts[tileId] = Object.assign(tileGridOpts[tileId] || {}, {
+                x: node.x, y: node.y, w: node.w, h: node.h
+            });
             expandRowNeighbor(tileId, node);
         }
 
@@ -324,10 +335,14 @@ const TileDashboard = (() => {
             delete tileExpansions[tileId];
         }
 
-        // Build a fresh grid-stack-item element
+        // Build a fresh grid-stack-item element with all size attributes
         const wrapper = document.createElement('div');
         wrapper.classList.add('grid-stack-item');
         wrapper.setAttribute('gs-id', tileId);
+        wrapper.setAttribute('gs-x', opts.x);
+        wrapper.setAttribute('gs-y', opts.y);
+        wrapper.setAttribute('gs-w', opts.w);
+        wrapper.setAttribute('gs-h', opts.h);
         wrapper.setAttribute('gs-min-w', opts.minW);
         wrapper.setAttribute('gs-min-h', opts.minH);
 
@@ -336,11 +351,7 @@ const TileDashboard = (() => {
         contentDiv.innerHTML = content;
         wrapper.appendChild(contentDiv);
 
-        // Place at original position if we just freed space, else auto-position
-        const addOpts = expansion
-            ? { x: opts.x, y: opts.y, w: opts.w, h: opts.h }
-            : { w: opts.w, h: opts.h, autoPosition: true };
-        grid.addWidget(wrapper, addOpts);
+        grid.addWidget(wrapper);
         tileVisibility[tileId] = true;
         updatePanelDropdown();
         saveLayout();
@@ -348,6 +359,13 @@ const TileDashboard = (() => {
         // Re-init chart ResizeObserver if needed
         if (tileId === 'tile-chart') {
             setTimeout(initChartResize, 200);
+        }
+
+        // Re-populate data tiles that need a refresh
+        if (tileId === 'tile-metrics' || tileId === 'tile-performance' || tileId === 'tile-info') {
+            setTimeout(() => {
+                document.dispatchEvent(new CustomEvent('tile-reopened', { detail: { tileId } }));
+            }, 200);
         }
 
         // Re-init watchlist content and sync toggle button
@@ -388,8 +406,8 @@ const TileDashboard = (() => {
         const btn = document.getElementById('panel-toggle-btn');
         const dropdown = document.getElementById('panel-dropdown');
         if (!btn || !dropdown) return;
-        btn.addEventListener('click', (e) => { e.stopPropagation(); dropdown.classList.toggle('open'); });
-        document.addEventListener('click', () => dropdown.classList.remove('open'));
+        btn.addEventListener('click', (e) => { e.stopPropagation(); dropdown.classList.toggle('hidden'); });
+        document.addEventListener('click', () => dropdown.classList.add('hidden'));
         dropdown.addEventListener('click', (e) => e.stopPropagation());
     }
 

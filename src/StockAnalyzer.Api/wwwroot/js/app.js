@@ -147,6 +147,9 @@ const App = {
         this.scheduleIdleImageLoad();
         // Initialize date range panel with resolved defaults
         this.initDateRangePanel();
+
+        // Re-populate data tiles when reopened via panel dropdown
+        document.addEventListener('tile-reopened', (e) => this.onTileReopened(e.detail.tileId));
     },
 
     /**
@@ -2322,6 +2325,28 @@ const App = {
                 <span class="metric-value ${m.color || ''}">${m.value || 'N/A'}</span>
             </div>
         `).join('');
+    },
+
+    /**
+     * Re-populate a tile that was closed and reopened via the panel dropdown.
+     * Fetches fresh data for tiles whose content was lost when removed from the DOM.
+     */
+    onTileReopened(tileId) {
+        if (!this.currentTicker) return;
+
+        if (tileId === 'tile-metrics') {
+            API.getStockInfo(this.currentTicker).then(stockInfo => {
+                this.renderKeyMetrics(stockInfo);
+            }).catch(e => console.warn('Failed to reload key metrics:', e));
+        } else if (tileId === 'tile-performance') {
+            if (this.analysisData && this.analysisData.performance) {
+                this.renderPerformance(this.analysisData.performance);
+            }
+        } else if (tileId === 'tile-info') {
+            API.getStockInfo(this.currentTicker).then(stockInfo => {
+                this.renderStockInfo(stockInfo);
+            }).catch(e => console.warn('Failed to reload stock info:', e));
+        }
     },
 
     /**
