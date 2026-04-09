@@ -1,10 +1,12 @@
 /**
  * DragMeasure — Click-and-drag chart interactions for Plotly charts.
  *
- * Left-click drag:  Performance measurement — floating bubble with % return, $ change.
- * Right-click drag: Zoom to selection — crops chart to the dragged date range.
+ * Left-click drag:       Pan — shifts x-axis range to scroll through data.
+ * Shift+left-click drag: Performance measurement — floating bubble with % return, $ change.
+ * Right-click drag:      Zoom to selection — crops chart to the dragged date range.
  *
- * Measure state machine: IDLE → (left mousedown) → MEASURING → (mouseup) → PINNED → (click/Esc) → IDLE
+ * Pan state machine:     IDLE → (left mousedown) → PANNING → (mouseup) → IDLE
+ * Measure state machine: IDLE → (shift+left mousedown) → MEASURING → (mouseup) → PINNED → (click/Esc) → IDLE
  * Zoom state machine:    IDLE → (right mousedown) → ZOOMING → (mouseup) → IDLE (chart zoomed)
  *
  * Renders HTML overlay (vertical lines + shaded region + floating bubble)
@@ -14,11 +16,12 @@
  */
 const DragMeasure = {
     // --- State ---
-    state: 'idle', // 'idle' | 'measuring' | 'pinned' | 'zooming'
+    state: 'idle', // 'idle' | 'panning' | 'measuring' | 'pinned' | 'zooming'
     startDataIndex: null,
     endDataIndex: null,
     _rafPending: false,
-    _startClientX: null, // raw pixel X at mousedown (for zoom)
+    _startClientX: null, // raw pixel X at mousedown (for zoom/pan)
+    _panLastX: null,     // last clientX during pan (for delta calculation)
     _wheelAccum: 0,      // accumulated wheel delta (throttled via rAF)
     _wheelFraction: 0.5, // cursor position fraction for wheel zoom center
     _wheelRafId: null,   // rAF handle for wheel zoom
@@ -90,7 +93,7 @@ const DragMeasure = {
             nsewDrag.addEventListener('contextmenu', this._boundContextMenu);
             nsewDrag.addEventListener('wheel', this._boundWheel, { passive: false });
             nsewDrag.addEventListener('dblclick', this._boundDblClick);
-            nsewDrag.style.cursor = 'crosshair';
+            nsewDrag.style.cursor = 'grab';
         }
 
         document.addEventListener('keydown', this._boundKeyDown);
@@ -157,7 +160,7 @@ const DragMeasure = {
         if (this.state === 'pinned') {
             this._reset();
             if (isRightClick) return; // Don't start zoom immediately after clearing
-            // For left click, fall through to start a new measurement
+            // For left click, fall through to start new interaction
         }
 
         const data = this.dataSource();
@@ -172,33 +175,55 @@ const DragMeasure = {
             hoverCard.classList.add('hidden');
         }
 
-        const date = this._pixelToDate(e.clientX);
-        this.startDataIndex = this._findNearestDataPoint(date, data);
-        this.endDataIndex = this.startDataIndex;
         this._startClientX = e.clientX;
 
-        if (isLeftClick) {
-            this.state = 'measuring';
+        if (isLeftClick && e.shiftKey) {
+            // Shift+left-click: measurement mode
+            const date = this._pixelToDate(e.clientX);
+            this.startDataIndex = this._findNearestDataPoint(date, data);
+            this.endDataIndex = this.startDataIndex;
 
-            // Show start line (blue for measure)
+            this.state = 'measuring';
             this._positionVerticalLine(this.startLine, this.startDataIndex);
             this.startLine.classList.remove('hidden');
+            this.overlayEl.style.pointerEvents = 'auto';
+
+            const nsewDrag = this.chartEl.querySelector('.nsewdrag');
+            if (nsewDrag) nsewDrag.style.cursor = 'crosshair';
+        } else if (isLeftClick) {
+            // Left-click: pan mode
+            this.state = 'panning';
+            this._panLastX = e.clientX;
+
+            const nsewDrag = this.chartEl.querySelector('.nsewdrag');
+            if (nsewDrag) nsewDrag.style.cursor = 'grabbing';
         } else {
+            // Right-click: zoom selection
+            const date = this._pixelToDate(e.clientX);
+            this.startDataIndex = this._findNearestDataPoint(date, data);
+            this.endDataIndex = this.startDataIndex;
+
             this.state = 'zooming';
-
-            // Show zoom region with different styling
             this.zoomRegion.classList.remove('hidden');
+            this.overlayEl.style.pointerEvents = 'auto';
         }
-
-        // Activate overlay to capture moves
-        this.overlayEl.style.pointerEvents = 'auto';
 
         document.addEventListener('mousemove', this._boundMouseMove);
         document.addEventListener('mouseup', this._boundMouseUp);
     },
 
     _onMouseMove(e) {
-        if (this.state !== 'measuring' && this.state !== 'zooming') return;
+        if (this.state !== 'measuring' && this.state !== 'zooming' && this.state !== 'panning') return;
+
+        if (this.state === 'panning') {
+            // Pan: shift x-axis range based on pixel delta (no rAF batching — direct for responsiveness)
+            const deltaX = e.clientX - this._panLastX;
+            if (deltaX !== 0) {
+                this._panLastX = e.clientX;
+                this._applyPan(deltaX);
+            }
+            return;
+        }
 
         if (!this._rafPending) {
             this._rafPending = true;
@@ -219,6 +244,14 @@ const DragMeasure = {
     _onMouseUp(e) {
         document.removeEventListener('mousemove', this._boundMouseMove);
         document.removeEventListener('mouseup', this._boundMouseUp);
+
+        if (this.state === 'panning') {
+            this.state = 'idle';
+            this._panLastX = null;
+            const nsewDrag = this.chartEl.querySelector('.nsewdrag');
+            if (nsewDrag) nsewDrag.style.cursor = 'grab';
+            return;
+        }
 
         if (this.state === 'measuring') {
             // Final visual update
@@ -253,11 +286,13 @@ const DragMeasure = {
     _onKeyDown(e) {
         if (e.key === 'Escape' && this.state !== 'idle') {
             e.preventDefault();
-            if (this.state === 'measuring' || this.state === 'zooming') {
+            if (this.state === 'measuring' || this.state === 'zooming' || this.state === 'panning') {
                 document.removeEventListener('mousemove', this._boundMouseMove);
                 document.removeEventListener('mouseup', this._boundMouseUp);
             }
             this._reset();
+            const nsewDrag = this.chartEl && this.chartEl.querySelector('.nsewdrag');
+            if (nsewDrag) nsewDrag.style.cursor = 'grab';
         }
     },
 
@@ -311,6 +346,43 @@ const DragMeasure = {
                 'xaxis.range': [fmt(dateA), fmt(dateB)]
             });
         }
+    },
+
+    // ========== PAN ==========
+
+    _applyPan(deltaPixels) {
+        if (!this.chartEl || typeof Plotly === 'undefined') return;
+
+        const fullLayout = this.chartEl._fullLayout;
+        if (!fullLayout) return;
+
+        const xaxis = fullLayout.xaxis;
+        const range = xaxis.range;
+        const startMs = new Date(range[0]).getTime();
+        const endMs = new Date(range[1]).getTime();
+        const spanMs = endMs - startMs;
+
+        const plotArea = this.chartEl.querySelector('.nsewdrag');
+        if (!plotArea) return;
+        const plotWidth = plotArea.getBoundingClientRect().width;
+
+        // Convert pixel delta to time delta (negative because dragging right = earlier dates)
+        const timeDelta = -(deltaPixels / plotWidth) * spanMs;
+
+        const newStartMs = startMs + timeDelta;
+        const newEndMs = endMs + timeDelta;
+
+        // Don't pan past the last data point (no future dates)
+        const data = this.dataSource();
+        if (data && data.length > 0) {
+            const dataEndMs = new Date(data[data.length - 1].date).getTime();
+            if (newEndMs > dataEndMs + 86400000) return; // Allow 1 day buffer
+        }
+
+        const fmt = (ms) => new Date(ms).toISOString().split('T')[0];
+        Plotly.relayout(this.chartEl, {
+            'xaxis.range': [fmt(newStartMs), fmt(newEndMs)]
+        });
     },
 
     // ========== SCROLL WHEEL ZOOM ==========

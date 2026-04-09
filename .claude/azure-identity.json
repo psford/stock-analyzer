@@ -1,0 +1,7 @@
+{
+  "_comment": "Expected Azure SP identity for this repo. Used by azure_sp_identity_guard hook.",
+  "repo": "stock-analyzer",
+  "allowed_sp_names": ["github-stockanalyzer"],
+  "allowed_sp_object_ids": ["a88d6fbe-7a79-43a1-b765-8b1ec77f1433"],
+  "resource_group": "rg-stockanalyzer-prod"
+}

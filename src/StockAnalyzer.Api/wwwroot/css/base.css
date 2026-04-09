@@ -608,6 +608,50 @@ label {
     color: var(--accent);
 }
 
+/* === Panel Dropdown === */
+#panel-dropdown {
+    padding: 0.5rem 0;
+}
+
+#panel-dropdown label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 1rem;
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+#panel-dropdown label:hover {
+    background-color: var(--bg-tertiary);
+}
+
+.panel-dropdown-divider {
+    height: 1px;
+    background: var(--border-primary);
+    margin: 0.375rem 0;
+}
+
+#panel-dropdown .reset-btn {
+    display: block;
+    width: calc(100% - 1rem);
+    margin: 0.25rem 0.5rem;
+    padding: 0.375rem 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    text-align: center;
+}
+
+#panel-dropdown .reset-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+
 /* === Modal === */
 .modal {
     position: fixed;
@@ -2008,6 +2052,13 @@ input[type="range"]::-moz-range-thumb {
     color: var(--text-primary);
 }
 
+.metric-suffix {
+    font-size: 0.7rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin-left: 0.125rem;
+}
+
 /* Significant move row */
 .move-row {
     display: flex;
@@ -2439,3 +2490,165 @@ input[type="range"]::-moz-range-thumb {
 
 .opacity-50 { opacity: 0.5; }
 .cursor-not-allowed { cursor: not-allowed; }
+
+/* Hide GridStack corner resize arrows — tiles resize via edge handles only */
+.grid-stack-item > .ui-resizable-se,
+.grid-stack-item > .ui-resizable-sw,
+.grid-stack-item > .ui-resizable-ne,
+.grid-stack-item > .ui-resizable-nw {
+    display: none !important;
+}
+
+/* ========================================
+   MEASUREMENT OVERLAY
+   ======================================== */
+
+#drag-measure-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10;
+}
+
+#drag-measure-region {
+    position: absolute;
+    pointer-events: none;
+    background: var(--measure-bg);
+    z-index: 10;
+}
+
+#drag-measure-start-line {
+    position: absolute;
+    width: 1.5px;
+    background: var(--measure-line);
+    pointer-events: none;
+    z-index: 11;
+}
+
+#drag-measure-end-line {
+    position: absolute;
+    width: 1.5px;
+    pointer-events: none;
+    z-index: 11;
+    background: repeating-linear-gradient(
+        to bottom,
+        rgba(59, 130, 246, 0.7) 0px,
+        rgba(59, 130, 246, 0.7) 4px,
+        transparent 4px,
+        transparent 8px
+    );
+}
+
+#drag-measure-bubble {
+    position: absolute;
+    min-width: 180px;
+    max-width: 260px;
+    padding: 0.625rem 0.75rem;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid var(--border-primary);
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    pointer-events: none;
+    z-index: 20;
+    font-family: system-ui, -apple-system, sans-serif;
+    line-height: 1.4;
+}
+
+.dark #drag-measure-bubble {
+    background: rgba(31, 41, 55, 0.95);
+    border-color: var(--border-secondary);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.dm-dates {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-bottom: 0.25rem;
+}
+
+.dm-main-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    margin-bottom: 0.125rem;
+}
+
+.dm-pct {
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.dm-positive {
+    color: var(--success);
+}
+
+.dm-negative {
+    color: var(--error);
+}
+
+.dm-dollar {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.dm-prices {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+.dm-comp-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+}
+
+.dm-primary-label {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--accent-hover);
+    min-width: 3rem;
+}
+
+.dark .dm-primary-label {
+    color: var(--accent-light);
+}
+
+.dm-comp-label {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--warning);
+    min-width: 3rem;
+}
+
+.dark .dm-comp-label {
+    color: var(--warning-light);
+}
+
+/* ========================================
+   DRAG ZOOM REGION
+   ======================================== */
+
+#drag-zoom-region {
+    position: absolute;
+    pointer-events: none;
+    background: var(--zoom-bg);
+    border-left: 2px solid var(--zoom-border);
+    border-right: 2px solid var(--zoom-border);
+    z-index: 10;
+}
+
+/* ========================================
+   PLOTLY MODEBAR TOOLTIP FIX
+   Suppress Plotly's custom CSS tooltips (::before/::after pseudo-elements)
+   which overlap adjacent buttons and block clicks. The buttons still have
+   title attributes that provide native browser tooltips on hover.
+   ======================================== */
+
+.modebar-btn[data-title]::before,
+.modebar-btn[data-title]::after {
+    display: none !important;
+}

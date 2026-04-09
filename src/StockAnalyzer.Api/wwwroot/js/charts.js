@@ -377,7 +377,7 @@ const Charts = {
             const config = {
                 responsive: true,
                 displayModeBar: true,
-                modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
+                modeBarButtonsToRemove: ['pan2d', 'zoom2d', 'lasso2d', 'select2d']
             };
 
             const compSymbol = activeSeries.length === 2 ? activeSeries[1].ticker : null;
@@ -812,7 +812,7 @@ const Charts = {
         const config = {
             responsive: true,
             displayModeBar: true,
-            modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
+            modeBarButtonsToRemove: ['pan2d', 'zoom2d', 'lasso2d', 'select2d']
         };
 
         this._smartPlot(elementId, traces, layout, config).then(() => {

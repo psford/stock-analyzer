@@ -1,7 +1,11 @@
+using System.Collections.Concurrent;
+using System.Data;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using StockAnalyzer.Core.Data;
 using StockAnalyzer.Core.Data.Entities;
 using StockAnalyzer.Core.Helpers;
 
@@ -81,15 +85,8 @@ public class PriceRefreshService : BackgroundService
 
                 await Task.Delay(delay, stoppingToken);
 
-                // Skip weekends (no market data)
-                if (targetTime.DayOfWeek == DayOfWeek.Saturday ||
-                    targetTime.DayOfWeek == DayOfWeek.Sunday)
-                {
-                    _logger.LogDebug("Skipping price refresh on weekend");
-                    continue;
-                }
-
-                await RefreshPreviousDayAsync(stoppingToken);
+                // Run every day — lookback + forward-fill handles weekends/holidays
+                await RunDailyRefreshCycleAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -106,12 +103,14 @@ public class PriceRefreshService : BackgroundService
     /// <summary>
     /// Check the most recent price date and backfill any missing recent days.
     /// Called on startup to ensure we're up to date.
+    /// Uses BusinessCalendar to determine business days (accounts for holidays).
     /// </summary>
     private async Task CheckAndBackfillRecentDataAsync(CancellationToken ct)
     {
         using var scope = _serviceProvider.CreateScope();
         var priceRepo = scope.ServiceProvider.GetRequiredService<IPriceRepository>();
         var securityRepo = scope.ServiceProvider.GetRequiredService<ISecurityMasterRepository>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<StockAnalyzerDbContext>();
 
         // Get total price count to check if we have any data
         var totalPrices = await priceRepo.GetTotalCountAsync();
@@ -140,7 +139,22 @@ public class PriceRefreshService : BackgroundService
         }
 
         var maxDate = latestPrices.Values.Max(p => p.EffectiveDate);
-        var yesterday = GetLastTradingDay(DateTime.UtcNow.Date);
+
+        // Get most recent business day from calendar (accounts for holidays)
+        var yesterday = await dbContext.BusinessCalendar
+            .AsNoTracking()
+            .Where(bc => bc.SourceId == 1
+                && bc.IsBusinessDay
+                && bc.EffectiveDate < DateTime.UtcNow.Date)
+            .OrderByDescending(bc => bc.EffectiveDate)
+            .Select(bc => bc.EffectiveDate)
+            .FirstOrDefaultAsync(ct);
+
+        if (yesterday == default)
+        {
+            _logger.LogWarning("No business days found in BusinessCalendar");
+            return;
+        }
 
         _logger.LogInformation("Most recent price date: {MaxDate}, last trading day: {Yesterday}",
             maxDate.ToString("yyyy-MM-dd"), yesterday.ToString("yyyy-MM-dd"));
@@ -148,7 +162,17 @@ public class PriceRefreshService : BackgroundService
         // If we're missing recent days, backfill them
         if (maxDate < yesterday)
         {
-            var missingDays = GetTradingDaysBetween(maxDate.AddDays(1), yesterday);
+            // Use BusinessCalendar instead of hardcoded weekday logic
+            var missingDays = await dbContext.BusinessCalendar
+                .AsNoTracking()
+                .Where(bc => bc.SourceId == 1
+                    && bc.IsBusinessDay
+                    && bc.EffectiveDate > maxDate
+                    && bc.EffectiveDate <= yesterday)
+                .Select(bc => bc.EffectiveDate)
+                .OrderBy(d => d)
+                .ToListAsync(ct);
+
             if (missingDays.Count > 0)
             {
                 _logger.LogInformation("Found {Count} missing trading days to backfill", missingDays.Count);
@@ -167,13 +191,65 @@ public class PriceRefreshService : BackgroundService
     }
 
     /// <summary>
-    /// Refresh prices for the previous trading day.
-    /// Called daily by the background loop.
+    /// Run the full daily refresh cycle: lookback for missed business days, fetch, forward-fill.
+    /// Runs every day including weekends — uses BusinessCalendar to determine which dates need data.
     /// </summary>
-    private async Task RefreshPreviousDayAsync(CancellationToken ct)
+    private async Task RunDailyRefreshCycleAsync(CancellationToken ct)
     {
-        var yesterday = GetLastTradingDay(DateTime.UtcNow.Date);
-        await RefreshDateAsync(yesterday, ct);
+        using var scope = _serviceProvider.CreateScope();
+        var priceRepo = scope.ServiceProvider.GetRequiredService<IPriceRepository>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<StockAnalyzerDbContext>();
+
+        var today = DateTime.UtcNow.Date;
+        var lookbackStart = today.AddDays(-14);
+
+        // 1. Get business days in lookback window from BusinessCalendar (SourceId=1 = US market)
+        var businessDays = await dbContext.BusinessCalendar
+            .AsNoTracking()
+            .Where(bc => bc.SourceId == 1
+                && bc.IsBusinessDay
+                && bc.EffectiveDate >= lookbackStart
+                && bc.EffectiveDate <= today)
+            .Select(bc => bc.EffectiveDate)
+            .OrderBy(d => d)
+            .ToListAsync(ct);
+
+        // 2. Check which business days already have price data
+        // GetDistinctDatesAsync returns Task<List<DateTime>> — compatible with BusinessCalendar DateTime values
+        var datesWithPrices = await priceRepo.GetDistinctDatesAsync(lookbackStart, today);
+        var datesWithPricesSet = datesWithPrices.ToHashSet();
+
+        var missingDays = businessDays.Where(d => !datesWithPricesSet.Contains(d)).ToList();
+
+        _logger.LogInformation(
+            "Daily refresh cycle: {Total} business days in 14-day lookback, {Missing} missing prices",
+            businessDays.Count, missingDays.Count);
+
+        // 3. Fetch missing days via EODHD bulk API
+        var totalInserted = 0;
+        foreach (var date in missingDays)
+        {
+            if (ct.IsCancellationRequested) break;
+            var result = await RefreshDateAsync(date, ct);
+            totalInserted += result.RecordsInserted;
+
+            if (result.RecordsFetched == 0 && date >= today.AddDays(-3))
+            {
+                _logger.LogWarning(
+                    "No EODHD data for recent business day {Date}, will retry next cycle",
+                    date.ToString("yyyy-MM-dd"));
+            }
+        }
+
+        // 4. Forward-fill non-business days (weekends + holidays) up to today
+        // This is intentionally called every day including weekends — ForwardFillHolidaysAsync is
+        // idempotent (skips dates that already have data) and the date cap prevents future fills.
+        // Running daily ensures any newly-inserted business day data propagates forward-fills promptly.
+        var fillResult = await priceRepo.ForwardFillHolidaysAsync(maxFillDate: today);
+
+        _logger.LogInformation(
+            "Daily refresh cycle complete: {MissingDays} days backfilled, {Inserted} records inserted, {Filled} forward-fill records",
+            missingDays.Count, totalInserted, fillResult.TotalRecordsInserted);
     }
 
     /// <summary>
@@ -205,7 +281,11 @@ public class PriceRefreshService : BackgroundService
 
         if (bulkData.Count == 0)
         {
-            _logger.LogWarning("No bulk data returned for {Date}", date.ToString("yyyy-MM-dd"));
+            _logger.LogWarning(
+                "No bulk data returned for {Date}. EODHD may be unavailable or date may be a holiday. " +
+                "Service will retry on next cycle.",
+                date.ToString("yyyy-MM-dd"));
+            result.RecordsFetched = 0;
             return result;
         }
 
@@ -246,6 +326,14 @@ public class PriceRefreshService : BackgroundService
                 result.RecordsInserted, date.ToString("yyyy-MM-dd"));
         }
 
+        _logger.LogInformation(
+            "Refresh summary for {Date}: Fetched={Fetched}, Matched={Matched} ({MatchRate:P0}), Inserted={Inserted}",
+            date.ToString("yyyy-MM-dd"),
+            result.RecordsFetched,
+            result.RecordsMatched,
+            result.RecordsFetched > 0 ? (double)result.RecordsMatched / result.RecordsFetched : 0,
+            result.RecordsInserted);
+
         _lastRefresh = DateTime.UtcNow;
         return result;
     }
@@ -263,6 +351,250 @@ public class PriceRefreshService : BackgroundService
     }
 
     /// <summary>
+    /// Execute the gap audit using raw SQL to identify all missing business days
+    /// for tracked securities.
+    /// </summary>
+    /// <param name="dbContext">Database context with open connection</param>
+    /// <param name="ct">Cancellation token</param>
+    /// <returns>List of (SecurityAlias, TickerSymbol, MissingDate) tuples</returns>
+    internal async Task<List<(int SecurityAlias, string TickerSymbol, DateTime MissingDate)>> RunGapAuditAsync(
+        StockAnalyzerDbContext dbContext, CancellationToken ct)
+    {
+        var result = new List<(int SecurityAlias, string TickerSymbol, DateTime MissingDate)>();
+
+        var sql = @"
+            WITH TrackedSecurities AS (
+                SELECT sm.SecurityAlias, sm.TickerSymbol
+                FROM data.SecurityMaster sm
+                WHERE sm.IsTracked = 1 AND sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0
+            ),
+            PriceRanges AS (
+                SELECT p.SecurityAlias, MIN(p.EffectiveDate) AS FirstDate, MAX(p.EffectiveDate) AS LastDate
+                FROM data.Prices p
+                INNER JOIN TrackedSecurities ts ON ts.SecurityAlias = p.SecurityAlias
+                GROUP BY p.SecurityAlias
+            ),
+            ExpectedDates AS (
+                SELECT ts.SecurityAlias, ts.TickerSymbol, bc.EffectiveDate
+                FROM TrackedSecurities ts
+                INNER JOIN PriceRanges pr ON pr.SecurityAlias = ts.SecurityAlias
+                INNER JOIN data.BusinessCalendar bc ON bc.SourceId = 1 AND bc.IsBusinessDay = 1
+                    AND bc.EffectiveDate BETWEEN pr.FirstDate AND pr.LastDate
+            )
+            SELECT ed.SecurityAlias, ed.TickerSymbol, ed.EffectiveDate AS MissingDate
+            FROM ExpectedDates ed
+            LEFT JOIN data.Prices p ON p.SecurityAlias = ed.SecurityAlias AND p.EffectiveDate = ed.EffectiveDate
+            WHERE p.Id IS NULL
+            ORDER BY ed.TickerSymbol, ed.EffectiveDate";
+
+        try
+        {
+            var connection = dbContext.Database.GetDbConnection();
+            var connectionWasOpen = connection.State == ConnectionState.Open;
+
+            if (!connectionWasOpen)
+                await connection.OpenAsync(ct);
+
+            try
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = sql;
+                cmd.CommandTimeout = 300;
+
+                using var reader = await cmd.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct))
+                {
+                    var securityAlias = reader.GetInt32(0);
+                    var tickerSymbol = reader.GetString(1);
+                    var missingDate = reader.GetDateTime(2);
+
+                    result.Add((securityAlias, tickerSymbol, missingDate));
+                }
+            }
+            finally
+            {
+                if (!connectionWasOpen)
+                    connection.Close();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error executing gap audit");
+            throw;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Backfill all identified gaps in price history using EODHD per-ticker API.
+    /// 1. Runs gap audit to identify missing business days
+    /// 2. Fetches data from EODHD for each security with gaps
+    /// 3. Inserts fetched data
+    /// 4. Flags securities where EODHD has no data
+    /// 5. Re-runs audit to verify completion
+    /// </summary>
+    /// <param name="maxConcurrency">Max concurrent API requests (1-10, default 3)</param>
+    /// <param name="progress">Optional progress callback</param>
+    /// <param name="ct">Cancellation token</param>
+    /// <returns>Result with counts and any errors</returns>
+    public async Task<GapBackfillResult> BackfillGapsAsync(
+        int maxConcurrency = 3,
+        IProgress<TickerBackfillProgress>? progress = null,
+        CancellationToken ct = default)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var eodhd = scope.ServiceProvider.GetRequiredService<EodhdService>();
+        var priceRepo = scope.ServiceProvider.GetRequiredService<IPriceRepository>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<StockAnalyzerDbContext>();
+
+        var result = new GapBackfillResult();
+
+        // 1. Run gap audit
+        var gaps = await RunGapAuditAsync(dbContext, ct);
+        result.TotalGapsFound = gaps.Count;
+
+        _logger.LogInformation("Gap audit found {Count} missing price-days", gaps.Count);
+
+        if (gaps.Count == 0)
+        {
+            result.Success = true;
+            result.Message = "No gaps found";
+            return result;
+        }
+
+        // 2. Group by security, compute per-ticker date ranges
+        var securityMap = await dbContext.SecurityMaster
+            .AsNoTracking()
+            .Where(s => s.IsTracked && s.IsActive && !s.IsEodhdUnavailable)
+            .ToDictionaryAsync(s => s.SecurityAlias, s => s, ct);
+
+        var gapsByTicker = gaps
+            .GroupBy(g => new { g.SecurityAlias, g.TickerSymbol })
+            .Where(g => securityMap.ContainsKey(g.Key.SecurityAlias))
+            .OrderByDescending(g => securityMap.GetValueOrDefault(g.Key.SecurityAlias)?.ImportanceScore ?? 0)
+            .Select(g => new
+            {
+                g.Key.TickerSymbol,
+                g.Key.SecurityAlias,
+                StartDate = g.Min(x => x.MissingDate),
+                EndDate = g.Max(x => x.MissingDate),
+                GapCount = g.Count()
+            })
+            .ToList();
+
+        _logger.LogInformation("Backfilling {Count} securities with gaps", gapsByTicker.Count);
+
+        // 3. Fetch per-ticker with throttling
+        var tickersWithNoData = new ConcurrentBag<(int SecurityAlias, string TickerSymbol)>();
+        var errors = new ConcurrentBag<string>();
+        var totalInserted = 0;
+        var tickersProcessed = 0;
+
+        using var semaphore = new SemaphoreSlim(Math.Clamp(maxConcurrency, 1, 10));
+
+        var tasks = gapsByTicker.Select(async ticker =>
+        {
+            await semaphore.WaitAsync(ct);
+            try
+            {
+                // Rate limit: 100ms spacing
+                await Task.Delay(100, ct);
+
+                var data = await eodhd.GetHistoricalDataAsync(
+                    ticker.TickerSymbol, ticker.StartDate, ticker.EndDate, ct);
+
+                if (data.Count == 0)
+                {
+                    tickersWithNoData.Add((ticker.SecurityAlias, ticker.TickerSymbol));
+                    return;
+                }
+
+                var priceDtos = data.Select(r => new PriceCreateDto
+                {
+                    SecurityAlias = ticker.SecurityAlias,
+                    EffectiveDate = r.ParsedDate,
+                    Open = r.Open,
+                    High = r.High,
+                    Low = r.Low,
+                    Close = r.Close,
+                    AdjustedClose = r.AdjustedClose,
+                    Volume = (long)r.Volume
+                }).ToList();
+
+                var inserted = await priceRepo.BulkInsertAsync(priceDtos);
+                Interlocked.Add(ref totalInserted, inserted);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error backfilling {Ticker}", ticker.TickerSymbol);
+                errors.Add($"{ticker.TickerSymbol}: {ex.Message}");
+            }
+            finally
+            {
+                semaphore.Release();
+                var processed = Interlocked.Increment(ref tickersProcessed);
+                progress?.Report(new TickerBackfillProgress
+                {
+                    CurrentTicker = ticker.TickerSymbol,
+                    TickersProcessed = processed,
+                    TotalTickers = gapsByTicker.Count,
+                    RecordsInserted = totalInserted,
+                    PercentComplete = (int)((double)processed / gapsByTicker.Count * 100)
+                });
+
+                if (processed % 50 == 0)
+                {
+                    _logger.LogInformation(
+                        "Backfill progress: {Processed}/{Total} securities, {Inserted} records inserted",
+                        processed, gapsByTicker.Count, totalInserted);
+                }
+            }
+        });
+
+        await Task.WhenAll(tasks);
+
+        // Copy errors from ConcurrentBag to result.Errors after Task.WhenAll completes
+        foreach (var error in errors)
+        {
+            result.Errors.Add(error);
+        }
+
+        // 4. Flag securities where EODHD returned no data
+        foreach (var (securityAlias, tickerSymbol) in tickersWithNoData)
+        {
+            var security = await dbContext.SecurityMaster
+                .FirstOrDefaultAsync(s => s.SecurityAlias == securityAlias, ct);
+            if (security != null)
+            {
+                security.IsEodhdUnavailable = true;
+                _logger.LogInformation("Marked {Ticker} (alias {Alias}) as EODHD unavailable",
+                    tickerSymbol, securityAlias);
+            }
+        }
+        await dbContext.SaveChangesAsync(ct);
+        result.SecuritiesFlagged = tickersWithNoData.Count;
+
+        // 5. Re-run gap audit to verify
+        var remainingGaps = await RunGapAuditAsync(dbContext, ct);
+        result.RemainingGaps = remainingGaps.Count;
+
+        result.TickersProcessed = tickersProcessed;
+        result.TotalRecordsInserted = totalInserted;
+        result.TickersWithNoData = tickersWithNoData.Count;
+        result.Success = true;
+        result.Message = $"Backfill complete: {totalInserted} records inserted, " +
+            $"{tickersWithNoData.Count} securities flagged unavailable, " +
+            $"{remainingGaps.Count} gaps remaining";
+
+        _logger.LogInformation(
+            "Backfill complete: {Inserted} records, {Flagged} flagged unavailable, {Remaining} gaps remaining",
+            totalInserted, tickersWithNoData.Count, remainingGaps.Count);
+
+        return result;
+    }
+
+    /// <summary>
     /// Bulk load historical data for a date range.
     /// Called via admin endpoint for initial data loading.
     /// </summary>
@@ -272,6 +604,9 @@ public class PriceRefreshService : BackgroundService
         IProgress<BulkLoadProgress>? progress = null,
         CancellationToken ct = default)
     {
+        // TODO: In a future phase, update to use BusinessCalendar (SourceId=1) instead of hardcoded weekday logic.
+        // GetTradingDaysBetween currently only accounts for Saturday/Sunday, not market holidays.
+        // This is intentional for backward compatibility but should be updated to match the daily refresh logic.
         var result = new BulkLoadResult();
         var tradingDays = GetTradingDaysBetween(startDate, endDate);
 
@@ -791,4 +1126,20 @@ public class EodhdSyncResult
     public int TotalSymbols { get; set; }
     public int SecuritiesUpserted { get; set; }
     public string? ErrorMessage { get; set; }
+}
+
+/// <summary>
+/// Result of gap backfill operation.
+/// </summary>
+public class GapBackfillResult
+{
+    public bool Success { get; set; }
+    public string? Message { get; set; }
+    public int TotalGapsFound { get; set; }
+    public int TickersProcessed { get; set; }
+    public int TotalRecordsInserted { get; set; }
+    public int TickersWithNoData { get; set; }
+    public int SecuritiesFlagged { get; set; }
+    public int RemainingGaps { get; set; }
+    public List<string> Errors { get; set; } = new();
 }

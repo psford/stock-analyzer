@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using StockAnalyzer.Core.Data;
 using StockAnalyzer.Core.Data.Entities;
 using StockAnalyzer.Core.Services;
+using StockAnalyzer.Core.Tests.TestHelpers;
 using System.Data;
 using Xunit;
 
@@ -494,6 +495,222 @@ public class CoverageIntegrationTests
         }
     }
 
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task ForwardFillHolidaysAsync_WithDefaultMaxFillDate_DoesNotFillFutureDates()
+    {
+        // Skip if SQL Express unavailable
+        if (!IsSqlServerAvailable())
+            return;
+
+        int testSecurityAlias = 0;
+
+        try
+        {
+            // Arrange: Create security and seed calendar for a range including near-future dates
+            var startDate = new DateTime(2024, 1, 1);
+            var endDate = DateTime.UtcNow.Date.AddDays(10);  // Include some future dates
+            var today = DateTime.UtcNow.Date;
+
+            await using (var context = CreateContext())
+            {
+                // Insert test security via raw SQL with auto-generated alias
+                var connection = context.Database.GetDbConnection();
+                var connectionWasOpen = connection.State == System.Data.ConnectionState.Open;
+                if (!connectionWasOpen)
+                    await connection.OpenAsync();
+
+                try
+                {
+                    using var cmd = connection.CreateCommand();
+                    cmd.CommandText = @"
+                        INSERT INTO data.SecurityMaster (TickerSymbol, IssueName, Isin, CreatedAt, UpdatedAt)
+                        OUTPUT inserted.SecurityAlias
+                        VALUES ('FFILL_' + CAST(ABS(CHECKSUM(NEWID())) AS NVARCHAR(10)), 'Forward Fill Test', 'US0000000010', GETUTCDATE(), GETUTCDATE())";
+                    cmd.CommandTimeout = 30;
+
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    if (await reader.ReadAsync())
+                        testSecurityAlias = reader.GetInt32(0);
+                }
+                finally
+                {
+                    if (!connectionWasOpen && connection.State == System.Data.ConnectionState.Open)
+                        await connection.CloseAsync();
+                }
+
+                // Seed calendar with dates including weekends and future dates
+                SeedBusinessCalendar(context, startDate, endDate);
+                await context.SaveChangesAsync();
+
+                // Insert prices for all business days up to today via BulkInsertAsync
+                // (which filters out future dates)
+                var logger = new NoopLogger<SqlPriceRepository>();
+                var repo = new SqlPriceRepository(context, logger);
+
+                var pricesUpToday = new List<PriceCreateDto>();
+                for (var date = startDate.Date; date <= today; date = date.AddDays(1))
+                {
+                    // Only insert for business days
+                    if (date.DayOfWeek != DayOfWeek.Saturday && date.DayOfWeek != DayOfWeek.Sunday)
+                    {
+                        pricesUpToday.Add(CreatePrice(testSecurityAlias, date));
+                    }
+                }
+
+                await repo.BulkInsertAsync(pricesUpToday);
+
+                // Insert future business day prices directly via context (bypassing BulkInsertAsync filtering)
+                // to test that ForwardFillHolidaysAsync respects maxFillDate and doesn't fill them
+                var futurePrices = new List<PriceEntity>();
+                for (var date = today.AddDays(1); date <= endDate.Date; date = date.AddDays(1))
+                {
+                    // Only insert for business days
+                    if (date.DayOfWeek != DayOfWeek.Saturday && date.DayOfWeek != DayOfWeek.Sunday)
+                    {
+                        futurePrices.Add(new PriceEntity
+                        {
+                            SecurityAlias = testSecurityAlias,
+                            EffectiveDate = date,
+                            Open = 100m,
+                            High = 105m,
+                            Low = 99m,
+                            Close = 102m,
+                            AdjustedClose = null,
+                            Volume = null,
+                            Volatility = null
+                        });
+                    }
+                }
+
+                context.Prices.AddRange(futurePrices);
+                await context.SaveChangesAsync();
+            }
+
+            // Act: Call ForwardFillHolidaysAsync without specifying maxFillDate (should default to today)
+            await using (var context = CreateContext())
+            {
+                var logger = new NoopLogger<SqlPriceRepository>();
+                var repo = new SqlPriceRepository(context, logger);
+
+                // Count future records BEFORE ForwardFillHolidaysAsync
+                var futureRecordsBeforeFill = await context.Prices
+                    .Where(p => p.SecurityAlias == testSecurityAlias && p.EffectiveDate > today)
+                    .CountAsync();
+
+                var result = await repo.ForwardFillHolidaysAsync();
+
+                // Assert: Should succeed
+                result.Success.Should().BeTrue();
+
+                // Count future records AFTER ForwardFillHolidaysAsync
+                var futureRecordsAfterFill = await context.Prices
+                    .Where(p => p.SecurityAlias == testSecurityAlias && p.EffectiveDate > today)
+                    .CountAsync();
+
+                // Verify ForwardFillHolidaysAsync did not add any new future records
+                futureRecordsAfterFill.Should().Be(futureRecordsBeforeFill,
+                    "ForwardFillHolidaysAsync with default maxFillDate should not add any new prices beyond today");
+            }
+        }
+        finally
+        {
+            if (testSecurityAlias > 0)
+                await CleanupSecurityData(testSecurityAlias);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task ForwardFillHolidaysAsync_WithExplicitMaxFillDateInPast_RespectsCap()
+    {
+        // Skip if SQL Express unavailable
+        if (!IsSqlServerAvailable())
+            return;
+
+        int testSecurityAlias = 0;
+
+        try
+        {
+            // Arrange: Create security and seed calendar for a month range
+            var startDate = new DateTime(2024, 1, 1);
+            var endDate = new DateTime(2024, 1, 31);
+            var maxFillDate = new DateTime(2024, 1, 15);  // Cap fill to middle of month
+
+            await using (var context = CreateContext())
+            {
+                // Insert test security via raw SQL with auto-generated alias
+                var connection = context.Database.GetDbConnection();
+                var connectionWasOpen = connection.State == System.Data.ConnectionState.Open;
+                if (!connectionWasOpen)
+                    await connection.OpenAsync();
+
+                try
+                {
+                    using var cmd = connection.CreateCommand();
+                    cmd.CommandText = @"
+                        INSERT INTO data.SecurityMaster (TickerSymbol, IssueName, Isin, CreatedAt, UpdatedAt)
+                        OUTPUT inserted.SecurityAlias
+                        VALUES ('FFCAP_' + CAST(ABS(CHECKSUM(NEWID())) AS NVARCHAR(10)), 'Forward Fill Cap Test', 'US0000000011', GETUTCDATE(), GETUTCDATE())";
+                    cmd.CommandTimeout = 30;
+
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    if (await reader.ReadAsync())
+                        testSecurityAlias = reader.GetInt32(0);
+                }
+                finally
+                {
+                    if (!connectionWasOpen && connection.State == System.Data.ConnectionState.Open)
+                        await connection.CloseAsync();
+                }
+
+                // Seed calendar for full month
+                SeedBusinessCalendar(context, startDate, endDate);
+                await context.SaveChangesAsync();
+
+                // Insert prices for all business days in the month
+                var logger = new NoopLogger<SqlPriceRepository>();
+                var repo = new SqlPriceRepository(context, logger);
+
+                var prices = new List<PriceCreateDto>();
+                for (var date = startDate.Date; date <= endDate.Date; date = date.AddDays(1))
+                {
+                    // Only insert for business days
+                    if (date.DayOfWeek != DayOfWeek.Saturday && date.DayOfWeek != DayOfWeek.Sunday)
+                    {
+                        prices.Add(CreatePrice(testSecurityAlias, date));
+                    }
+                }
+
+                await repo.BulkInsertAsync(prices);
+            }
+
+            // Act: Call ForwardFillHolidaysAsync with explicit maxFillDate in the past
+            await using (var context = CreateContext())
+            {
+                var logger = new NoopLogger<SqlPriceRepository>();
+                var repo = new SqlPriceRepository(context, logger);
+
+                var result = await repo.ForwardFillHolidaysAsync(limit: null, maxFillDate: maxFillDate);
+
+                // Assert: Should succeed
+                result.Success.Should().BeTrue();
+
+                // Verify no forward-filled prices exist beyond maxFillDate
+                var beyondCapRecords = await context.Prices
+                    .Where(p => p.SecurityAlias == testSecurityAlias && p.EffectiveDate > maxFillDate && p.Volume == 0)
+                    .CountAsync();
+
+                beyondCapRecords.Should().Be(0, "ForwardFillHolidaysAsync should not create records beyond maxFillDate");
+            }
+        }
+        finally
+        {
+            if (testSecurityAlias > 0)
+                await CleanupSecurityData(testSecurityAlias);
+        }
+    }
+
     private static bool IsSqlServerAvailable()
     {
         try
@@ -569,6 +786,142 @@ public class CoverageIntegrationTests
         }
     }
 
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task ForwardFillHolidaysAsync_CreatesForwardFillRowsWithOhlcEqualCloseAndVolumeZero()
+    {
+        // Skip if SQL Express unavailable (matching existing pattern in the file)
+        if (!IsSqlServerAvailable())
+            return;
+
+        int testSecurityAlias = 0;
+
+        try
+        {
+            // Arrange: Create security via raw SQL with auto-generated alias
+            var friday = new DateTime(2024, 1, 5);
+            var fridayClose = 102.50m; // Known Friday close value
+            var saturday = new DateTime(2024, 1, 6);
+            var sunday = new DateTime(2024, 1, 7);
+
+            await using (var context = CreateContext())
+            {
+                // Insert test security and capture auto-generated alias
+                var connection = context.Database.GetDbConnection();
+                var connectionWasOpen = connection.State == System.Data.ConnectionState.Open;
+                if (!connectionWasOpen)
+                    await connection.OpenAsync();
+
+                try
+                {
+                    using var cmd = connection.CreateCommand();
+                    cmd.CommandText = @"
+                        INSERT INTO data.SecurityMaster (TickerSymbol, IssueName, Isin, CreatedAt, UpdatedAt)
+                        OUTPUT inserted.SecurityAlias
+                        VALUES ('FFILL_OHLC_' + CAST(ABS(CHECKSUM(NEWID())) AS NVARCHAR(10)), 'Forward Fill OHLC Test', 'US0000000020', GETUTCDATE(), GETUTCDATE())";
+                    cmd.CommandTimeout = 30;
+
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    if (await reader.ReadAsync())
+                        testSecurityAlias = reader.GetInt32(0);
+                }
+                finally
+                {
+                    if (!connectionWasOpen && connection.State == System.Data.ConnectionState.Open)
+                        await connection.CloseAsync();
+                }
+
+                // Seed business calendar for Friday through Sunday
+                SeedBusinessCalendar(context, friday, sunday);
+                await context.SaveChangesAsync();
+
+                // Insert Friday price with known Close value
+                var logger = new NoopLogger<SqlPriceRepository>();
+                var repo = new SqlPriceRepository(context, logger);
+
+                var fridayPrice = new List<PriceCreateDto>
+                {
+                    new PriceCreateDto
+                    {
+                        SecurityAlias = testSecurityAlias,
+                        EffectiveDate = friday,
+                        Open = 100.00m,
+                        High = 105.00m,
+                        Low = 99.00m,
+                        Close = fridayClose,
+                        AdjustedClose = fridayClose,
+                        Volume = 2500000L
+                    }
+                };
+
+                await repo.BulkInsertAsync(fridayPrice);
+            }
+
+            // Act: Call ForwardFillHolidaysAsync to fill Saturday and Sunday
+            await using (var context = CreateContext())
+            {
+                var logger = new NoopLogger<SqlPriceRepository>();
+                var repo = new SqlPriceRepository(context, logger);
+
+                // Manually mark Saturday and Sunday as non-business days (holidays/weekends)
+                // so ForwardFillHolidaysAsync will fill them
+                var satEntry = await context.BusinessCalendar
+                    .FirstOrDefaultAsync(bc => bc.EffectiveDate == saturday && bc.SourceId == 1);
+                if (satEntry != null)
+                {
+                    satEntry.IsBusinessDay = false; // Mark as non-business
+                    context.BusinessCalendar.Update(satEntry);
+                }
+
+                var sunEntry = await context.BusinessCalendar
+                    .FirstOrDefaultAsync(bc => bc.EffectiveDate == sunday && bc.SourceId == 1);
+                if (sunEntry != null)
+                {
+                    sunEntry.IsBusinessDay = false; // Mark as non-business
+                    context.BusinessCalendar.Update(sunEntry);
+                }
+
+                await context.SaveChangesAsync();
+
+                var result = await repo.ForwardFillHolidaysAsync();
+
+                // Assert: Forward-fill should succeed
+                result.Success.Should().BeTrue("ForwardFillHolidaysAsync should complete successfully");
+            }
+
+            // Assert: Verify Saturday and Sunday rows were created with correct OHLCV values
+            await using (var context = CreateContext())
+            {
+                // Check Saturday forward-filled row
+                var saturdayPrice = await context.Prices
+                    .FirstOrDefaultAsync(p => p.SecurityAlias == testSecurityAlias && p.EffectiveDate == saturday);
+
+                saturdayPrice.Should().NotBeNull("Saturday should have forward-filled price row");
+                saturdayPrice!.Open.Should().Be(fridayClose, "Saturday Open should equal Friday's Close");
+                saturdayPrice.High.Should().Be(fridayClose, "Saturday High should equal Friday's Close");
+                saturdayPrice.Low.Should().Be(fridayClose, "Saturday Low should equal Friday's Close");
+                saturdayPrice.Close.Should().Be(fridayClose, "Saturday Close should equal Friday's Close");
+                saturdayPrice.Volume.Should().Be(0, "Saturday Volume should be 0 for forward-filled row");
+
+                // Check Sunday forward-filled row
+                var sundayPrice = await context.Prices
+                    .FirstOrDefaultAsync(p => p.SecurityAlias == testSecurityAlias && p.EffectiveDate == sunday);
+
+                sundayPrice.Should().NotBeNull("Sunday should have forward-filled price row");
+                sundayPrice!.Open.Should().Be(fridayClose, "Sunday Open should equal Friday's Close");
+                sundayPrice.High.Should().Be(fridayClose, "Sunday High should equal Friday's Close");
+                sundayPrice.Low.Should().Be(fridayClose, "Sunday Low should equal Friday's Close");
+                sundayPrice.Close.Should().Be(fridayClose, "Sunday Close should equal Friday's Close");
+                sundayPrice.Volume.Should().Be(0, "Sunday Volume should be 0 for forward-filled row");
+            }
+        }
+        finally
+        {
+            if (testSecurityAlias > 0)
+                await CleanupSecurityData(testSecurityAlias);
+        }
+    }
+
     private static async Task CleanupSecurityData(int securityAlias)
     {
         await using var context = CreateContext();
@@ -580,23 +933,5 @@ public class CoverageIntegrationTests
             DELETE FROM data.Prices WHERE SecurityAlias = {securityAlias};
             DELETE FROM data.SecurityMaster WHERE SecurityAlias = {securityAlias};
         ");
-    }
-}
-
-/// <summary>
-/// Minimal logger implementation for testing (no-op).
-/// </summary>
-internal class NoopLogger<T> : Microsoft.Extensions.Logging.ILogger<T>
-{
-    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-    public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => false;
-    public void Log<TState>(
-        Microsoft.Extensions.Logging.LogLevel logLevel,
-        Microsoft.Extensions.Logging.EventId eventId,
-        TState state,
-        Exception? exception,
-        Func<TState, Exception?, string> formatter)
-    {
-        // No-op
     }
 }
