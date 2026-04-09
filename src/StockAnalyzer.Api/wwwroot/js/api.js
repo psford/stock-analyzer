@@ -18,6 +18,23 @@ const API = {
     },
 
     /**
+     * Get period return table for a security.
+     * @param {string} ticker - Stock ticker symbol
+     * @param {string} asOf - End date (YYYY-MM-DD)
+     * @param {string} ipoDate - IPO date for "Since Inception" (optional)
+     */
+    async getReturns(ticker, asOf = null, ipoDate = null) {
+        let url = `${this.baseUrl}/stock/${ticker}/returns`;
+        const params = [];
+        if (asOf) params.push(`asOf=${asOf}`);
+        if (ipoDate) params.push(`ipoDate=${ipoDate}`);
+        if (params.length) url += '?' + params.join('&');
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Failed to fetch returns');
+        return response.json();
+    },
+
+    /**
      * Get historical price data
      * @param {string} ticker - Stock ticker symbol
      * @param {string} period - Time period (1mo, 3mo, 6mo, 1y, 2y, 5y)

@@ -49,6 +49,9 @@ public record StockInfo
     // Performance metrics
     public decimal? FiftyTwoWeekHigh { get; init; }
     public decimal? FiftyTwoWeekLow { get; init; }
+
+    // Listing info
+    public string? IpoDate { get; init; }
     public decimal? FiftyDayAverage { get; init; }
     public decimal? TwoHundredDayAverage { get; init; }
 

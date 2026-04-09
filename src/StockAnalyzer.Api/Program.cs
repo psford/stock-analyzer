@@ -180,6 +180,7 @@ try
         // Security master and price repositories (data schema)
         builder.Services.AddScoped<ISecurityMasterRepository, SqlSecurityMasterRepository>();
         builder.Services.AddScoped<IPriceRepository, SqlPriceRepository>();
+        builder.Services.AddScoped<ReturnCalculationService>();
 
         Log.Information("Using SQL database for watchlist storage, symbol search, and image cache");
     }
@@ -517,7 +518,8 @@ try
             Website = profile?.WebUrl ?? info.Website,
             Isin = profile?.Isin,
             Cusip = profile?.Cusip,
-            Sedol = sedol
+            Sedol = sedol,
+            IpoDate = profile?.IpoDate
         };
 
         // Company bio: check DB cache first, then fall back to Wikipedia
@@ -882,6 +884,39 @@ try
         });
     })
     .WithName("GetChartData")
+    .WithOpenApi()
+    .Produces(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status404NotFound);
+
+    // GET /api/stock/{ticker}/returns - Period return table (1D, 5D, MTD, ..., Since Inception)
+    app.MapGet("/api/stock/{ticker}/returns", async (
+        string ticker,
+        string? asOf,
+        string? ipoDate,
+        ReturnCalculationService returnService) =>
+    {
+        if (!IsValidTicker(ticker))
+            return InvalidTickerResult();
+
+        var endDate = DateTime.TryParse(asOf, out var d) ? d : DateTime.Today;
+        var result = await returnService.CalculateReturnsAsync(ticker, endDate, ipoDate);
+        if (result == null)
+            return Results.NotFound(new { error = "No price data found", symbol = ticker });
+
+        return Results.Ok(new
+        {
+            symbol = ticker,
+            endDate = result.EndDate.ToString("yyyy-MM-dd"),
+            earliestPriceDate = result.EarliestPriceDate?.ToString("yyyy-MM-dd"),
+            returns = result.Returns.Select(r => new
+            {
+                label = r.Label,
+                returnPct = r.ReturnPct,
+                isAnnualized = r.IsAnnualized
+            })
+        });
+    })
+    .WithName("GetReturns")
     .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status404NotFound);

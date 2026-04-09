@@ -1552,6 +1552,7 @@ const App = {
         this.startDatePreset = '1y';
         this.historyData = null;
         this.analysisData = null;
+        this._ipoDate = null;
         this.significantMovesData = null;
         this.newsCache = {};
 
@@ -2178,7 +2179,7 @@ const App = {
             const analysis = this.analysisData;
 
             // Render chart immediately - this is what the user is waiting for
-            this.renderPerformance(analysis.performance);
+            this.renderPerformance();
             this.renderChart();
             this.showResults();
 
@@ -2285,13 +2286,17 @@ const App = {
      * Render key metrics
      */
     renderKeyMetrics(info) {
+        // Store IPO date for performance tile
+        if (info.ipoDate) this._ipoDate = info.ipoDate;
+
         const metrics = [
             { label: 'Market Cap', value: this.formatLargeNumber(info.marketCap) },
             { label: 'P/E Ratio', value: this.formatNumber(info.peRatio) },
             { label: '52W High', value: `$${this.formatNumber(info.fiftyTwoWeekHigh)}` },
             { label: '52W Low', value: `$${this.formatNumber(info.fiftyTwoWeekLow)}` },
             { label: 'Avg Volume', value: this.formatLargeNumber(info.averageVolume) },
-            { label: 'Dividend Yield', value: info.dividendYield ? `${(info.dividendYield * 100).toFixed(2)}%` : 'N/A' }
+            { label: 'Dividend Yield', value: info.dividendYield ? `${(info.dividendYield * 100).toFixed(2)}%` : 'N/A' },
+            { label: '52W Volatility', value: this.analysisData?.performance?.volatility != null ? `${this.formatNumber(this.analysisData.performance.volatility)}%` : 'N/A' }
         ];
 
         document.getElementById('key-metrics').innerHTML = metrics.map(m => `
@@ -2303,28 +2308,42 @@ const App = {
     },
 
     /**
-     * Render performance metrics
+     * Fetch and render period returns from the server.
+     * Server computes returns from DB price data for all standard periods.
      */
-    renderPerformance(performance) {
-        if (!performance) {
-            document.getElementById('performance-metrics').innerHTML = '<p class="status-message">No performance data available</p>';
+    renderPerformance() {
+        const el = document.getElementById('performance-metrics');
+        if (!this.currentTicker) {
+            el.innerHTML = '<p class="status-message">No performance data available</p>';
             return;
         }
 
-        const metrics = [
-            { label: 'Total Return', value: `${performance.totalReturn >= 0 ? '+' : ''}${this.formatNumber(performance.totalReturn)}%`, color: performance.totalReturn >= 0 ? 'text-success' : 'text-danger' },
-            { label: 'Volatility (Ann.)', value: `${this.formatNumber(performance.volatility)}%` },
-            { label: 'Highest Close', value: `$${this.formatNumber(performance.highestClose)}` },
-            { label: 'Lowest Close', value: `$${this.formatNumber(performance.lowestClose)}` },
-            { label: 'Avg Volume', value: this.formatLargeNumber(performance.averageVolume) }
-        ];
+        el.innerHTML = '<p class="status-message">Loading returns...</p>';
 
-        document.getElementById('performance-metrics').innerHTML = metrics.map(m => `
-            <div class="metric-row">
-                <span class="metric-label">${m.label}</span>
-                <span class="metric-value ${m.color || ''}">${m.value || 'N/A'}</span>
-            </div>
-        `).join('');
+        const endDate = this.historyData?.endDate || null;
+        const ipoDate = this._ipoDate || null;
+
+        API.getReturns(this.currentTicker, endDate, ipoDate).then(result => {
+            if (!result.returns || result.returns.length === 0) {
+                el.innerHTML = '<p class="status-message">No return data available</p>';
+                return;
+            }
+
+            el.innerHTML = result.returns.map(r => {
+                const sign = r.returnPct >= 0 ? '+' : '';
+                const color = r.returnPct >= 0 ? 'text-success' : 'text-danger';
+                const suffix = r.isAnnualized ? ' ann.' : '';
+                return `
+                    <div class="metric-row">
+                        <span class="metric-label">${r.label}</span>
+                        <span class="metric-value ${color}">${sign}${r.returnPct.toFixed(2)}%<span class="metric-suffix">${suffix}</span></span>
+                    </div>
+                `;
+            }).join('');
+        }).catch(e => {
+            console.warn('Failed to load returns:', e);
+            el.innerHTML = '<p class="status-message">No return data available</p>';
+        });
     },
 
     /**
@@ -2340,7 +2359,7 @@ const App = {
             }).catch(e => console.warn('Failed to reload key metrics:', e));
         } else if (tileId === 'tile-performance') {
             if (this.analysisData && this.analysisData.performance) {
-                this.renderPerformance(this.analysisData.performance);
+                this.renderPerformance();
             }
         } else if (tileId === 'tile-info') {
             API.getStockInfo(this.currentTicker).then(stockInfo => {

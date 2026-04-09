@@ -2052,6 +2052,13 @@ input[type="range"]::-moz-range-thumb {
     color: var(--text-primary);
 }
 
+.metric-suffix {
+    font-size: 0.7rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin-left: 0.125rem;
+}
+
 /* Significant move row */
 .move-row {
     display: flex;
