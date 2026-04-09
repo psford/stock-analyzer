@@ -75,10 +75,6 @@
         "summaryUrl": { "source": "literal", "value": "https://en.wikipedia.org/api/rest_v1/page/summary/" },
         "searchUrl": { "source": "literal", "value": "https://en.wikipedia.org/w/api.php" },
         "description": "Wikipedia API (public, no auth)"
-      },
-      "applicationInsights": {
-        "connectionString": { "source": "env", "key": "APPLICATIONINSIGHTS_CONNECTION_STRING" },
-        "description": "Application Insights connection string for telemetry. Production-only: Application Insights integration is intentionally disabled in dev to reduce cost and log noise. Set APPLICATIONINSIGHTS_CONNECTION_STRING in production App Service to enable cloud telemetry."
       }
     }
   }
