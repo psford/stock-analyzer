@@ -1,6 +1,5 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using StockAnalyzer.Core.Data;
 using StockAnalyzer.Core.Data.Entities;
 using Xunit;
