@@ -4,6 +4,7 @@ using Xunit;
 
 namespace StockAnalyzer.Core.Tests;
 
+[Collection("EndpointRegistry")]
 public class EndpointRegistryTests : IDisposable
 {
     private readonly string _fixturesPath = Path.Combine(
