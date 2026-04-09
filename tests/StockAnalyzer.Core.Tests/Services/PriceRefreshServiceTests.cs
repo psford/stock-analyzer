@@ -3,232 +3,86 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using StockAnalyzer.Core.Data;
 using StockAnalyzer.Core.Data.Entities;
-using StockAnalyzer.Core.Tests.TestHelpers;
 using Xunit;
 
 namespace StockAnalyzer.Core.Tests.Services;
 
 /// <summary>
-/// Tests for PriceRefreshService forward-fill behavior.
-/// Verifies integration with BusinessCalendar and forward-fill constraints.
-/// AC2.1: After Monday refresh, Saturday and Sunday rows exist with Friday's close
-/// AC2.2: After Tuesday refresh following Monday holiday, Saturday/Sunday/Monday rows all filled
-/// AC2.3: Forward-fill never creates rows with EffectiveDate > today
-/// AC2.4: Forward-fill uses BusinessCalendar (tested in CheckAndBackfillRecentDataAsync)
+/// Tests for PriceRefreshService query patterns and business logic.
+/// These tests verify the database queries used by:
+/// - RunDailyRefreshCycleAsync for finding missing business days (AC1.4)
+/// - ForwardFillHolidaysAsync integration point (AC2.1-2.3)
+/// - BusinessCalendar usage for business day detection (AC2.4)
+///
+/// Tests focus on EF Core query logic since the service creates scope-based dependencies
+/// that are difficult to mock in isolation. The query patterns themselves are what matter.
 /// </summary>
 public class PriceRefreshServiceTests
 {
     /// <summary>
     /// Creates an in-memory database context for testing.
+    /// Each test gets a unique database (no cross-test pollution).
     /// </summary>
     private static StockAnalyzerDbContext CreateInMemoryContext()
     {
         var options = new DbContextOptionsBuilder<StockAnalyzerDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .LogTo(Console.WriteLine, LogLevel.Information)
             .Options;
 
         return new StockAnalyzerDbContext(options);
     }
 
     /// <summary>
-    /// AC2.1: Verify forward-fill logic correctly identifies weekend dates that need filling.
-    /// Tests the business logic: non-business dates should be filled with prior business day's close.
+    /// Seeds a source entity and business calendar entries for a date range.
+    /// Removes existence checks (unnecessary with unique InMemory databases).
     /// </summary>
-    [Fact]
-    public async Task ForwardFillLogic_OnWeekend_IdentifiesNonBusinessDaysNeedingFill()
+    private static void SeedBusinessCalendar(StockAnalyzerDbContext context, DateTime startDate, DateTime endDate)
     {
-        // Arrange
-        await using var context = CreateInMemoryContext();
-        await context.Database.EnsureCreatedAsync();
-
-        // Set up scenario: Friday has data, Saturday/Sunday don't
-        var friday = new DateTime(2024, 1, 5); // Friday - business day
-        var saturday = new DateTime(2024, 1, 6); // Weekend
-        var sunday = new DateTime(2024, 1, 7); // Weekend
-        var monday = new DateTime(2024, 1, 8); // Business day
-
-        // Seed BusinessCalendar
-        SeedBusinessCalendar(context, friday, monday);
-
-        // Act - Query for non-business days that need filling
-        var nonBusinessDays = await context.Set<BusinessCalendarEntity>()
-            .AsNoTracking()
-            .Where(bc => bc.SourceId == 1
-                && !bc.IsBusinessDay
-                && bc.EffectiveDate >= friday
-                && bc.EffectiveDate <= monday)
-            .Select(bc => bc.EffectiveDate)
-            .OrderBy(d => d)
-            .ToListAsync();
-
-        // Assert - Saturday and Sunday should be identified
-        nonBusinessDays.Should().HaveCount(2);
-        nonBusinessDays.Should().ContainInOrder(saturday, sunday);
-        nonBusinessDays.Should().NotContain(friday, "Friday is a business day");
-        nonBusinessDays.Should().NotContain(monday, "Monday is a business day");
-    }
-
-    /// <summary>
-    /// AC2.2: Verify BusinessCalendar correctly marks holidays as non-business days.
-    /// Tests that a weekday holiday is distinguished from regular business days.
-    /// </summary>
-    [Fact]
-    public async Task BusinessCalendar_WithHoliday_MarksHolidayAsNonBusiness()
-    {
-        // Arrange
-        await using var context = CreateInMemoryContext();
-        await context.Database.EnsureCreatedAsync();
-
-        var friday = new DateTime(2024, 1, 5); // Business day
-        var monday = new DateTime(2024, 1, 8); // MLK Day (holiday, weekday)
-        var tuesday = new DateTime(2024, 1, 9); // Business day after holiday
-
-        // Seed with Monday marked as holiday (non-business)
-        var source = new SourceEntity { SourceId = 1, SourceShortName = "US", SourceLongName = "US Calendar" };
+        var source = new SourceEntity { SourceId = 1, SourceShortName = "US", SourceLongName = "US Business Calendar" };
         context.Add(source);
 
-        context.Add(new BusinessCalendarEntity
+        var current = startDate;
+        while (current <= endDate)
         {
-            SourceId = 1,
-            EffectiveDate = friday,
-            IsBusinessDay = true,
-            IsHoliday = false
-        });
+            var isBusinessDay = current.DayOfWeek != DayOfWeek.Saturday &&
+                               current.DayOfWeek != DayOfWeek.Sunday;
 
-        context.Add(new BusinessCalendarEntity
-        {
-            SourceId = 1,
-            EffectiveDate = monday,
-            IsBusinessDay = false,
-            IsHoliday = true // Explicitly marked as holiday
-        });
-
-        context.Add(new BusinessCalendarEntity
-        {
-            SourceId = 1,
-            EffectiveDate = tuesday,
-            IsBusinessDay = true,
-            IsHoliday = false
-        });
-
-        await context.SaveChangesAsync();
-
-        // Act - Query for business days in range
-        var businessDays = await context.Set<BusinessCalendarEntity>()
-            .AsNoTracking()
-            .Where(bc => bc.SourceId == 1
-                && bc.IsBusinessDay
-                && bc.EffectiveDate >= friday
-                && bc.EffectiveDate <= tuesday)
-            .Select(bc => bc.EffectiveDate)
-            .OrderBy(d => d)
-            .ToListAsync();
-
-        // Assert - Monday should NOT be in business days (it's a holiday)
-        businessDays.Should().HaveCount(2);
-        businessDays.Should().ContainInOrder(friday, tuesday);
-        businessDays.Should().NotContain(monday, "Monday is marked as a holiday");
-    }
-
-    /// <summary>
-    /// AC2.3: Verify forward-fill respects maxFillDate constraint.
-    /// Tests that the query cap prevents querying future calendar entries.
-    /// </summary>
-    [Fact]
-    public async Task ForwardFillQueryLogic_WithMaxFillDate_CapsFutureFillingAtToday()
-    {
-        // Arrange
-        await using var context = CreateInMemoryContext();
-        await context.Database.EnsureCreatedAsync();
-
-        var today = DateTime.UtcNow.Date;
-        var friday = today.AddDays(-3);
-        var tomorrow = today.AddDays(1);
-        var nextWeek = today.AddDays(7);
-
-        // Seed BusinessCalendar with dates before and after today
-        var source = new SourceEntity { SourceId = 1, SourceShortName = "US", SourceLongName = "US Calendar" };
-        context.Add(source);
-
-        var dates = new[] { friday, today, tomorrow, nextWeek };
-        foreach (var date in dates)
-        {
-            var isBusinessDay = date.DayOfWeek != DayOfWeek.Saturday && date.DayOfWeek != DayOfWeek.Sunday;
             context.Add(new BusinessCalendarEntity
             {
                 SourceId = 1,
-                EffectiveDate = date,
+                EffectiveDate = current,
                 IsBusinessDay = isBusinessDay,
                 IsHoliday = false
             });
+
+            current = current.AddDays(1);
         }
 
-        await context.SaveChangesAsync();
-
-        // Act - Query calendar entries up to today (as RunDailyRefreshCycleAsync does)
-        var calendarEntries = await context.Set<BusinessCalendarEntity>()
-            .AsNoTracking()
-            .Where(bc => bc.SourceId == 1
-                && bc.EffectiveDate >= friday
-                && bc.EffectiveDate <= today) // Cap at today, not beyond
-            .Select(bc => bc.EffectiveDate)
-            .ToListAsync();
-
-        // Assert - Should not include dates after today
-        calendarEntries.Should().NotContain(tomorrow, "Query should cap at maxFillDate=today");
-        calendarEntries.Should().NotContain(nextWeek, "Query should cap at maxFillDate=today");
+        context.SaveChanges();
     }
 
     /// <summary>
-    /// AC2.4: CheckAndBackfillRecentDataAsync uses BusinessCalendar to determine business days
-    /// Verifies that holidays are excluded from the missing days list
+    /// AC1.4: Demonstrates the query pattern used by RunDailyRefreshCycleAsync to identify
+    /// missing business days that need RefreshDateAsync calls.
+    /// Verifies that the business day query correctly identifies dates lacking price data.
     /// </summary>
     [Fact]
-    public async Task CheckAndBackfillRecentDataAsync_WithHoliday_ExcludesHolidayFromMissingDays()
+    public async Task RunDailyRefreshCycleAsync_QueryPattern_IdentifiesMissingBusinessDaysCorrectly()
     {
         // Arrange
         await using var context = CreateInMemoryContext();
         await context.Database.EnsureCreatedAsync();
 
-        // Set up scenario: We have prices through Friday 1/5, but Monday 1/8 is a holiday
         var friday = new DateTime(2024, 1, 5);
-        var saturday = new DateTime(2024, 1, 6);
-        var sunday = new DateTime(2024, 1, 7);
-        var monday = new DateTime(2024, 1, 8); // Holiday
-        var tuesday = new DateTime(2024, 1, 9); // Business day
+        var monday = new DateTime(2024, 1, 8);
+        SeedBusinessCalendar(context, friday, monday);
 
-        // Seed BusinessCalendar with Monday as non-business (holiday)
-        var businessDays = new[]
-        {
-            friday,  // Business day
-            saturday, // Weekend
-            sunday,   // Weekend
-            monday,   // Holiday (not business day)
-            tuesday   // Business day
-        };
-
-        var source = new SourceEntity { SourceId = 1, SourceShortName = "US", SourceLongName = "US Calendar" };
-        context.Add(source);
-
-        foreach (var date in businessDays)
-        {
-            var isBusinessDay = date == friday || date == tuesday;
-            context.Add(new BusinessCalendarEntity
-            {
-                SourceId = 1,
-                EffectiveDate = date,
-                IsBusinessDay = isBusinessDay,
-                IsHoliday = date == monday && !isBusinessDay
-            });
-        }
-
-        // Create security and price through Friday
+        // Add a security and prices for Friday only
         var security = new SecurityMasterEntity
         {
+            SecurityAlias = 1,
             TickerSymbol = "TEST",
-            IssueName = "Test Company",
-            SecurityAlias = 1
+            IssueName = "Test Company"
         };
         context.Add(security);
 
@@ -244,12 +98,230 @@ public class PriceRefreshServiceTests
             Volume = 1000000
         };
         context.Add(fridayPrice);
+        await context.SaveChangesAsync();
+
+        // Act - Simulate RunDailyRefreshCycleAsync's query pattern
+        var today = friday.AddDays(3); // Monday
+        var lookbackStart = friday;
+
+        var businessDays = await context.Set<BusinessCalendarEntity>()
+            .AsNoTracking()
+            .Where(bc => bc.SourceId == 1
+                && bc.IsBusinessDay
+                && bc.EffectiveDate >= lookbackStart
+                && bc.EffectiveDate <= today)
+            .Select(bc => bc.EffectiveDate)
+            .OrderBy(d => d)
+            .ToListAsync();
+
+        var datesWithPrices = await context.Set<PriceEntity>()
+            .AsNoTracking()
+            .Where(p => p.EffectiveDate >= lookbackStart && p.EffectiveDate <= today)
+            .Select(p => p.EffectiveDate)
+            .Distinct()
+            .ToListAsync();
+
+        var datesWithPricesSet = datesWithPrices.ToHashSet();
+        var missingDays = businessDays.Where(d => !datesWithPricesSet.Contains(d)).ToList();
+
+        // Assert
+        businessDays.Should().HaveCount(2, "Friday and Monday are business days");
+        datesWithPrices.Should().HaveCount(1).And.Contain(friday, "Only Friday has prices");
+        missingDays.Should().HaveCount(1).And.Contain(monday, "Monday should be identified as missing, requiring RefreshDateAsync call");
+    }
+
+
+    /// <summary>
+    /// AC2.1: Weekend dates are correctly identified as non-business days.
+    /// Tests the query logic for finding dates to forward-fill.
+    /// </summary>
+    [Fact]
+    public async Task BusinessCalendar_WeekendDates_IdentifiedAsNonBusiness()
+    {
+        // Arrange
+        await using var context = CreateInMemoryContext();
+        await context.Database.EnsureCreatedAsync();
+
+        var friday = new DateTime(2024, 1, 5);
+        var monday = new DateTime(2024, 1, 8);
+        SeedBusinessCalendar(context, friday, monday);
+
+        // Act - Query non-business days (as forward-fill logic does)
+        var nonBusinessDays = await context.Set<BusinessCalendarEntity>()
+            .AsNoTracking()
+            .Where(bc => bc.SourceId == 1
+                && !bc.IsBusinessDay
+                && bc.EffectiveDate >= friday
+                && bc.EffectiveDate <= monday)
+            .Select(bc => bc.EffectiveDate)
+            .OrderBy(d => d)
+            .ToListAsync();
+
+        // Assert
+        nonBusinessDays.Should().HaveCount(2, "Saturday and Sunday are non-business");
+        nonBusinessDays.Should().ContainInOrder(
+            new DateTime(2024, 1, 6), // Saturday
+            new DateTime(2024, 1, 7)  // Sunday
+        );
+    }
+
+    /// <summary>
+    /// AC2.2: Holiday weekdays are marked as non-business in BusinessCalendar.
+    /// Tests that holidays are correctly excluded from "missing business days" calculation.
+    /// </summary>
+    [Fact]
+    public async Task BusinessCalendar_WithHoliday_ExcludesHolidayFromBusinessDaysQuery()
+    {
+        // Arrange
+        await using var context = CreateInMemoryContext();
+        await context.Database.EnsureCreatedAsync();
+
+        var friday = new DateTime(2024, 1, 5);
+        var mlkDay = new DateTime(2024, 1, 15); // MLK Day (Monday holiday)
+        var tuesday = new DateTime(2024, 1, 16);
+
+        var source = new SourceEntity { SourceId = 1, SourceShortName = "US", SourceLongName = "US Calendar" };
+        context.Add(source);
+
+        // Seed calendar with MLK Day marked as non-business
+        context.Add(new BusinessCalendarEntity
+        {
+            SourceId = 1,
+            EffectiveDate = friday,
+            IsBusinessDay = true,
+            IsHoliday = false
+        });
+
+        context.Add(new BusinessCalendarEntity
+        {
+            SourceId = 1,
+            EffectiveDate = mlkDay,
+            IsBusinessDay = false, // Holiday is not a business day
+            IsHoliday = true
+        });
+
+        context.Add(new BusinessCalendarEntity
+        {
+            SourceId = 1,
+            EffectiveDate = tuesday,
+            IsBusinessDay = true,
+            IsHoliday = false
+        });
 
         await context.SaveChangesAsync();
 
-        // Act - Query for missing business days between Friday and Tuesday
-        // This mimics what CheckAndBackfillRecentDataAsync does
-        var missingDays = await context.Set<BusinessCalendarEntity>()
+        // Act - Query business days (as missing day detection does)
+        var businessDays = await context.Set<BusinessCalendarEntity>()
+            .AsNoTracking()
+            .Where(bc => bc.SourceId == 1
+                && bc.IsBusinessDay
+                && bc.EffectiveDate >= friday
+                && bc.EffectiveDate <= tuesday)
+            .Select(bc => bc.EffectiveDate)
+            .OrderBy(d => d)
+            .ToListAsync();
+
+        // Assert
+        businessDays.Should().HaveCount(2, "Friday and Tuesday are business days, MLK Day is not");
+        businessDays.Should().ContainInOrder(friday, tuesday);
+        businessDays.Should().NotContain(mlkDay, "MLK Day is marked non-business");
+    }
+
+    /// <summary>
+    /// AC2.3: Forward-fill query respects maxFillDate constraint.
+    /// Tests that queries cap at today and never include future dates.
+    /// </summary>
+    [Fact]
+    public async Task ForwardFillQuery_WithMaxFillDateCap_NeverIncludesFutureDates()
+    {
+        // Arrange
+        await using var context = CreateInMemoryContext();
+        await context.Database.EnsureCreatedAsync();
+
+        var today = DateTime.UtcNow.Date;
+        var tomorrow = today.AddDays(1);
+        var nextWeek = today.AddDays(7);
+
+        var source = new SourceEntity { SourceId = 1, SourceShortName = "US", SourceLongName = "US Calendar" };
+        context.Add(source);
+
+        var dates = new[] { today.AddDays(-3), today, tomorrow, nextWeek };
+        foreach (var date in dates)
+        {
+            context.Add(new BusinessCalendarEntity
+            {
+                SourceId = 1,
+                EffectiveDate = date,
+                IsBusinessDay = date.DayOfWeek != DayOfWeek.Saturday && date.DayOfWeek != DayOfWeek.Sunday,
+                IsHoliday = false
+            });
+        }
+
+        await context.SaveChangesAsync();
+
+        // Act - Query with maxFillDate cap (as RunDailyRefreshCycleAsync does)
+        var datesInRange = await context.Set<BusinessCalendarEntity>()
+            .AsNoTracking()
+            .Where(bc => bc.SourceId == 1
+                && bc.EffectiveDate >= today.AddDays(-3)
+                && bc.EffectiveDate <= today) // Capped at today
+            .Select(bc => bc.EffectiveDate)
+            .ToListAsync();
+
+        // Assert
+        datesInRange.Should().NotContain(tomorrow, "Tomorrow should not be included");
+        datesInRange.Should().NotContain(nextWeek, "Next week should not be included");
+        datesInRange.Should().Contain(today, "Today should be included");
+    }
+
+    /// <summary>
+    /// AC2.2: Verify that holiday weekdays are correctly excluded from business day queries.
+    /// This demonstrates the query pattern used by CheckAndBackfillRecentDataAsync to exclude holidays.
+    /// </summary>
+    [Fact]
+    public async Task CheckAndBackfillRecentDataAsync_QueryPattern_ExcludesHolidaysFromMissingDays()
+    {
+        // Arrange
+        await using var context = CreateInMemoryContext();
+        await context.Database.EnsureCreatedAsync();
+
+        var friday = new DateTime(2024, 1, 5);
+        var mlkDay = new DateTime(2024, 1, 15); // MLK Day (Monday holiday)
+        var tuesday = new DateTime(2024, 1, 16);
+
+        // Create source
+        var source = new SourceEntity { SourceId = 1, SourceShortName = "US", SourceLongName = "US Calendar" };
+        context.Add(source);
+
+        // Seed calendar with MLK Day marked as non-business
+        context.Add(new BusinessCalendarEntity
+        {
+            SourceId = 1,
+            EffectiveDate = friday,
+            IsBusinessDay = true,
+            IsHoliday = false
+        });
+
+        context.Add(new BusinessCalendarEntity
+        {
+            SourceId = 1,
+            EffectiveDate = mlkDay,
+            IsBusinessDay = false, // Holiday is not a business day
+            IsHoliday = true
+        });
+
+        context.Add(new BusinessCalendarEntity
+        {
+            SourceId = 1,
+            EffectiveDate = tuesday,
+            IsBusinessDay = true,
+            IsHoliday = false
+        });
+
+        await context.SaveChangesAsync();
+
+        // Act - Query for business days (as missing day detection does)
+        var businessDays = await context.Set<BusinessCalendarEntity>()
             .AsNoTracking()
             .Where(bc => bc.SourceId == 1
                 && bc.IsBusinessDay
@@ -260,51 +332,8 @@ public class PriceRefreshServiceTests
             .ToListAsync();
 
         // Assert
-        missingDays.Should().HaveCount(1, "Only Tuesday should be missing (Monday is a holiday)");
-        missingDays[0].Should().Be(tuesday);
-        missingDays.Should().NotContain(monday, "Monday is a holiday and should not be included");
-    }
-
-    /// <summary>
-    /// Seeds the BusinessCalendar with realistic business days and weekends.
-    /// </summary>
-    private static void SeedBusinessCalendar(StockAnalyzerDbContext context, DateTime startDate, DateTime endDate)
-    {
-        var source = new SourceEntity { SourceId = 1, SourceShortName = "US", SourceLongName = "US Business Calendar" };
-        if (!context.Set<SourceEntity>().Any())
-        {
-            context.Add(source);
-        }
-
-        var current = startDate;
-        while (current <= endDate)
-        {
-            var isBusinessDay = current.DayOfWeek != DayOfWeek.Saturday &&
-                               current.DayOfWeek != DayOfWeek.Sunday;
-
-            if (!context.Set<BusinessCalendarEntity>().Any(bc => bc.EffectiveDate == current && bc.SourceId == 1))
-            {
-                context.Add(new BusinessCalendarEntity
-                {
-                    SourceId = 1,
-                    EffectiveDate = current,
-                    IsBusinessDay = isBusinessDay,
-                    IsHoliday = false
-                });
-            }
-
-            current = current.AddDays(1);
-        }
-
-        try
-        {
-            context.SaveChanges();
-        }
-        catch (Exception ex)
-        {
-            // Ignore duplicate key errors
-            if (!ex.Message.Contains("duplicate") && !ex.Message.Contains("Duplicate"))
-                throw;
-        }
+        businessDays.Should().HaveCount(1, "Only Tuesday is a business day (MLK Day is not)");
+        businessDays.Should().Contain(tuesday);
+        businessDays.Should().NotContain(mlkDay, "MLK Day is marked non-business and excluded");
     }
 }
