@@ -101,12 +101,14 @@ public class PriceRefreshService : BackgroundService
     /// <summary>
     /// Check the most recent price date and backfill any missing recent days.
     /// Called on startup to ensure we're up to date.
+    /// Uses BusinessCalendar to determine business days (accounts for holidays).
     /// </summary>
     private async Task CheckAndBackfillRecentDataAsync(CancellationToken ct)
     {
         using var scope = _serviceProvider.CreateScope();
         var priceRepo = scope.ServiceProvider.GetRequiredService<IPriceRepository>();
         var securityRepo = scope.ServiceProvider.GetRequiredService<ISecurityMasterRepository>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<StockAnalyzerDbContext>();
 
         // Get total price count to check if we have any data
         var totalPrices = await priceRepo.GetTotalCountAsync();
@@ -135,7 +137,22 @@ public class PriceRefreshService : BackgroundService
         }
 
         var maxDate = latestPrices.Values.Max(p => p.EffectiveDate);
-        var yesterday = GetLastTradingDay(DateTime.UtcNow.Date);
+
+        // Get most recent business day from calendar (accounts for holidays)
+        var yesterday = await dbContext.BusinessCalendar
+            .AsNoTracking()
+            .Where(bc => bc.SourceId == 1
+                && bc.IsBusinessDay
+                && bc.EffectiveDate < DateTime.UtcNow.Date)
+            .OrderByDescending(bc => bc.EffectiveDate)
+            .Select(bc => bc.EffectiveDate)
+            .FirstOrDefaultAsync(ct);
+
+        if (yesterday == default)
+        {
+            _logger.LogWarning("No business days found in BusinessCalendar");
+            return;
+        }
 
         _logger.LogInformation("Most recent price date: {MaxDate}, last trading day: {Yesterday}",
             maxDate.ToString("yyyy-MM-dd"), yesterday.ToString("yyyy-MM-dd"));
@@ -143,7 +160,17 @@ public class PriceRefreshService : BackgroundService
         // If we're missing recent days, backfill them
         if (maxDate < yesterday)
         {
-            var missingDays = GetTradingDaysBetween(maxDate.AddDays(1), yesterday);
+            // Use BusinessCalendar instead of hardcoded weekday logic
+            var missingDays = await dbContext.BusinessCalendar
+                .AsNoTracking()
+                .Where(bc => bc.SourceId == 1
+                    && bc.IsBusinessDay
+                    && bc.EffectiveDate > maxDate
+                    && bc.EffectiveDate <= yesterday)
+                .Select(bc => bc.EffectiveDate)
+                .OrderBy(d => d)
+                .ToListAsync(ct);
+
             if (missingDays.Count > 0)
             {
                 _logger.LogInformation("Found {Count} missing trading days to backfill", missingDays.Count);
