@@ -9,7 +9,13 @@ namespace StockAnalyzer.Core.Tests;
 /// Unlike EndpointRegistryTests which uses a test fixture, this test class points at the real endpoints.json
 /// and verifies that ValidateAll() passes when all required environment variables are set with stub values.
 /// This ensures the real endpoints.json is valid and complete.
+///
+/// Shares the "EndpointRegistry" xUnit collection with EndpointRegistryTests so the two classes serialize:
+/// both mutate shared static state (EndpointRegistry._doc via Reset(), OverrideFilePath, and env vars).
+/// Running them in parallel caused intermittent ObjectDisposedException when this class's ctor called
+/// Reset() mid-execution of a test in the sibling class.
 /// </summary>
+[Collection("EndpointRegistry")]
 public class EndpointRegistryRealContractTests : IDisposable
 {
     private readonly string? _originalDotnetEnv;
