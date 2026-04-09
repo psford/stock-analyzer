@@ -37,6 +37,10 @@ try
     // Use Serilog for logging
     builder.Host.UseSerilog();
 
+    // Application Insights telemetry — SDK auto-discovers connection string from
+    // APPLICATIONINSIGHTS_CONNECTION_STRING env var (set by Bicep in prod)
+    builder.Services.AddApplicationInsightsTelemetry();
+
     // Add services to the container
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen();

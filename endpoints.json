@@ -37,6 +37,10 @@
         "summaryUrl": { "source": "literal", "value": "https://en.wikipedia.org/api/rest_v1/page/summary/" },
         "searchUrl": { "source": "literal", "value": "https://en.wikipedia.org/w/api.php" },
         "description": "Wikipedia API (public, no auth)"
+      },
+      "applicationInsights": {
+        "connectionString": { "source": "env", "key": "APPLICATIONINSIGHTS_CONNECTION_STRING" },
+        "description": "Application Insights connection string for telemetry"
       }
     },
     "prod": {
@@ -75,6 +79,10 @@
         "summaryUrl": { "source": "literal", "value": "https://en.wikipedia.org/api/rest_v1/page/summary/" },
         "searchUrl": { "source": "literal", "value": "https://en.wikipedia.org/w/api.php" },
         "description": "Wikipedia API (public, no auth)"
+      },
+      "applicationInsights": {
+        "connectionString": { "source": "env", "key": "APPLICATIONINSIGHTS_CONNECTION_STRING" },
+        "description": "Application Insights connection string for telemetry"
       }
     }
   }
