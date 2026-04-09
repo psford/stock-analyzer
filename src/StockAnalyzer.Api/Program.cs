@@ -1528,6 +1528,25 @@ try
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status500InternalServerError);
 
+    // POST /api/admin/prices/backfill-gaps - Gap-aware backfill for identified missing dates
+    app.MapPost("/api/admin/prices/backfill-gaps", async (
+        PriceRefreshService? refreshService,
+        int? maxConcurrency,
+        CancellationToken ct) =>
+    {
+        if (refreshService == null)
+            return Results.Problem("PriceRefreshService not available (EODHD not configured?)");
+
+        var result = await refreshService.BackfillGapsAsync(
+            maxConcurrency ?? 3, ct: ct);
+
+        return Results.Ok(result);
+    })
+    .WithName("BackfillGaps")
+    .WithOpenApi()
+    .Produces(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status500InternalServerError);
+
     // POST /api/admin/prices/backfill-coverage - Backfill SecurityPriceCoverage from existing Prices data
     // One-time bootstrap operation to populate coverage tables from full Prices scan.
     // Safe to re-run (MERGE is idempotent). Extended timeout for full table scan.
