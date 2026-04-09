@@ -1,7 +1,9 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using StockAnalyzer.Core.Data;
 using StockAnalyzer.Core.Data.Entities;
 using StockAnalyzer.Core.Helpers;
 
@@ -81,15 +83,8 @@ public class PriceRefreshService : BackgroundService
 
                 await Task.Delay(delay, stoppingToken);
 
-                // Skip weekends (no market data)
-                if (targetTime.DayOfWeek == DayOfWeek.Saturday ||
-                    targetTime.DayOfWeek == DayOfWeek.Sunday)
-                {
-                    _logger.LogDebug("Skipping price refresh on weekend");
-                    continue;
-                }
-
-                await RefreshPreviousDayAsync(stoppingToken);
+                // Run every day — lookback + forward-fill handles weekends/holidays
+                await RunDailyRefreshCycleAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -167,9 +162,73 @@ public class PriceRefreshService : BackgroundService
     }
 
     /// <summary>
+    /// Run the full daily refresh cycle: lookback for missed business days, fetch, forward-fill.
+    /// Runs every day including weekends — uses BusinessCalendar to determine which dates need data.
+    /// </summary>
+    private async Task RunDailyRefreshCycleAsync(CancellationToken ct)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var priceRepo = scope.ServiceProvider.GetRequiredService<IPriceRepository>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<StockAnalyzerDbContext>();
+
+        var today = DateTime.UtcNow.Date;
+        var lookbackStart = today.AddDays(-14);
+
+        // 1. Get business days in lookback window from BusinessCalendar (SourceId=1 = US market)
+        var businessDays = await dbContext.BusinessCalendar
+            .AsNoTracking()
+            .Where(bc => bc.SourceId == 1
+                && bc.IsBusinessDay
+                && bc.EffectiveDate >= lookbackStart
+                && bc.EffectiveDate <= today)
+            .Select(bc => bc.EffectiveDate)
+            .OrderBy(d => d)
+            .ToListAsync(ct);
+
+        // 2. Check which business days already have price data
+        // GetDistinctDatesAsync returns Task<List<DateTime>> — compatible with BusinessCalendar DateTime values
+        var datesWithPrices = await priceRepo.GetDistinctDatesAsync(lookbackStart, today);
+        var datesWithPricesSet = datesWithPrices.ToHashSet();
+
+        var missingDays = businessDays.Where(d => !datesWithPricesSet.Contains(d)).ToList();
+
+        _logger.LogInformation(
+            "Daily refresh cycle: {Total} business days in 14-day lookback, {Missing} missing prices",
+            businessDays.Count, missingDays.Count);
+
+        // 3. Fetch missing days via EODHD bulk API
+        var totalInserted = 0;
+        foreach (var date in missingDays)
+        {
+            if (ct.IsCancellationRequested) break;
+            var result = await RefreshDateAsync(date, ct);
+            totalInserted += result.RecordsInserted;
+
+            if (result.RecordsFetched == 0 && date >= today.AddDays(-3))
+            {
+                _logger.LogWarning(
+                    "No EODHD data for recent business day {Date}, will retry next cycle",
+                    date.ToString("yyyy-MM-dd"));
+            }
+        }
+
+        // 4. Forward-fill non-business days (weekends + holidays) up to today
+        // This is intentionally called every day including weekends — ForwardFillHolidaysAsync is
+        // idempotent (skips dates that already have data) and the date cap prevents future fills.
+        // Running daily ensures any newly-inserted business day data propagates forward-fills promptly.
+        var fillResult = await priceRepo.ForwardFillHolidaysAsync(maxFillDate: today);
+
+        _logger.LogInformation(
+            "Daily refresh cycle complete: {MissingDays} days backfilled, {Inserted} records inserted, {Filled} forward-fill records",
+            missingDays.Count, totalInserted, fillResult.TotalRecordsInserted);
+    }
+
+    /// <summary>
     /// Refresh prices for the previous trading day.
     /// Called daily by the background loop.
+    /// OBSOLETE: Use RunDailyRefreshCycleAsync instead.
     /// </summary>
+    [Obsolete("Use RunDailyRefreshCycleAsync instead")]
     private async Task RefreshPreviousDayAsync(CancellationToken ct)
     {
         var yesterday = GetLastTradingDay(DateTime.UtcNow.Date);
@@ -205,7 +264,11 @@ public class PriceRefreshService : BackgroundService
 
         if (bulkData.Count == 0)
         {
-            _logger.LogWarning("No bulk data returned for {Date}", date.ToString("yyyy-MM-dd"));
+            _logger.LogWarning(
+                "No bulk data returned for {Date}. EODHD may be unavailable or date may be a holiday. " +
+                "Service will retry on next cycle.",
+                date.ToString("yyyy-MM-dd"));
+            result.RecordsFetched = 0;
             return result;
         }
 
@@ -245,6 +308,14 @@ public class PriceRefreshService : BackgroundService
             _logger.LogInformation("Inserted {Count} prices for {Date}",
                 result.RecordsInserted, date.ToString("yyyy-MM-dd"));
         }
+
+        _logger.LogInformation(
+            "Refresh summary for {Date}: Fetched={Fetched}, Matched={Matched} ({MatchRate:P0}), Inserted={Inserted}",
+            date.ToString("yyyy-MM-dd"),
+            result.RecordsFetched,
+            result.RecordsMatched,
+            result.RecordsFetched > 0 ? (double)result.RecordsMatched / result.RecordsFetched : 0,
+            result.RecordsInserted);
 
         _lastRefresh = DateTime.UtcNow;
         return result;
