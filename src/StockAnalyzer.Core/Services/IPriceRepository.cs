@@ -121,8 +121,9 @@ public interface IPriceRepository
     /// Copies the prior trading day's close price as OHLC with volume=0.
     /// </summary>
     /// <param name="limit">Optional limit on number of days to process (for batching). Null = all.</param>
+    /// <param name="maxFillDate">Maximum date to fill up to. Defaults to today (DateTime.UtcNow.Date). Never fills future dates.</param>
     /// <returns>Result with count of holidays and records processed.</returns>
-    Task<HolidayForwardFillResult> ForwardFillHolidaysAsync(int? limit = null);
+    Task<HolidayForwardFillResult> ForwardFillHolidaysAsync(int? limit = null, DateTime? maxFillDate = null);
 }
 
 /// <summary>
