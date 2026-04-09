@@ -123,5 +123,28 @@ public class PriceInsertValidationTests
         // Assert
         result.Should().Be(0);
     }
+
+    [Fact]
+    public async Task BulkInsertAsync_AllFutureDated_ReturnsZero()
+    {
+        // Arrange: All records have EffectiveDate > DateTime.UtcNow.Date
+        // This exercises the future-date guard without requiring SQL Server
+        using var context = CreateInMemoryContext();
+        var repo = new SqlPriceRepository(context, CreateNoopLogger());
+        var futureDate1 = DateTime.UtcNow.AddDays(1);
+        var futureDate2 = DateTime.UtcNow.AddDays(5);
+
+        var prices = new List<PriceCreateDto>
+        {
+            CreatePrice(1, futureDate1),
+            CreatePrice(1, futureDate2)
+        };
+
+        // Act
+        var result = await repo.BulkInsertAsync(prices);
+
+        // Assert
+        result.Should().Be(0, "BulkInsertAsync should filter out all future-dated records");
+    }
 }
 

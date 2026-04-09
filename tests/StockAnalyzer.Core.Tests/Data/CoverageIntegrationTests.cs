@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using StockAnalyzer.Core.Data;
 using StockAnalyzer.Core.Data.Entities;
 using StockAnalyzer.Core.Services;
+using StockAnalyzer.Core.Tests.TestHelpers;
 using System.Data;
 using Xunit;
 
@@ -542,21 +543,48 @@ public class CoverageIntegrationTests
                 SeedBusinessCalendar(context, startDate, endDate);
                 await context.SaveChangesAsync();
 
-                // Insert prices for all business days including near-future ones
+                // Insert prices for all business days up to today via BulkInsertAsync
+                // (which filters out future dates)
                 var logger = new NoopLogger<SqlPriceRepository>();
                 var repo = new SqlPriceRepository(context, logger);
 
-                var prices = new List<PriceCreateDto>();
-                for (var date = startDate.Date; date <= endDate.Date; date = date.AddDays(1))
+                var pricesUpToday = new List<PriceCreateDto>();
+                for (var date = startDate.Date; date <= today; date = date.AddDays(1))
                 {
                     // Only insert for business days
                     if (date.DayOfWeek != DayOfWeek.Saturday && date.DayOfWeek != DayOfWeek.Sunday)
                     {
-                        prices.Add(CreatePrice(testSecurityAlias, date));
+                        pricesUpToday.Add(CreatePrice(testSecurityAlias, date));
                     }
                 }
 
-                await repo.BulkInsertAsync(prices);
+                await repo.BulkInsertAsync(pricesUpToday);
+
+                // Insert future business day prices directly via context (bypassing BulkInsertAsync filtering)
+                // to test that ForwardFillHolidaysAsync respects maxFillDate and doesn't fill them
+                var futurePrices = new List<PriceEntity>();
+                for (var date = today.AddDays(1); date <= endDate.Date; date = date.AddDays(1))
+                {
+                    // Only insert for business days
+                    if (date.DayOfWeek != DayOfWeek.Saturday && date.DayOfWeek != DayOfWeek.Sunday)
+                    {
+                        futurePrices.Add(new PriceEntity
+                        {
+                            SecurityAlias = testSecurityAlias,
+                            EffectiveDate = date,
+                            Open = 100m,
+                            High = 105m,
+                            Low = 99m,
+                            Close = 102m,
+                            AdjustedClose = null,
+                            Volume = null,
+                            Volatility = null
+                        });
+                    }
+                }
+
+                context.Prices.AddRange(futurePrices);
+                await context.SaveChangesAsync();
             }
 
             // Act: Call ForwardFillHolidaysAsync without specifying maxFillDate (should default to today)
@@ -762,23 +790,5 @@ public class CoverageIntegrationTests
             DELETE FROM data.Prices WHERE SecurityAlias = {securityAlias};
             DELETE FROM data.SecurityMaster WHERE SecurityAlias = {securityAlias};
         ");
-    }
-}
-
-/// <summary>
-/// Minimal logger implementation for testing (no-op).
-/// </summary>
-internal class NoopLogger<T> : Microsoft.Extensions.Logging.ILogger<T>
-{
-    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-    public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => false;
-    public void Log<TState>(
-        Microsoft.Extensions.Logging.LogLevel logLevel,
-        Microsoft.Extensions.Logging.EventId eventId,
-        TState state,
-        Exception? exception,
-        Func<TState, Exception?, string> formatter)
-    {
-        // No-op
     }
 }
