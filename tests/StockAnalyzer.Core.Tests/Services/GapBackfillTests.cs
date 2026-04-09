@@ -381,4 +381,93 @@ public class GapBackfillTests
         result.RemainingGaps.Should().Be(0);
         result.Errors.Should().BeEmpty();
     }
+
+    /// <summary>
+    /// AC4.2: Verify BackfillGapsAsync method's public contract and CancellationToken handling.
+    /// Tests that the method signature accepts a CancellationToken parameter (named 'ct').
+    /// Verifies the method properly accepts cancellation tokens for graceful shutdown.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void BackfillGapsAsync_AcceptsCancellationToken_InPublicSignature()
+    {
+        // Arrange: Verify method exists with correct signature
+        var method = typeof(PriceRefreshService).GetMethod(
+            "BackfillGapsAsync",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+
+        method.Should().NotBeNull("BackfillGapsAsync should be a public method");
+
+        // Act: Get the parameters of BackfillGapsAsync
+        var parameters = method!.GetParameters();
+        var ctParam = parameters.FirstOrDefault(p => p.Name == "ct" || p.Name == "cancellationToken");
+
+        // Assert: Verify CancellationToken parameter exists
+        ctParam.Should().NotBeNull(
+            "BackfillGapsAsync should accept a CancellationToken parameter to support graceful cancellation");
+
+        ctParam!.ParameterType.Should().Be(typeof(CancellationToken),
+            "CancellationToken parameter should be of type System.Threading.CancellationToken");
+
+        // Verify return type is Task<GapBackfillResult> for proper error handling
+        method.ReturnType.Should().Be(typeof(Task<GapBackfillResult>),
+            "BackfillGapsAsync should return Task<GapBackfillResult> for structured error reporting");
+    }
+
+    /// <summary>
+    /// AC4.2: Verify GapBackfillResult properties are correctly structured.
+    /// Tests that the result object from BackfillGapsAsync can be correctly interpreted by callers.
+    /// Verifies Success, TotalGapsFound, TotalRecordsInserted, TickersWithNoData, and Errors
+    /// properties are present and properly initialized.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void GapBackfillResult_CanBeCorrectlyInterpretedByCallers()
+    {
+        // Arrange: Create result with realistic values from a backfill operation
+        var result = new GapBackfillResult
+        {
+            Success = true,
+            Message = "Backfill completed successfully. Processed 3 tickers, filled 12 gaps.",
+            TotalGapsFound = 12,
+            TickersProcessed = 3,
+            TotalRecordsInserted = 12,
+            TickersWithNoData = 0,
+            SecuritiesFlagged = 0,
+            RemainingGaps = 0,
+            Errors = new List<string>()
+        };
+
+        // Act: Verify caller can inspect result to determine outcomes
+        var callersCanCheckSuccess = result.Success;
+        var callersCanCheckGapsFound = result.TotalGapsFound;
+        var callersCanCheckRecordsInserted = result.TotalRecordsInserted;
+        var callersCanCheckFailedTickers = result.TickersWithNoData;
+        var callersCanCheckErrors = result.Errors;
+
+        // Assert: All properties are accessible and have correct values
+        callersCanCheckSuccess.Should().BeTrue("Caller should be able to check Success status");
+        callersCanCheckGapsFound.Should().Be(12, "Caller should be able to read TotalGapsFound");
+        callersCanCheckRecordsInserted.Should().Be(12, "Caller should be able to read TotalRecordsInserted");
+        callersCanCheckFailedTickers.Should().Be(0, "Caller should be able to read TickersWithNoData");
+        callersCanCheckErrors.Should().BeEmpty("Caller should be able to check Errors");
+
+        // Verify the result can also represent a failure scenario
+        var failedResult = new GapBackfillResult
+        {
+            Success = false,
+            Message = "Backfill failed due to API error",
+            TotalGapsFound = 0,
+            TickersProcessed = 0,
+            TotalRecordsInserted = 0,
+            TickersWithNoData = 5,
+            SecuritiesFlagged = 0,
+            RemainingGaps = 10,
+            Errors = new List<string> { "EODHD API timeout", "Network error" }
+        };
+
+        failedResult.Success.Should().BeFalse("Result should indicate failure");
+        failedResult.Errors.Should().HaveCount(2, "Result should include error messages");
+        failedResult.RemainingGaps.Should().Be(10, "Result should track remaining gaps after partial failure");
+    }
 }

@@ -786,6 +786,142 @@ public class CoverageIntegrationTests
         }
     }
 
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task ForwardFillHolidaysAsync_CreatesForwardFillRowsWithOhlcEqualCloseAndVolumeZero()
+    {
+        // Skip if SQL Express unavailable (matching existing pattern in the file)
+        if (!IsSqlServerAvailable())
+            return;
+
+        int testSecurityAlias = 0;
+
+        try
+        {
+            // Arrange: Create security via raw SQL with auto-generated alias
+            var friday = new DateTime(2024, 1, 5);
+            var fridayClose = 102.50m; // Known Friday close value
+            var saturday = new DateTime(2024, 1, 6);
+            var sunday = new DateTime(2024, 1, 7);
+
+            await using (var context = CreateContext())
+            {
+                // Insert test security and capture auto-generated alias
+                var connection = context.Database.GetDbConnection();
+                var connectionWasOpen = connection.State == System.Data.ConnectionState.Open;
+                if (!connectionWasOpen)
+                    await connection.OpenAsync();
+
+                try
+                {
+                    using var cmd = connection.CreateCommand();
+                    cmd.CommandText = @"
+                        INSERT INTO data.SecurityMaster (TickerSymbol, IssueName, Isin, CreatedAt, UpdatedAt)
+                        OUTPUT inserted.SecurityAlias
+                        VALUES ('FFILL_OHLC_' + CAST(ABS(CHECKSUM(NEWID())) AS NVARCHAR(10)), 'Forward Fill OHLC Test', 'US0000000020', GETUTCDATE(), GETUTCDATE())";
+                    cmd.CommandTimeout = 30;
+
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    if (await reader.ReadAsync())
+                        testSecurityAlias = reader.GetInt32(0);
+                }
+                finally
+                {
+                    if (!connectionWasOpen && connection.State == System.Data.ConnectionState.Open)
+                        await connection.CloseAsync();
+                }
+
+                // Seed business calendar for Friday through Sunday
+                SeedBusinessCalendar(context, friday, sunday);
+                await context.SaveChangesAsync();
+
+                // Insert Friday price with known Close value
+                var logger = new NoopLogger<SqlPriceRepository>();
+                var repo = new SqlPriceRepository(context, logger);
+
+                var fridayPrice = new List<PriceCreateDto>
+                {
+                    new PriceCreateDto
+                    {
+                        SecurityAlias = testSecurityAlias,
+                        EffectiveDate = friday,
+                        Open = 100.00m,
+                        High = 105.00m,
+                        Low = 99.00m,
+                        Close = fridayClose,
+                        AdjustedClose = fridayClose,
+                        Volume = 2500000L
+                    }
+                };
+
+                await repo.BulkInsertAsync(fridayPrice);
+            }
+
+            // Act: Call ForwardFillHolidaysAsync to fill Saturday and Sunday
+            await using (var context = CreateContext())
+            {
+                var logger = new NoopLogger<SqlPriceRepository>();
+                var repo = new SqlPriceRepository(context, logger);
+
+                // Manually mark Saturday and Sunday as non-business days (holidays/weekends)
+                // so ForwardFillHolidaysAsync will fill them
+                var satEntry = await context.BusinessCalendar
+                    .FirstOrDefaultAsync(bc => bc.EffectiveDate == saturday && bc.SourceId == 1);
+                if (satEntry != null)
+                {
+                    satEntry.IsBusinessDay = false; // Mark as non-business
+                    context.BusinessCalendar.Update(satEntry);
+                }
+
+                var sunEntry = await context.BusinessCalendar
+                    .FirstOrDefaultAsync(bc => bc.EffectiveDate == sunday && bc.SourceId == 1);
+                if (sunEntry != null)
+                {
+                    sunEntry.IsBusinessDay = false; // Mark as non-business
+                    context.BusinessCalendar.Update(sunEntry);
+                }
+
+                await context.SaveChangesAsync();
+
+                var result = await repo.ForwardFillHolidaysAsync();
+
+                // Assert: Forward-fill should succeed
+                result.Success.Should().BeTrue("ForwardFillHolidaysAsync should complete successfully");
+            }
+
+            // Assert: Verify Saturday and Sunday rows were created with correct OHLCV values
+            await using (var context = CreateContext())
+            {
+                // Check Saturday forward-filled row
+                var saturdayPrice = await context.Prices
+                    .FirstOrDefaultAsync(p => p.SecurityAlias == testSecurityAlias && p.EffectiveDate == saturday);
+
+                saturdayPrice.Should().NotBeNull("Saturday should have forward-filled price row");
+                saturdayPrice!.Open.Should().Be(fridayClose, "Saturday Open should equal Friday's Close");
+                saturdayPrice.High.Should().Be(fridayClose, "Saturday High should equal Friday's Close");
+                saturdayPrice.Low.Should().Be(fridayClose, "Saturday Low should equal Friday's Close");
+                saturdayPrice.Close.Should().Be(fridayClose, "Saturday Close should equal Friday's Close");
+                saturdayPrice.Volume.Should().Be(0, "Saturday Volume should be 0 for forward-filled row");
+
+                // Check Sunday forward-filled row
+                var sundayPrice = await context.Prices
+                    .FirstOrDefaultAsync(p => p.SecurityAlias == testSecurityAlias && p.EffectiveDate == sunday);
+
+                sundayPrice.Should().NotBeNull("Sunday should have forward-filled price row");
+                sundayPrice!.Open.Should().Be(fridayClose, "Sunday Open should equal Friday's Close");
+                sundayPrice.High.Should().Be(fridayClose, "Sunday High should equal Friday's Close");
+                sundayPrice.Low.Should().Be(fridayClose, "Sunday Low should equal Friday's Close");
+                sundayPrice.Close.Should().Be(fridayClose, "Sunday Close should equal Friday's Close");
+                sundayPrice.Volume.Should().Be(0, "Sunday Volume should be 0 for forward-filled row");
+            }
+        }
+        finally
+        {
+            if (testSecurityAlias > 0)
+                await CleanupSecurityData(testSecurityAlias);
+        }
+    }
+
     private static async Task CleanupSecurityData(int securityAlias)
     {
         await using var context = CreateContext();

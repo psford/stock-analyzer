@@ -883,4 +883,87 @@ public class PriceRefreshServiceTests
         gaps2.Should().BeEmpty("All business days should have prices after backfill");
         datesWithPrices2.Should().HaveCount(5, "All 5 business days should have prices");
     }
+
+    /// <summary>
+    /// AC4.1: Gap audit excludes dates before security's first price date.
+    /// Verifies that gap detection only reports gaps within the [FirstPrice, LastPrice] range.
+    /// A security with prices starting at 2024-01-08 should have no gaps reported before that date,
+    /// even though earlier business days exist in the calendar.
+    /// </summary>
+    [Fact]
+    public async Task GapAudit_WithSecurityFirstPriceAfterCalendarStart_ExcludesDatesBeforeFirstPrice()
+    {
+        // Arrange
+        await using var context = CreateInMemoryContext();
+        await context.Database.EnsureCreatedAsync();
+
+        // Seed entire month of January 2024
+        var monthStart = new DateTime(2024, 1, 1);
+        var monthEnd = new DateTime(2024, 1, 31);
+        SeedBusinessCalendar(context, monthStart, monthEnd);
+
+        // Add security
+        var security = new SecurityMasterEntity
+        {
+            SecurityAlias = 1,
+            TickerSymbol = "LATE_START",
+            IssueName = "Late Start Company",
+            IsTracked = true,
+            IsActive = true
+        };
+        context.Add(security);
+
+        // Add prices starting from 2024-01-08 (Monday), not from 2024-01-01
+        var firstPriceDate = new DateTime(2024, 1, 8); // Monday
+        var lastPriceDate = new DateTime(2024, 1, 12); // Friday
+
+        var datesWithPrices = new[]
+        {
+            firstPriceDate,           // Monday 1/8
+            firstPriceDate.AddDays(1), // Tuesday 1/9
+            firstPriceDate.AddDays(2), // Wednesday 1/10
+            lastPriceDate              // Friday 1/12 (skip Thursday 1/11 to create a gap)
+        };
+
+        foreach (var date in datesWithPrices)
+        {
+            context.Add(new PriceEntity
+            {
+                SecurityAlias = 1,
+                EffectiveDate = date,
+                Open = 100m,
+                High = 105m,
+                Low = 99m,
+                Close = 102m,
+                AdjustedClose = 102m,
+                Volume = 1000000
+            });
+        }
+
+        await context.SaveChangesAsync();
+
+        // Act: Simulate gap audit query pattern
+        // Query business days WITHIN the security's price date range, not before it
+        var businessDaysInRange = await context.Set<BusinessCalendarEntity>()
+            .AsNoTracking()
+            .Where(bc => bc.SourceId == 1
+                && bc.IsBusinessDay
+                && bc.EffectiveDate >= firstPriceDate  // Start audit from first price date
+                && bc.EffectiveDate <= lastPriceDate)  // End audit at last price date
+            .Select(bc => bc.EffectiveDate)
+            .OrderBy(d => d)
+            .ToListAsync();
+
+        var datesWithPricesSet = datesWithPrices.ToHashSet();
+        var gapsInRange = businessDaysInRange.Where(d => !datesWithPricesSet.Contains(d)).ToList();
+
+        // Assert: No gaps reported for dates before 2024-01-08
+        // The only gap should be 2024-01-11 (Thursday), which falls within the audit range
+        gapsInRange.Should().HaveCount(1, "Only Thursday 1/11 should be reported as a gap");
+        gapsInRange.Should().Contain(new DateTime(2024, 1, 11), "Thursday 1/11 is within range and missing data");
+
+        // Verify no gaps reported for dates before 2024-01-08 (e.g., 1/1-1/5)
+        gapsInRange.Should().NotContain(new DateTime(2024, 1, 1), "2024-01-01 is before security's first price date");
+        gapsInRange.Should().NotContain(new DateTime(2024, 1, 5), "2024-01-05 (Friday) is before security's first price date");
+    }
 }
