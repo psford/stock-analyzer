@@ -149,7 +149,7 @@ public class GapBackfillTests
                 await context.SaveChangesAsync();
             }
 
-            // Act: Run the gap audit (via reflection since method is internal)
+            // Act: Run the gap audit (internal method, accessible via InternalsVisibleTo)
             await using (var context = CreateContext())
             {
                 var mockLogger = new Mock<ILogger<PriceRefreshService>>();
@@ -157,24 +157,11 @@ public class GapBackfillTests
                 var mockServiceProvider = new Mock<IServiceProvider>();
                 using var service = new PriceRefreshService(mockServiceProvider.Object, mockLogger.Object, mockConfig);
 
-                // Use reflection to call internal RunGapAuditAsync
-                var method = typeof(PriceRefreshService).GetMethod(
-                    "RunGapAuditAsync",
-                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance,
-                    null,
-                    new[] { typeof(StockAnalyzerDbContext), typeof(CancellationToken) },
-                    null);
-
-                // Assert method exists before attempting to invoke
-                method.Should().NotBeNull("RunGapAuditAsync private method should exist");
-
-                var task = method!.Invoke(service, new object[] { context, CancellationToken.None }) as Task;
-                var resultProperty = task?.GetType().GetProperty("Result");
-                var gaps = resultProperty?.GetValue(task) as List<(int, string, DateTime)>;
+                var gaps = await service.RunGapAuditAsync(context, CancellationToken.None);
 
                 // Assert: Should identify missing days (Tuesday, Wednesday, Friday)
                 gaps.Should().NotBeNull();
-                gaps!.Count.Should().BeGreaterThan(2);
+                gaps.Count.Should().BeGreaterThan(2);
 
                 // Verify we have gaps for expected dates (check at least one)
                 var gapDates = gaps.Select(g => g.Item3).OrderBy(d => d).ToList();
