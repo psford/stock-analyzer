@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -358,6 +360,243 @@ public class PriceRefreshService : BackgroundService
         public int RecordsMatched { get; set; }
         public int RecordsUnmatched { get; set; }
         public int RecordsInserted { get; set; }
+    }
+
+    /// <summary>
+    /// Execute the gap audit using raw SQL to identify all missing business days
+    /// for tracked securities.
+    /// </summary>
+    /// <param name="dbContext">Database context with open connection</param>
+    /// <param name="ct">Cancellation token</param>
+    /// <returns>List of (SecurityAlias, TickerSymbol, MissingDate) tuples</returns>
+    private async Task<List<(int SecurityAlias, string TickerSymbol, DateTime MissingDate)>> RunGapAuditAsync(
+        StockAnalyzerDbContext dbContext, CancellationToken ct)
+    {
+        var result = new List<(int SecurityAlias, string TickerSymbol, DateTime MissingDate)>();
+
+        var sql = @"
+            WITH TrackedSecurities AS (
+                SELECT sm.SecurityAlias, sm.TickerSymbol
+                FROM data.SecurityMaster sm
+                WHERE sm.IsTracked = 1 AND sm.IsActive = 1 AND sm.IsEodhdUnavailable = 0
+            ),
+            PriceRanges AS (
+                SELECT p.SecurityAlias, MIN(p.EffectiveDate) AS FirstDate, MAX(p.EffectiveDate) AS LastDate
+                FROM data.Prices p
+                INNER JOIN TrackedSecurities ts ON ts.SecurityAlias = p.SecurityAlias
+                GROUP BY p.SecurityAlias
+            ),
+            ExpectedDates AS (
+                SELECT ts.SecurityAlias, ts.TickerSymbol, bc.EffectiveDate
+                FROM TrackedSecurities ts
+                INNER JOIN PriceRanges pr ON pr.SecurityAlias = ts.SecurityAlias
+                INNER JOIN data.BusinessCalendar bc ON bc.SourceId = 1 AND bc.IsBusinessDay = 1
+                    AND bc.EffectiveDate BETWEEN pr.FirstDate AND pr.LastDate
+            )
+            SELECT ed.SecurityAlias, ed.TickerSymbol, ed.EffectiveDate AS MissingDate
+            FROM ExpectedDates ed
+            LEFT JOIN data.Prices p ON p.SecurityAlias = ed.SecurityAlias AND p.EffectiveDate = ed.EffectiveDate
+            WHERE p.Id IS NULL
+            ORDER BY ed.TickerSymbol, ed.EffectiveDate";
+
+        try
+        {
+            var connection = dbContext.Database.GetDbConnection();
+            var connectionWasOpen = connection.State == ConnectionState.Open;
+
+            if (!connectionWasOpen)
+                await connection.OpenAsync(ct);
+
+            try
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = sql;
+                cmd.CommandTimeout = 300;
+
+                using var reader = await cmd.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct))
+                {
+                    var securityAlias = reader.GetInt32(0);
+                    var tickerSymbol = reader.GetString(1);
+                    var missingDate = reader.GetDateTime(2);
+
+                    result.Add((securityAlias, tickerSymbol, missingDate));
+                }
+            }
+            finally
+            {
+                if (!connectionWasOpen)
+                    connection.Close();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error executing gap audit");
+            throw;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Backfill all identified gaps in price history using EODHD per-ticker API.
+    /// 1. Runs gap audit to identify missing business days
+    /// 2. Fetches data from EODHD for each security with gaps
+    /// 3. Inserts fetched data
+    /// 4. Flags securities where EODHD has no data
+    /// 5. Re-runs audit to verify completion
+    /// </summary>
+    /// <param name="maxConcurrency">Max concurrent API requests (1-10, default 3)</param>
+    /// <param name="progress">Optional progress callback</param>
+    /// <param name="ct">Cancellation token</param>
+    /// <returns>Result with counts and any errors</returns>
+    public async Task<GapBackfillResult> BackfillGapsAsync(
+        int maxConcurrency = 3,
+        IProgress<TickerBackfillProgress>? progress = null,
+        CancellationToken ct = default)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var eodhd = scope.ServiceProvider.GetRequiredService<EodhdService>();
+        var priceRepo = scope.ServiceProvider.GetRequiredService<IPriceRepository>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<StockAnalyzerDbContext>();
+
+        var result = new GapBackfillResult();
+
+        // 1. Run gap audit
+        var gaps = await RunGapAuditAsync(dbContext, ct);
+        result.TotalGapsFound = gaps.Count;
+
+        _logger.LogInformation("Gap audit found {Count} missing price-days", gaps.Count);
+
+        if (gaps.Count == 0)
+        {
+            result.Success = true;
+            result.Message = "No gaps found";
+            return result;
+        }
+
+        // 2. Group by security, compute per-ticker date ranges
+        var securityMap = await dbContext.SecurityMaster
+            .AsNoTracking()
+            .Where(s => s.IsTracked && s.IsActive && !s.IsEodhdUnavailable)
+            .ToDictionaryAsync(s => s.SecurityAlias, s => s, ct);
+
+        var gapsByTicker = gaps
+            .GroupBy(g => new { g.SecurityAlias, g.TickerSymbol })
+            .Where(g => securityMap.ContainsKey(g.Key.SecurityAlias))
+            .OrderByDescending(g => securityMap.GetValueOrDefault(g.Key.SecurityAlias)?.ImportanceScore ?? 0)
+            .Select(g => new
+            {
+                g.Key.TickerSymbol,
+                g.Key.SecurityAlias,
+                StartDate = g.Min(x => x.MissingDate),
+                EndDate = g.Max(x => x.MissingDate),
+                GapCount = g.Count()
+            })
+            .ToList();
+
+        _logger.LogInformation("Backfilling {Count} securities with gaps", gapsByTicker.Count);
+
+        // 3. Fetch per-ticker with throttling
+        var tickersWithNoData = new ConcurrentBag<(int SecurityAlias, string TickerSymbol)>();
+        var totalInserted = 0;
+        var tickersProcessed = 0;
+
+        using var semaphore = new SemaphoreSlim(Math.Clamp(maxConcurrency, 1, 10));
+
+        var tasks = gapsByTicker.Select(async ticker =>
+        {
+            await semaphore.WaitAsync(ct);
+            try
+            {
+                // Rate limit: 100ms spacing
+                await Task.Delay(100, ct);
+
+                var data = await eodhd.GetHistoricalDataAsync(
+                    ticker.TickerSymbol, ticker.StartDate, ticker.EndDate, ct);
+
+                if (data.Count == 0)
+                {
+                    tickersWithNoData.Add((ticker.SecurityAlias, ticker.TickerSymbol));
+                    return;
+                }
+
+                var priceDtos = data.Select(r => new PriceCreateDto
+                {
+                    SecurityAlias = ticker.SecurityAlias,
+                    EffectiveDate = r.ParsedDate,
+                    Open = r.Open,
+                    High = r.High,
+                    Low = r.Low,
+                    Close = r.Close,
+                    AdjustedClose = r.AdjustedClose,
+                    Volume = (long)r.Volume
+                }).ToList();
+
+                var inserted = await priceRepo.BulkInsertAsync(priceDtos);
+                Interlocked.Add(ref totalInserted, inserted);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error backfilling {Ticker}", ticker.TickerSymbol);
+                result.Errors.Add($"{ticker.TickerSymbol}: {ex.Message}");
+            }
+            finally
+            {
+                semaphore.Release();
+                var processed = Interlocked.Increment(ref tickersProcessed);
+                progress?.Report(new TickerBackfillProgress
+                {
+                    CurrentTicker = ticker.TickerSymbol,
+                    TickersProcessed = processed,
+                    TotalTickers = gapsByTicker.Count,
+                    RecordsInserted = totalInserted,
+                    PercentComplete = (int)((double)processed / gapsByTicker.Count * 100)
+                });
+
+                if (processed % 50 == 0)
+                {
+                    _logger.LogInformation(
+                        "Backfill progress: {Processed}/{Total} securities, {Inserted} records inserted",
+                        processed, gapsByTicker.Count, totalInserted);
+                }
+            }
+        });
+
+        await Task.WhenAll(tasks);
+
+        // 4. Flag securities where EODHD returned no data
+        foreach (var (securityAlias, tickerSymbol) in tickersWithNoData)
+        {
+            var security = await dbContext.SecurityMaster
+                .FirstOrDefaultAsync(s => s.SecurityAlias == securityAlias, ct);
+            if (security != null)
+            {
+                security.IsEodhdUnavailable = true;
+                _logger.LogInformation("Marked {Ticker} (alias {Alias}) as EODHD unavailable",
+                    tickerSymbol, securityAlias);
+            }
+        }
+        await dbContext.SaveChangesAsync(ct);
+        result.SecuritiesFlagged = tickersWithNoData.Count;
+
+        // 5. Re-run gap audit to verify
+        var remainingGaps = await RunGapAuditAsync(dbContext, ct);
+        result.RemainingGaps = remainingGaps.Count;
+
+        result.TickersProcessed = tickersProcessed;
+        result.TotalRecordsInserted = totalInserted;
+        result.TickersWithNoData = tickersWithNoData.Count;
+        result.Success = true;
+        result.Message = $"Backfill complete: {totalInserted} records inserted, " +
+            $"{tickersWithNoData.Count} securities flagged unavailable, " +
+            $"{remainingGaps.Count} gaps remaining";
+
+        _logger.LogInformation(
+            "Backfill complete: {Inserted} records, {Flagged} flagged unavailable, {Remaining} gaps remaining",
+            totalInserted, tickersWithNoData.Count, remainingGaps.Count);
+
+        return result;
     }
 
     /// <summary>
@@ -889,4 +1128,20 @@ public class EodhdSyncResult
     public int TotalSymbols { get; set; }
     public int SecuritiesUpserted { get; set; }
     public string? ErrorMessage { get; set; }
+}
+
+/// <summary>
+/// Result of gap backfill operation.
+/// </summary>
+public class GapBackfillResult
+{
+    public bool Success { get; set; }
+    public string? Message { get; set; }
+    public int TotalGapsFound { get; set; }
+    public int TickersProcessed { get; set; }
+    public int TotalRecordsInserted { get; set; }
+    public int TickersWithNoData { get; set; }
+    public int SecuritiesFlagged { get; set; }
+    public int RemainingGaps { get; set; }
+    public List<string> Errors { get; set; } = new();
 }
