@@ -128,17 +128,22 @@ public class PriceRefreshService : BackgroundService
             return;
         }
 
-        // Sample a few securities to find the max date
-        var sampleAliases = tickerAliasMap.Values.Take(10);
-        var latestPrices = await priceRepo.GetLatestPricesAsync(sampleAliases);
+        // Find the most recent price date in the database.
+        // Replaced a previous "sample 10 aliases + GroupBy + First" pattern that EF translated
+        // to a ROW_NUMBER() window query. That query was timing out against the 63M row Prices
+        // table on a cold buffer pool, crash-looping the BackgroundService on container restart.
+        // A direct MAX(EffectiveDate) aggregate is a single indexed lookup.
+        var maxDate = await dbContext.Prices
+            .AsNoTracking()
+            .MaxAsync(p => (DateTime?)p.EffectiveDate, ct);
 
-        if (latestPrices.Count == 0)
+        if (maxDate == null)
         {
-            _logger.LogInformation("No prices found for sample securities");
+            _logger.LogInformation("No prices found in database");
             return;
         }
 
-        var maxDate = latestPrices.Values.Max(p => p.EffectiveDate);
+        var maxDateValue = maxDate.Value;
 
         // Get most recent business day from calendar (accounts for holidays)
         var yesterday = await dbContext.BusinessCalendar
@@ -157,17 +162,17 @@ public class PriceRefreshService : BackgroundService
         }
 
         _logger.LogInformation("Most recent price date: {MaxDate}, last trading day: {Yesterday}",
-            maxDate.ToString("yyyy-MM-dd"), yesterday.ToString("yyyy-MM-dd"));
+            maxDateValue.ToString("yyyy-MM-dd"), yesterday.ToString("yyyy-MM-dd"));
 
         // If we're missing recent days, backfill them
-        if (maxDate < yesterday)
+        if (maxDateValue < yesterday)
         {
             // Use BusinessCalendar instead of hardcoded weekday logic
             var missingDays = await dbContext.BusinessCalendar
                 .AsNoTracking()
                 .Where(bc => bc.SourceId == 1
                     && bc.IsBusinessDay
-                    && bc.EffectiveDate > maxDate
+                    && bc.EffectiveDate > maxDateValue
                     && bc.EffectiveDate <= yesterday)
                 .Select(bc => bc.EffectiveDate)
                 .OrderBy(d => d)
