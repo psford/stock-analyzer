@@ -9,6 +9,7 @@ using Moq;
 using StockAnalyzer.Core.Data;
 using StockAnalyzer.Core.Data.Entities;
 using StockAnalyzer.Core.Services;
+using StockAnalyzer.Core.Tests.TestHelpers;
 using Xunit;
 
 namespace StockAnalyzer.Core.Tests.Services;
@@ -73,7 +74,7 @@ public class GapBackfillTests
     [Trait("Category", "Integration")]
     public async Task RunGapAuditAsync_WithKnownGaps_IdentifiesAllMissingDates()
     {
-        // Skip if SQL Express unavailable
+        // Skip if SQL Express unavailable (matching CoverageIntegrationTests pattern)
         if (!IsSqlServerAvailable())
             return;
 
@@ -164,20 +165,20 @@ public class GapBackfillTests
                     new[] { typeof(StockAnalyzerDbContext), typeof(CancellationToken) },
                     null);
 
-                if (method != null)
-                {
-                    var task = method.Invoke(service, new object[] { context, CancellationToken.None }) as Task;
-                    var resultProperty = task?.GetType().GetProperty("Result");
-                    var gaps = resultProperty?.GetValue(task) as List<(int, string, DateTime)>;
+                // Assert method exists before attempting to invoke
+                method.Should().NotBeNull("RunGapAuditAsync private method should exist");
 
-                    // Assert: Should identify missing days (Tuesday, Wednesday, Friday)
-                    gaps.Should().NotBeNull();
-                    gaps!.Count.Should().BeGreaterThan(2);
+                var task = method!.Invoke(service, new object[] { context, CancellationToken.None }) as Task;
+                var resultProperty = task?.GetType().GetProperty("Result");
+                var gaps = resultProperty?.GetValue(task) as List<(int, string, DateTime)>;
 
-                    // Verify we have gaps for expected dates (check at least one)
-                    var gapDates = gaps.Select(g => g.Item3).OrderBy(d => d).ToList();
-                    gapDates.Should().Contain(new DateTime(2024, 1, 2)); // Tuesday
-                }
+                // Assert: Should identify missing days (Tuesday, Wednesday, Friday)
+                gaps.Should().NotBeNull();
+                gaps!.Count.Should().BeGreaterThan(2);
+
+                // Verify we have gaps for expected dates (check at least one)
+                var gapDates = gaps.Select(g => g.Item3).OrderBy(d => d).ToList();
+                gapDates.Should().Contain(new DateTime(2024, 1, 2)); // Tuesday
             }
         }
         finally
@@ -197,27 +198,32 @@ public class GapBackfillTests
     }
 
     /// <summary>
-    /// AC4.2: Verify backfill method structure accepts correct parameters
-    /// Tests the public interface of BackfillGapsAsync
+    /// AC4.2: Verify BackfillGapsAsync method exists and has correct signature
+    /// Tests the public interface and basic structure
     /// </summary>
     [Fact]
     [Trait("Category", "Unit")]
-    public void BackfillGapsAsync_WithValidParameters_ReturnsGapBackfillResult()
+    public void BackfillGapsAsync_HasCorrectSignatureAndReturnType()
     {
-        // Arrange: Create service with mocks
+        // Arrange: Create service with minimal mocks
         var mockLogger = new Mock<ILogger<PriceRefreshService>>();
         var mockConfig = new MockConfiguration();
         var mockServiceProvider = new Mock<IServiceProvider>();
 
         var service = new PriceRefreshService(mockServiceProvider.Object, mockLogger.Object, mockConfig);
 
-        // Act & Assert: Method exists and has correct signature
+        // Act & Assert: Verify method exists and returns correct type
         var method = typeof(PriceRefreshService).GetMethod(
             "BackfillGapsAsync",
             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
 
-        method.Should().NotBeNull("BackfillGapsAsync method should exist");
+        method.Should().NotBeNull("BackfillGapsAsync public method should exist");
         method!.ReturnType.Should().Be(typeof(Task<GapBackfillResult>));
+
+        // Verify it accepts the correct parameters
+        var parameters = method.GetParameters();
+        parameters.Should().HaveCountGreaterThanOrEqualTo(1);
+        parameters[0].ParameterType.Should().Be(typeof(int)); // maxConcurrency
     }
 
     /// <summary>
@@ -292,55 +298,4 @@ public class GapBackfillTests
         result.RemainingGaps.Should().Be(0);
         result.Errors.Should().BeEmpty();
     }
-}
-
-/// <summary>
-/// Mock configuration for testing.
-/// </summary>
-public class MockConfiguration : IConfiguration
-{
-    public string? this[string key]
-    {
-        get => null;
-        set { }
-    }
-
-    public IEnumerable<IConfigurationSection> GetChildren() => Enumerable.Empty<IConfigurationSection>();
-    public IChangeToken GetReloadToken() => new NullChangeToken();
-    public IConfigurationSection GetSection(string key) => new NullConfigurationSection();
-}
-
-/// <summary>
-/// Null implementation of IConfigurationSection for testing.
-/// </summary>
-public class NullConfigurationSection : IConfigurationSection
-{
-    public string Key => string.Empty;
-    public string Path => string.Empty;
-    public string? Value { get; set; }
-    public string? this[string key] { get => null; set { } }
-
-    public IEnumerable<IConfigurationSection> GetChildren() => Enumerable.Empty<IConfigurationSection>();
-    public IChangeToken GetReloadToken() => new NullChangeToken();
-    public IConfigurationSection GetSection(string key) => new NullConfigurationSection();
-}
-
-/// <summary>
-/// Null implementation of IChangeToken for testing.
-/// </summary>
-public class NullChangeToken : IChangeToken
-{
-    public bool HasChanged => false;
-    public bool ActiveChangeCallbacks => false;
-
-    public IDisposable RegisterChangeCallback(Action<object?> callback, object? state)
-        => new NullDisposable();
-}
-
-/// <summary>
-/// Null implementation of IDisposable for testing.
-/// </summary>
-public class NullDisposable : IDisposable
-{
-    public void Dispose() { }
 }

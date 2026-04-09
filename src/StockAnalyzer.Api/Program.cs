@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
@@ -1531,16 +1532,27 @@ try
     // POST /api/admin/prices/backfill-gaps - Gap-aware backfill for identified missing dates
     app.MapPost("/api/admin/prices/backfill-gaps", async (
         PriceRefreshService? refreshService,
-        int? maxConcurrency,
+        [FromQuery] int? maxConcurrency,
         CancellationToken ct) =>
     {
         if (refreshService == null)
             return Results.Problem("PriceRefreshService not available (EODHD not configured?)");
 
-        var result = await refreshService.BackfillGapsAsync(
-            maxConcurrency ?? 3, ct: ct);
+        try
+        {
+            Log.Information("Starting gap-aware backfill with concurrency {Concurrency}",
+                maxConcurrency ?? 3);
 
-        return Results.Ok(result);
+            var result = await refreshService.BackfillGapsAsync(
+                maxConcurrency ?? 3, ct: ct);
+
+            return Results.Ok(result);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to run gap-aware backfill");
+            return Results.Problem(ex.Message);
+        }
     })
     .WithName("BackfillGaps")
     .WithOpenApi()

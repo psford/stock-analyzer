@@ -499,6 +499,7 @@ public class PriceRefreshService : BackgroundService
 
         // 3. Fetch per-ticker with throttling
         var tickersWithNoData = new ConcurrentBag<(int SecurityAlias, string TickerSymbol)>();
+        var errors = new ConcurrentBag<string>();
         var totalInserted = 0;
         var tickersProcessed = 0;
 
@@ -539,7 +540,7 @@ public class PriceRefreshService : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error backfilling {Ticker}", ticker.TickerSymbol);
-                result.Errors.Add($"{ticker.TickerSymbol}: {ex.Message}");
+                errors.Add($"{ticker.TickerSymbol}: {ex.Message}");
             }
             finally
             {
@@ -564,6 +565,12 @@ public class PriceRefreshService : BackgroundService
         });
 
         await Task.WhenAll(tasks);
+
+        // Copy errors from ConcurrentBag to result.Errors after Task.WhenAll completes
+        foreach (var error in errors)
+        {
+            result.Errors.Add(error);
+        }
 
         // 4. Flag securities where EODHD returned no data
         foreach (var (securityAlias, tickerSymbol) in tickersWithNoData)
