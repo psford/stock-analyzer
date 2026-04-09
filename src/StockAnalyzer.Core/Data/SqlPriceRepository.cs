@@ -115,6 +115,10 @@ public class SqlPriceRepository : IPriceRepository
     /// <inheritdoc />
     public async Task<PriceEntity> CreateAsync(PriceCreateDto dto)
     {
+        // Defense-in-depth: reject future-dated records at the repository layer
+        if (dto.EffectiveDate.Date > DateTime.UtcNow.Date)
+            throw new ArgumentException($"Cannot insert price with future date {dto.EffectiveDate:yyyy-MM-dd}");
+
         var entity = new PriceEntity
         {
             SecurityAlias = dto.SecurityAlias,
@@ -314,6 +318,17 @@ public class SqlPriceRepository : IPriceRepository
     {
         var priceList = prices.ToList();
         if (priceList.Count == 0) return 0;
+
+        // Defense-in-depth: reject future-dated records at the repository layer
+        var today = DateTime.UtcNow.Date;
+        var futureCount = priceList.Count(p => p.EffectiveDate.Date > today);
+        if (futureCount > 0)
+        {
+            _logger.LogWarning("BulkInsertAsync rejected {Count} future-dated records (after {Today:yyyy-MM-dd})",
+                futureCount, today);
+            priceList = priceList.Where(p => p.EffectiveDate.Date <= today).ToList();
+            if (priceList.Count == 0) return 0;
+        }
 
         var now = DateTime.UtcNow;
         var count = 0;
@@ -600,9 +615,11 @@ public class SqlPriceRepository : IPriceRepository
     /// copied from the prior business day's close.
     /// </summary>
     /// <param name="limit">Optional limit on number of days to process. Null = all days.</param>
-    public async Task<HolidayForwardFillResult> ForwardFillHolidaysAsync(int? limit = null)
+    /// <param name="maxFillDate">Maximum date to fill up to. Defaults to today (DateTime.UtcNow.Date). Never fills future dates.</param>
+    public async Task<HolidayForwardFillResult> ForwardFillHolidaysAsync(int? limit = null, DateTime? maxFillDate = null)
     {
         var result = new HolidayForwardFillResult();
+        var effectiveMaxDate = maxFillDate ?? DateTime.UtcNow.Date;
 
         try
         {
@@ -629,12 +646,15 @@ public class SqlPriceRepository : IPriceRepository
             var existingDates = await GetDistinctDatesAsync(minDate, maxDate);
             var existingDateSet = existingDates.ToHashSet();
 
+            // Cap maxDate to effectiveMaxDate so we don't even query future calendar entries
+            var effectiveEndDate = maxDate > effectiveMaxDate ? effectiveMaxDate : maxDate;
+
             // 3. Get all calendar entries in range (single query, ~4K rows)
             var calendarEntries = await _context.BusinessCalendar
                 .AsNoTracking()
                 .Where(bc => bc.SourceId == 1
                     && bc.EffectiveDate >= minDate
-                    && bc.EffectiveDate <= maxDate)
+                    && bc.EffectiveDate <= effectiveEndDate)
                 .OrderBy(bc => bc.EffectiveDate)
                 .Select(bc => new { bc.EffectiveDate, bc.IsBusinessDay, bc.IsHoliday })
                 .ToListAsync();
@@ -649,6 +669,9 @@ public class SqlPriceRepository : IPriceRepository
 
             foreach (var entry in calendarEntries.Where(c => !c.IsBusinessDay))
             {
+                if (entry.EffectiveDate > effectiveMaxDate)
+                    continue; // Never fill beyond maxFillDate (defense-in-depth)
+
                 if (existingDateSet.Contains(entry.EffectiveDate))
                     continue; // Already has price data
 
