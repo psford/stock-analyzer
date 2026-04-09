@@ -593,17 +593,24 @@ public class CoverageIntegrationTests
                 var logger = new NoopLogger<SqlPriceRepository>();
                 var repo = new SqlPriceRepository(context, logger);
 
+                // Count future records BEFORE ForwardFillHolidaysAsync
+                var futureRecordsBeforeFill = await context.Prices
+                    .Where(p => p.SecurityAlias == testSecurityAlias && p.EffectiveDate > today)
+                    .CountAsync();
+
                 var result = await repo.ForwardFillHolidaysAsync();
 
                 // Assert: Should succeed
                 result.Success.Should().BeTrue();
 
-                // Verify no prices exist for future dates
-                var futureRecords = await context.Prices
+                // Count future records AFTER ForwardFillHolidaysAsync
+                var futureRecordsAfterFill = await context.Prices
                     .Where(p => p.SecurityAlias == testSecurityAlias && p.EffectiveDate > today)
                     .CountAsync();
 
-                futureRecords.Should().Be(0, "ForwardFillHolidaysAsync with default maxFillDate should not fill beyond today");
+                // Verify ForwardFillHolidaysAsync did not add any new future records
+                futureRecordsAfterFill.Should().Be(futureRecordsBeforeFill,
+                    "ForwardFillHolidaysAsync with default maxFillDate should not add any new prices beyond today");
             }
         }
         finally
