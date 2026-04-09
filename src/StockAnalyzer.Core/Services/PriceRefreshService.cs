@@ -253,18 +253,6 @@ public class PriceRefreshService : BackgroundService
     }
 
     /// <summary>
-    /// Refresh prices for the previous trading day.
-    /// Called daily by the background loop.
-    /// OBSOLETE: Use RunDailyRefreshCycleAsync instead.
-    /// </summary>
-    [Obsolete("Use RunDailyRefreshCycleAsync instead")]
-    private async Task RefreshPreviousDayAsync(CancellationToken ct)
-    {
-        var yesterday = GetLastTradingDay(DateTime.UtcNow.Date);
-        await RefreshDateAsync(yesterday, ct);
-    }
-
-    /// <summary>
     /// Refresh prices for a specific date.
     /// </summary>
     /// <returns>Result with counts of records processed and inserted</returns>
@@ -369,7 +357,7 @@ public class PriceRefreshService : BackgroundService
     /// <param name="dbContext">Database context with open connection</param>
     /// <param name="ct">Cancellation token</param>
     /// <returns>List of (SecurityAlias, TickerSymbol, MissingDate) tuples</returns>
-    private async Task<List<(int SecurityAlias, string TickerSymbol, DateTime MissingDate)>> RunGapAuditAsync(
+    internal async Task<List<(int SecurityAlias, string TickerSymbol, DateTime MissingDate)>> RunGapAuditAsync(
         StockAnalyzerDbContext dbContext, CancellationToken ct)
     {
         var result = new List<(int SecurityAlias, string TickerSymbol, DateTime MissingDate)>();
@@ -616,6 +604,9 @@ public class PriceRefreshService : BackgroundService
         IProgress<BulkLoadProgress>? progress = null,
         CancellationToken ct = default)
     {
+        // TODO: In a future phase, update to use BusinessCalendar (SourceId=1) instead of hardcoded weekday logic.
+        // GetTradingDaysBetween currently only accounts for Saturday/Sunday, not market holidays.
+        // This is intentional for backward compatibility but should be updated to match the daily refresh logic.
         var result = new BulkLoadResult();
         var tradingDays = GetTradingDaysBetween(startDate, endDate);
 

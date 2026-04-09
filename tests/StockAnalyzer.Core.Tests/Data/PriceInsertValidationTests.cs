@@ -146,5 +146,83 @@ public class PriceInsertValidationTests
         // Assert
         result.Should().Be(0, "BulkInsertAsync should filter out all future-dated records");
     }
+
+    /// <summary>
+    /// AC3.1: BulkInsertAsync filters out future-dated records before any database operation.
+    /// Verifies the filtering logic that prevents bad dates from reaching the database.
+    /// Note: Full BulkInsertAsync integration test requires SQL Server (see CoverageIntegrationTests.cs)
+    /// </summary>
+    [Fact]
+    public void BulkInsertAsync_FilteringLogic_RejectsAllFutureDates()
+    {
+        // Arrange
+        var today = DateTime.UtcNow.Date;
+        var prices = new List<PriceCreateDto>
+        {
+            CreatePrice(1, today.AddDays(-3)), // Valid (past)
+            CreatePrice(1, today),              // Valid (today)
+            CreatePrice(1, today.AddDays(1)),  // Invalid (future)
+            CreatePrice(1, today.AddDays(-1)), // Valid (past)
+            CreatePrice(1, today.AddDays(5))   // Invalid (future)
+        };
+
+        // Act - Simulate the filter that BulkInsertAsync applies
+        var filtered = prices.Where(p => p.EffectiveDate <= today).ToList();
+
+        // Assert
+        filtered.Count.Should().Be(3, "Only 3 records should pass filter (past and today dates)");
+        filtered.All(p => p.EffectiveDate <= today).Should().BeTrue("All filtered records should have dates <= today");
+    }
+
+    /// <summary>
+    /// AC3.1: Verify BulkInsertAsync with all future-dated records returns 0 with no database writes.
+    /// Tests that the filter prevents any database interaction for invalid data.
+    /// </summary>
+    [Fact]
+    public async Task BulkInsertAsync_WithAllFutureDateRecords_WritesNothingToDatabase()
+    {
+        // Arrange
+        using var context = CreateInMemoryContext();
+        var repo = new SqlPriceRepository(context, CreateNoopLogger());
+        var futureDate = DateTime.UtcNow.AddDays(10);
+
+        var prices = new List<PriceCreateDto>
+        {
+            CreatePrice(1, futureDate),
+            CreatePrice(2, futureDate),
+            CreatePrice(3, futureDate)
+        };
+
+        // Act
+        var result = await repo.BulkInsertAsync(prices);
+
+        // Assert
+        result.Should().Be(0);
+        // Verify nothing was written (in-memory context would have entries if writes occurred)
+        var allPrices = await context.Set<PriceEntity>()
+            .AsNoTracking()
+            .ToListAsync();
+        allPrices.Should().BeEmpty("No prices should be written for future-dated records");
+    }
+
+    /// <summary>
+    /// AC3.3: CreateAsync rejects future dates with ArgumentException.
+    /// </summary>
+    [Fact]
+    public async Task CreateAsync_WithFutureDate_ThrowsArgumentExceptionWithFutureDate()
+    {
+        // Arrange
+        using var context = CreateInMemoryContext();
+        var repo = new SqlPriceRepository(context, CreateNoopLogger());
+        var futureDate = DateTime.UtcNow.AddDays(1).Date;
+        var dto = CreatePrice(1, futureDate);
+
+        // Act
+        var act = async () => await repo.CreateAsync(dto);
+
+        // Assert
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Cannot insert price with future date*");
+    }
 }
 

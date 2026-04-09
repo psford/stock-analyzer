@@ -78,7 +78,7 @@
       },
       "applicationInsights": {
         "connectionString": { "source": "env", "key": "APPLICATIONINSIGHTS_CONNECTION_STRING" },
-        "description": "Application Insights connection string for telemetry"
+        "description": "Application Insights connection string for telemetry. Production-only: Application Insights integration is intentionally disabled in dev to reduce cost and log noise. Set APPLICATIONINSIGHTS_CONNECTION_STRING in production App Service to enable cloud telemetry."
       }
     }
   }
