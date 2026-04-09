@@ -31,7 +31,7 @@ Enforced by Claude Code hooks. Violations are blocked automatically.
 
 ## About
 
-Last verified: 2026-04-07
+Last verified: 2026-04-09
 
 **User:** Patrick — business analyst background, experience with Matlab, Python, Ruby, C# (.NET).
 **Project:** Stock Analyzer (.NET) — web application for stock market analysis.
@@ -139,6 +139,7 @@ After committing eodhd-loader changes:
 5. Guard against re-entrancy (timer tick + slow query = cascading exhaustion)
 6. Always ask: "What if this runs concurrently with itself?"
 7. Coverage table updates are eventually consistent — failures log warnings and do not block price inserts
+8. **Future-date guard:** `BulkInsertAsync`, `CreateAsync`, and `ForwardFillHolidaysAsync` reject dates beyond `DateTime.UtcNow.Date`. Prevents bad data from entering the Prices table.
 
 ### Database Migrations
 
@@ -166,8 +167,8 @@ Production applies on startup. Start local SQL Express: `net start MSSQL$SQLEXPR
 
 All connection strings and API keys resolve through `EndpointRegistry.Resolve("name")` backed by `endpoints.json` (repo root). Never read env vars directly for endpoint keys.
 
-- **Dev**: Env vars (`WSL_SQL_CONNECTION` plus API keys `TWELVEDATA_API_KEY`, `FMP_API_KEY`, `FINNHUB_API_KEY`, `EODHD_API_KEY`, `MARKETAUX_API_TOKEN`). Note: `SA_DESIGN_CONNECTION` is design-time only (EF Core migrations) and is NOT resolved through the registry.
-- **Prod**: Azure Key Vault secrets (vault `kv-stk-{suffix}` — dynamically generated via Bicep, check `az keyvault list --resource-group rg-stock-analyzer` for actual name)
+- **Dev**: Env vars (`WSL_SQL_CONNECTION` plus API keys `TWELVEDATA_API_KEY`, `FMP_API_KEY`, `FINNHUB_API_KEY`, `EODHD_API_KEY`, `MARKETAUX_API_TOKEN`). Note: `SA_DESIGN_CONNECTION` is design-time only (EF Core migrations) and is NOT resolved through the registry. `APPLICATIONINSIGHTS_CONNECTION_STRING` is auto-discovered by the App Insights SDK (not resolved through EndpointRegistry); documented in `endpoints.json` for completeness.
+- **Prod**: Azure Key Vault secrets (vault `kv-stk-{suffix}` — dynamically generated via Bicep, check `az keyvault list --resource-group rg-stock-analyzer` for actual name). Application Insights connection string injected by Bicep (`appi-stockanalyzer-prod`).
 - **Resolution**: `EndpointRegistry.Resolve("database")`, `EndpointRegistry.Resolve("twelveData.apiKey")`, etc.
 - **Enforcement**: `endpoint_registry_guard.py` (claude-env hook) blocks commits with hardcoded connection strings or direct env var reads for endpoint keys
 
@@ -321,6 +322,12 @@ Both fall back to Windows defaults (appsettings / localdb) when unset, so Window
 **Themes:** JSON files on Azure Blob (`stockanalyzerblob.z13.web.core.windows.net/themes/`). Manage with `python helpers/theme_manager.py` (list, preview, create, validate, deploy, upload --all). Structure: `variables` (94+ CSS props), `effects` (scanlines, bloom, rain, vignette), `fonts`.
 
 **EODHD Loader:** WPF app in `eodhd-loader/src/EodhdLoader/`. References `StockAnalyzer.Core` at `../../../src/StockAnalyzer.Core/StockAnalyzer.Core.csproj`. Populates index constituents, MIC codes, and daily prices. Must be rebuilt after committing changes — see EODHD-Loader Rebuild section.
+
+**Price Data Operations:**
+- **PriceRefreshService** runs daily (including weekends). Uses `data.BusinessCalendar` (SourceId=1 = US market) instead of hardcoded weekday logic. `RunDailyRefreshCycleAsync` does a 14-day lookback, fetches missing business days from EODHD, then forward-fills holidays.
+- **BackfillGapsAsync** orchestrator audits all securities for missing business days via coverage tables, fetches concurrently from EODHD (configurable concurrency, default 3), and flags securities with `IsEodhdUnavailable = true` when EODHD returns no data after repeated attempts.
+- **Admin endpoint:** `POST /api/admin/prices/backfill-gaps?maxConcurrency=N` triggers gap-aware backfill.
+- **Application Insights** telemetry enabled via `AddApplicationInsightsTelemetry()`. Infra: Bicep provisions `log-stockanalyzer-prod` (Log Analytics) + `appi-stockanalyzer-prod` (App Insights).
 
 ---
 
