@@ -1,0 +1,43 @@
+%% MANUAL - Update when API flow changes
+sequenceDiagram
+    participant U as Browser
+    participant A as API
+    participant SDS as StockDataService
+    participant ANS as AggregatedNewsService
+    participant NS as NewsService
+    participant MXS as MarketauxService
+    participant HRS as HeadlineRelevanceService
+    participant AS as AnalysisService
+    participant YF as Yahoo Finance
+    participant FH as Finnhub
+    participant MX as Marketaux
+
+    U->>A: GET /api/stock/AAPL
+    A->>SDS: GetStockInfoAsync("AAPL")
+    SDS->>YF: Fetch quote data
+    YF-->>SDS: Stock info
+    A->>NS: GetCompanyProfileAsync("AAPL")
+    NS->>FH: Fetch profile
+    FH-->>NS: Company profile (ISIN, CUSIP)
+    A-->>U: Enriched stock info
+
+    U->>A: GET /api/stock/AAPL/news/aggregated
+    A->>ANS: GetAggregatedNewsAsync("AAPL")
+    par Parallel fetch
+        ANS->>NS: GetCompanyNewsAsync("AAPL")
+        NS->>FH: Fetch news
+        FH-->>NS: Finnhub articles
+    and
+        ANS->>MXS: GetNewsAsync("AAPL")
+        MXS->>MX: Fetch news
+        MX-->>MXS: Marketaux articles
+    end
+    ANS->>HRS: AggregateNews(articles)
+    HRS-->>ANS: Scored & deduplicated
+    A-->>U: Aggregated news with relevance
+
+    U->>A: GET /api/stock/AAPL/analysis
+    A->>AS: CalculateMovingAverages()
+    A->>AS: CalculateRsi()
+    A->>AS: CalculateMacd()
+    A-->>U: Technical indicators
