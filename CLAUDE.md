@@ -31,7 +31,7 @@ Enforced by Claude Code hooks. Violations are blocked automatically.
 
 ## About
 
-Last verified: 2026-04-09
+Last verified: 2026-04-10
 
 **User:** Patrick — business analyst background, experience with Matlab, Python, Ruby, C# (.NET).
 **Project:** Stock Analyzer (.NET) — web application for stock market analysis.
@@ -322,6 +322,12 @@ Both fall back to Windows defaults (appsettings / localdb) when unset, so Window
 **Themes:** JSON files on Azure Blob (`stockanalyzerblob.z13.web.core.windows.net/themes/`). Manage with `python helpers/theme_manager.py` (list, preview, create, validate, deploy, upload --all). Structure: `variables` (94+ CSS props), `effects` (scanlines, bloom, rain, vignette), `fonts`.
 
 **EODHD Loader:** WPF app in `eodhd-loader/src/EodhdLoader/`. References `StockAnalyzer.Core` at `../../../src/StockAnalyzer.Core/StockAnalyzer.Core.csproj`. Populates index constituents, MIC codes, and daily prices. Must be rebuilt after committing changes — see EODHD-Loader Rebuild section.
+
+**Stock Data Aggregation (AggregatedStockDataService):**
+- **Quote fetching** uses parallel fetch + per-field compositing. All available providers are called simultaneously via `Task.WhenAll`. Fields are composited using a static priority matrix -- each field comes from the highest-priority provider that returns a non-null value. Identity fields (Symbol, ShortName, LongName) come from the primary provider only.
+- **Priority matrix field groups:** Price, Volume, MarketCapPe, ForwardValuation, Dividend, FiftyTwoWeek, MovingAverages, CompanyInfo. Priority order varies by group (e.g., Price: TwelveData > FMP > Yahoo; ForwardValuation: Yahoo only).
+- **Historical data and search** still use sequential fallback for compatibility.
+- **Frontend dividend yield:** Only displayed when value is non-null and positive (no "N/A" row for non-dividend stocks).
 
 **Price Data Operations:**
 - **PriceRefreshService** runs daily (including weekends). Uses `data.BusinessCalendar` (SourceId=1 = US market) instead of hardcoded weekday logic. `RunDailyRefreshCycleAsync` does a 14-day lookback, fetches missing business days from EODHD, then forward-fills holidays.

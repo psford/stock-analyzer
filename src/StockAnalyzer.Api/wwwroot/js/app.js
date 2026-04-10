@@ -2295,9 +2295,14 @@ const App = {
             { label: '52W High', value: `$${this.formatNumber(info.fiftyTwoWeekHigh)}` },
             { label: '52W Low', value: `$${this.formatNumber(info.fiftyTwoWeekLow)}` },
             { label: 'Avg Volume', value: this.formatLargeNumber(info.averageVolume) },
-            { label: 'Dividend Yield', value: info.dividendYield ? `${(info.dividendYield * 100).toFixed(2)}%` : 'N/A' },
-            { label: '52W Volatility', value: this.analysisData?.performance?.volatility != null ? `${this.formatNumber(this.analysisData.performance.volatility)}%` : 'N/A' }
         ];
+
+        // Conditionally include dividend yield only when non-null and positive
+        if (info.dividendYield != null && info.dividendYield > 0) {
+            metrics.push({ label: 'Dividend Yield', value: `${(info.dividendYield * 100).toFixed(2)}%` });
+        }
+
+        metrics.push({ label: '52W Volatility', value: this.analysisData?.performance?.volatility != null ? `${this.formatNumber(this.analysisData.performance.volatility)}%` : 'N/A' });
 
         document.getElementById('key-metrics').innerHTML = metrics.map(m => `
             <div class="metric-row">

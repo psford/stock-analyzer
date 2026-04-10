@@ -124,6 +124,26 @@ public class AggregatedStockDataServiceTests
             return this;
         }
 
+        /// <summary>
+        /// Helper to create a mock stock data provider with StockInfo setup.
+        /// Reduces boilerplate in compositing tests.
+        /// </summary>
+        public AggregatedStockDataServiceTestFixture WithProviderReturningStockInfo(
+            string providerName,
+            StockInfo? stockInfo,
+            int priority,
+            bool isAvailable = true)
+        {
+            var mockProvider = new Mock<IStockDataProvider>();
+            mockProvider.Setup(p => p.ProviderName).Returns(providerName);
+            mockProvider.Setup(p => p.Priority).Returns(priority);
+            mockProvider.Setup(p => p.IsAvailable).Returns(isAvailable);
+            mockProvider.Setup(p => p.GetStockInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(stockInfo);
+            _providersWithMocks.Add((mockProvider.Object, mockProvider));
+            return this;
+        }
+
         public Mock<IPriceRepository> GetMockPriceRepository() => _mockPriceRepo;
         public Mock<ISecurityMasterRepository> GetMockSecurityRepository() => _mockSecurityRepo;
         public List<IStockDataProvider> GetProviders() => _providersWithMocks.Select(p => p.Instance).ToList();
@@ -498,6 +518,469 @@ public class AggregatedStockDataServiceTests
         // Verify BulkInsertAsync was NOT called (no new data to persist)
         mockPriceRepo.Verify(r => r.BulkInsertAsync(It.IsAny<IEnumerable<PriceCreateDto>>()), Times.Never);
     }
+
+    #endregion
+
+    #region Stock Data Compositing Tests (AC1 and AC3)
+
+    #region AC1.1 - TwelveData null, FMP has value
+
+    [Fact]
+    public async Task GetStockInfoAsync_WhenTwelveDataNullMarketCapAndFmpHasValue_CompositeContainsFmpMarketCap()
+    {
+        // Arrange
+        var symbol = "AAPL";
+        const decimal fmpMarketCap = 2_000_000_000m;
+
+        var fixture = new AggregatedStockDataServiceTestFixture()
+            .WithProviderReturningStockInfo(
+                "TwelveData",
+                new StockInfo
+                {
+                    Symbol = symbol,
+                    ShortName = "Apple",
+                    LongName = "Apple Inc.",
+                    MarketCap = null,  // TwelveData doesn't have MarketCap
+                    CurrentPrice = 150m
+                },
+                priority: 1)
+            .WithProviderReturningStockInfo(
+                "FMP",
+                new StockInfo
+                {
+                    Symbol = symbol,
+                    ShortName = "Apple Inc",
+                    LongName = "Apple Inc.",
+                    MarketCap = fmpMarketCap,  // FMP has MarketCap
+                    CurrentPrice = 149m
+                },
+                priority: 2)
+            .WithCache(new MemoryCache(new MemoryCacheOptions()));
+
+        var sut = fixture.Build();
+
+        // Act
+        var result = await sut.GetStockInfoAsync(symbol);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.MarketCap.Should().Be(fmpMarketCap);
+        // Identity fields should come from TwelveData (primary provider)
+        result.Symbol.Should().Be(symbol);
+    }
+
+    #endregion
+
+    #region AC1.2 - TwelveData null PeRatio, FMP has value
+
+    [Fact]
+    public async Task GetStockInfoAsync_WhenTwelveDataNullPeRatioAndFmpHasValue_CompositeContainsFmpPeRatio()
+    {
+        // Arrange
+        var symbol = "MSFT";
+        const decimal fmpPeRatio = 25.5m;
+
+        var fixture = new AggregatedStockDataServiceTestFixture()
+            .WithProviderReturningStockInfo(
+                "TwelveData",
+                new StockInfo
+                {
+                    Symbol = symbol,
+                    ShortName = "Microsoft",
+                    LongName = "Microsoft Corporation",
+                    PeRatio = null,  // TwelveData doesn't have PeRatio
+                    CurrentPrice = 300m
+                },
+                priority: 1)
+            .WithProviderReturningStockInfo(
+                "FMP",
+                new StockInfo
+                {
+                    Symbol = symbol,
+                    ShortName = "Microsoft Corporation",
+                    LongName = "Microsoft Corporation",
+                    PeRatio = fmpPeRatio,  // FMP has PeRatio
+                    CurrentPrice = 299m
+                },
+                priority: 2)
+            .WithCache(new MemoryCache(new MemoryCacheOptions()));
+
+        var sut = fixture.Build();
+
+        // Act
+        var result = await sut.GetStockInfoAsync(symbol);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.PeRatio.Should().Be(fmpPeRatio);
+        result.Symbol.Should().Be(symbol);
+    }
+
+    #endregion
+
+    #region AC1.3 - Only Yahoo available
+
+    [Fact]
+    public async Task GetStockInfoAsync_WhenOnlyYahooAvailable_CompositeContainsYahooValues()
+    {
+        // Arrange
+        var symbol = "GOOGL";
+        const decimal yahooMarketCap = 1_500_000_000m;
+        const decimal yahooPeRatio = 20.0m;
+
+        var fixture = new AggregatedStockDataServiceTestFixture()
+            .WithProviderReturningStockInfo(
+                "TwelveData",
+                null,
+                priority: 1,
+                isAvailable: false)
+            .WithProviderReturningStockInfo(
+                "FMP",
+                null,
+                priority: 2,
+                isAvailable: false)
+            .WithProviderReturningStockInfo(
+                "Yahoo",
+                new StockInfo
+                {
+                    Symbol = symbol,
+                    ShortName = "Alphabet",
+                    LongName = "Alphabet Inc.",
+                    MarketCap = yahooMarketCap,
+                    PeRatio = yahooPeRatio,
+                    CurrentPrice = 140m
+                },
+                priority: 3)
+            .WithCache(new MemoryCache(new MemoryCacheOptions()));
+
+        var sut = fixture.Build();
+
+        // Act
+        var result = await sut.GetStockInfoAsync(symbol);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.MarketCap.Should().Be(yahooMarketCap);
+        result.PeRatio.Should().Be(yahooPeRatio);
+        result.Symbol.Should().Be(symbol);
+    }
+
+    #endregion
+
+    #region AC1.4 - All providers null for MarketCap
+
+    [Fact]
+    public async Task GetStockInfoAsync_WhenAllProvidersReturnNullMarketCap_CompositeMarketCapIsNull()
+    {
+        // Arrange
+        var symbol = "TSLA";
+
+        var fixture = new AggregatedStockDataServiceTestFixture()
+            .WithProviderReturningStockInfo(
+                "TwelveData",
+                new StockInfo
+                {
+                    Symbol = symbol,
+                    ShortName = "Tesla",
+                    LongName = "Tesla Inc.",
+                    MarketCap = null,
+                    CurrentPrice = 240m
+                },
+                priority: 1)
+            .WithProviderReturningStockInfo(
+                "FMP",
+                new StockInfo
+                {
+                    Symbol = symbol,
+                    ShortName = "Tesla Inc",
+                    LongName = "Tesla Inc.",
+                    MarketCap = null,  // FMP also null
+                    CurrentPrice = 239m
+                },
+                priority: 2)
+            .WithCache(new MemoryCache(new MemoryCacheOptions()));
+
+        var sut = fixture.Build();
+
+        // Act
+        var result = await sut.GetStockInfoAsync(symbol);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.MarketCap.Should().BeNull();
+        result.Symbol.Should().Be(symbol);
+    }
+
+    #endregion
+
+    #region AC1.5 - Priority wins over value size
+
+    [Fact]
+    public async Task GetStockInfoAsync_WhenMultipleProvidersReturnMarketCap_HighestPriorityProviderWins()
+    {
+        // Arrange
+        var symbol = "AMZN";
+        const decimal twelveDataMarketCap = 1_000_000_000m;
+        const decimal fmpMarketCap = 2_000_000_000m;  // Larger, but FMP has higher priority for MarketCapPe
+
+        var fixture = new AggregatedStockDataServiceTestFixture()
+            .WithProviderReturningStockInfo(
+                "TwelveData",
+                new StockInfo
+                {
+                    Symbol = symbol,
+                    ShortName = "Amazon",
+                    LongName = "Amazon.com Inc.",
+                    MarketCap = twelveDataMarketCap,
+                    CurrentPrice = 175m
+                },
+                priority: 1)
+            .WithProviderReturningStockInfo(
+                "FMP",
+                new StockInfo
+                {
+                    Symbol = symbol,
+                    ShortName = "Amazon Inc",
+                    LongName = "Amazon.com Inc.",
+                    MarketCap = fmpMarketCap,
+                    CurrentPrice = 174m
+                },
+                priority: 2)
+            .WithCache(new MemoryCache(new MemoryCacheOptions()));
+
+        var sut = fixture.Build();
+
+        // Act
+        var result = await sut.GetStockInfoAsync(symbol);
+
+        // Assert
+        result.Should().NotBeNull();
+        // Per FieldPriorityMatrix, MarketCapPe group has ["FMP", "Yahoo"], so FMP is first
+        result!.MarketCap.Should().Be(fmpMarketCap);
+        result.Symbol.Should().Be(symbol);
+    }
+
+    #endregion
+
+    #region AC3.1 - Per-field compositing across groups
+
+    [Fact]
+    public async Task GetStockInfoAsync_WhenProvidersHaveDifferentFields_CompositeIncludesAllFields()
+    {
+        // Arrange
+        var symbol = "META";
+        const decimal twelveDataPrice = 300m;
+        const decimal fmpFiftyDayAverage = 295m;
+
+        var fixture = new AggregatedStockDataServiceTestFixture()
+            .WithProviderReturningStockInfo(
+                "TwelveData",
+                new StockInfo
+                {
+                    Symbol = symbol,
+                    ShortName = "Meta",
+                    LongName = "Meta Platforms Inc.",
+                    CurrentPrice = twelveDataPrice,  // TwelveData has price
+                    FiftyDayAverage = null           // But no FiftyDayAverage
+                },
+                priority: 1)
+            .WithProviderReturningStockInfo(
+                "FMP",
+                new StockInfo
+                {
+                    Symbol = symbol,
+                    ShortName = "Meta Inc",
+                    LongName = "Meta Platforms Inc.",
+                    CurrentPrice = null,                // FMP has no price
+                    FiftyDayAverage = fmpFiftyDayAverage  // But has FiftyDayAverage
+                },
+                priority: 2)
+            .WithCache(new MemoryCache(new MemoryCacheOptions()));
+
+        var sut = fixture.Build();
+
+        // Act
+        var result = await sut.GetStockInfoAsync(symbol);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.CurrentPrice.Should().Be(twelveDataPrice);          // From TwelveData
+        result.FiftyDayAverage.Should().Be(fmpFiftyDayAverage);     // From FMP
+        result.Symbol.Should().Be(symbol);
+    }
+
+    #endregion
+
+    #region AC3.2 - Identity fields from primary provider only
+
+    [Fact]
+    public async Task GetStockInfoAsync_WhenIdentityFieldsDifferAcrossProviders_UsesIdentityFromPrimaryProvider()
+    {
+        // Arrange
+        var symbol = "NFLX";
+        const string twelveDataShortName = "Netflix Inc";
+        const string fmpShortName = "Netflix Inc.";  // Different short name
+
+        var fixture = new AggregatedStockDataServiceTestFixture()
+            .WithProviderReturningStockInfo(
+                "TwelveData",
+                new StockInfo
+                {
+                    Symbol = symbol,
+                    ShortName = twelveDataShortName,
+                    LongName = "Netflix Inc",
+                    CurrentPrice = 400m
+                },
+                priority: 1)
+            .WithProviderReturningStockInfo(
+                "FMP",
+                new StockInfo
+                {
+                    Symbol = symbol,
+                    ShortName = fmpShortName,
+                    LongName = "Netflix Inc",
+                    CurrentPrice = 398m
+                },
+                priority: 2)
+            .WithCache(new MemoryCache(new MemoryCacheOptions()));
+
+        var sut = fixture.Build();
+
+        // Act
+        var result = await sut.GetStockInfoAsync(symbol);
+
+        // Assert
+        result.Should().NotBeNull();
+        // Identity should come from TwelveData (primary provider, first in Price priority)
+        result!.ShortName.Should().Be(twelveDataShortName);
+        result.Symbol.Should().Be(symbol);
+    }
+
+    #endregion
+
+    #region AC3.3 - Provider failure doesn't abort others
+
+    [Fact]
+    public async Task GetStockInfoAsync_WhenOneProviderThrows_OtherProvidersFillInWithoutError()
+    {
+        // Arrange
+        var symbol = "IBM";
+        const decimal fmpMarketCap = 250_000_000m;
+
+        // We need to manually set up the throwing provider since fixture helper doesn't support throws
+        var mockTwelveData = new Mock<IStockDataProvider>();
+        mockTwelveData.Setup(p => p.ProviderName).Returns("TwelveData");
+        mockTwelveData.Setup(p => p.Priority).Returns(1);
+        mockTwelveData.Setup(p => p.IsAvailable).Returns(true);
+        mockTwelveData.Setup(p => p.GetStockInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("Connection timeout"));
+
+        var fixture = new AggregatedStockDataServiceTestFixture()
+            .WithProviderReturningStockInfo(
+                "FMP",
+                new StockInfo
+                {
+                    Symbol = symbol,
+                    ShortName = "IBM",
+                    LongName = "International Business Machines",
+                    MarketCap = fmpMarketCap,
+                    CurrentPrice = 190m
+                },
+                priority: 2)
+            .WithCache(new MemoryCache(new MemoryCacheOptions()));
+
+        // Manually add throwing provider to fixture
+        var providers = new List<IStockDataProvider> { mockTwelveData.Object };
+        providers.AddRange(fixture.GetProviders());
+
+        var sut = new AggregatedStockDataService(providers, new MemoryCache(new MemoryCacheOptions()), null, null);
+
+        // Act
+        var result = await sut.GetStockInfoAsync(symbol);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.MarketCap.Should().Be(fmpMarketCap);
+        result.Symbol.Should().Be(symbol);
+    }
+
+    #endregion
+
+    #region AC3.4 - All providers fail
+
+    [Fact]
+    public async Task GetStockInfoAsync_WhenAllProvidersFail_ReturnsNull()
+    {
+        // Arrange
+        var symbol = "GE";
+
+        var mockTwelveData = new Mock<IStockDataProvider>();
+        mockTwelveData.Setup(p => p.ProviderName).Returns("TwelveData");
+        mockTwelveData.Setup(p => p.Priority).Returns(1);
+        mockTwelveData.Setup(p => p.IsAvailable).Returns(true);
+        mockTwelveData.Setup(p => p.GetStockInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("TwelveData failed"));
+
+        var mockFmp = new Mock<IStockDataProvider>();
+        mockFmp.Setup(p => p.ProviderName).Returns("FMP");
+        mockFmp.Setup(p => p.Priority).Returns(2);
+        mockFmp.Setup(p => p.IsAvailable).Returns(true);
+        mockFmp.Setup(p => p.GetStockInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("FMP failed"));
+
+        var providers = new[] { mockTwelveData.Object, mockFmp.Object };
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var sut = new AggregatedStockDataService(providers, cache, null, null);
+
+        // Act
+        var result = await sut.GetStockInfoAsync(symbol);
+
+        // Assert
+        result.Should().BeNull();
+    }
+
+    #endregion
+
+    #region AC3.5 - Single provider is pass-through
+
+    [Fact]
+    public async Task GetStockInfoAsync_WhenOnlyOneProviderAvailable_ReturnsThatProviderResultAsIs()
+    {
+        // Arrange
+        var symbol = "INTC";
+        var stockInfo = new StockInfo
+        {
+            Symbol = symbol,
+            ShortName = "Intel",
+            LongName = "Intel Corporation",
+            CurrentPrice = 45m,
+            MarketCap = 180_000_000_000m,
+            PeRatio = 12.5m
+        };
+
+        var fixture = new AggregatedStockDataServiceTestFixture()
+            .WithProviderReturningStockInfo(
+                "TwelveData",
+                stockInfo,
+                priority: 1)
+            .WithProviderReturningStockInfo(
+                "FMP",
+                null,
+                priority: 2,
+                isAvailable: false)
+            .WithCache(new MemoryCache(new MemoryCacheOptions()));
+
+        var sut = fixture.Build();
+
+        // Act
+        var result = await sut.GetStockInfoAsync(symbol);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Should().BeEquivalentTo(stockInfo);
+    }
+
+    #endregion
 
     #endregion
 }
