@@ -48,6 +48,37 @@ public class AggregatedStockDataService
     // Per-symbol cancellation tokens for cache eviction (covers all key patterns including custom date ranges)
     private static readonly ConcurrentDictionary<string, CancellationTokenSource> _symbolCacheTokens = new();
 
+    /// <summary>
+    /// Priority matrix mapping field groups to ordered provider names.
+    /// Each group's array represents provider priority: first provider with a non-null value wins.
+    /// </summary>
+    private static readonly Dictionary<string, string[]> FieldPriorityMatrix = new()
+    {
+        ["Price"] = ["TwelveData", "FMP", "Yahoo"],
+        ["Volume"] = ["TwelveData", "FMP", "Yahoo"],
+        ["MarketCapPe"] = ["FMP", "Yahoo"],
+        ["ForwardValuation"] = ["Yahoo"],
+        ["Dividend"] = ["Yahoo"],
+        ["FiftyTwoWeek"] = ["TwelveData", "FMP", "Yahoo"],
+        ["MovingAverages"] = ["FMP", "Yahoo"],
+        ["CompanyInfo"] = ["TwelveData", "FMP", "Yahoo"]
+    };
+
+    /// <summary>
+    /// Maps field groups to their property names.
+    /// </summary>
+    private static readonly Dictionary<string, string[]> FieldGroupMembers = new()
+    {
+        ["Price"] = ["CurrentPrice", "PreviousClose", "Open", "DayHigh", "DayLow"],
+        ["Volume"] = ["Volume", "AverageVolume"],
+        ["MarketCapPe"] = ["MarketCap", "PeRatio"],
+        ["ForwardValuation"] = ["ForwardPeRatio", "PegRatio", "PriceToBook"],
+        ["Dividend"] = ["DividendYield", "DividendRate"],
+        ["FiftyTwoWeek"] = ["FiftyTwoWeekHigh", "FiftyTwoWeekLow"],
+        ["MovingAverages"] = ["FiftyDayAverage", "TwoHundredDayAverage"],
+        ["CompanyInfo"] = ["Sector", "Industry", "Website", "Country", "Currency", "Exchange", "MicCode", "ExchangeName", "Description", "FullTimeEmployees", "IpoDate", "Isin", "Cusip", "Sedol"]
+    };
+
     public AggregatedStockDataService(
         IEnumerable<IStockDataProvider> providers,
         IMemoryCache cache,
@@ -67,7 +98,123 @@ public class AggregatedStockDataService
     }
 
     /// <summary>
-    /// Get stock quote and company information with cascading fallback.
+    /// Composite StockInfo from multiple provider results using field priority matrix.
+    /// Identity fields (Symbol, ShortName, LongName) come from primary provider (first non-null by Price priority).
+    /// Other fields are composited: per field group, take highest-priority provider's non-null value.
+    /// Returns null if all provider results are null.
+    /// </summary>
+    private static StockInfo? CompositeStockInfo(Dictionary<string, StockInfo?> providerResults)
+    {
+        // If all providers are null, return null
+        if (providerResults.Values.All(v => v == null))
+            return null;
+
+        // Find primary provider (first by Price priority that has non-null result)
+        StockInfo? primaryResult = null;
+        foreach (var providerName in FieldPriorityMatrix["Price"])
+        {
+            if (providerResults.TryGetValue(providerName, out var result) && result != null)
+            {
+                primaryResult = result;
+                break;
+            }
+        }
+
+        // If no primary provider found, use any non-null result
+        if (primaryResult == null)
+        {
+            primaryResult = providerResults.Values.First(v => v != null);
+        }
+
+        // Helper: Get composite value for a field from highest-priority provider
+        object? GetCompositeFieldValue(string fieldName)
+        {
+            // Find which group this field belongs to
+            var group = FieldGroupMembers.FirstOrDefault(g => g.Value.Contains(fieldName));
+            if (group.Value == null)
+                return null;
+
+            // Look up priority list for this group
+            if (!FieldPriorityMatrix.TryGetValue(group.Key, out var priorityList))
+                return null;
+
+            // Try each provider in priority order
+            foreach (var providerName in priorityList)
+            {
+                if (providerResults.TryGetValue(providerName, out var provider) && provider != null)
+                {
+                    var prop = typeof(StockInfo).GetProperty(fieldName);
+                    if (prop != null)
+                    {
+                        var value = prop.GetValue(provider);
+                        if (value != null)
+                            return value;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        // Build composite by collecting all field values
+        var compositeFields = new Dictionary<string, object?>();
+
+        // Add identity fields from primary (never composite these)
+        compositeFields["Symbol"] = primaryResult!.Symbol;
+        compositeFields["ShortName"] = primaryResult!.ShortName;
+        compositeFields["LongName"] = primaryResult!.LongName;
+
+        // Composite all other fields
+        foreach (var group in FieldGroupMembers)
+        {
+            foreach (var fieldName in group.Value)
+            {
+                // Skip identity fields
+                if (fieldName == "Symbol" || fieldName == "ShortName" || fieldName == "LongName")
+                    continue;
+
+                compositeFields[fieldName] = GetCompositeFieldValue(fieldName);
+            }
+        }
+
+        // Use primary as base and apply composited values via 'with' expression
+        var composite = primaryResult! with { };
+
+        // For record types, we need to reconstruct with new values
+        // Build a new StockInfo by reading constructor signature and applying values
+        var props = typeof(StockInfo).GetProperties().Where(p => p.CanRead).ToList();
+        var fieldValues = props.ToDictionary(p => p.Name, p => compositeFields.TryGetValue(p.Name, out var v) ? v : p.GetValue(primaryResult));
+
+        // Construct via reflection by building the record
+        try
+        {
+            var ctor = typeof(StockInfo).GetConstructors(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+                .FirstOrDefault();
+
+            if (ctor != null)
+            {
+                var parameters = ctor.GetParameters();
+                var paramValues = parameters.Select(p =>
+                {
+                    var propName = char.ToUpper(p.Name![0]) + p.Name.Substring(1);
+                    return fieldValues.TryGetValue(propName, out var val) ? val : null;
+                }).ToArray();
+
+                return (StockInfo?)Activator.CreateInstance(typeof(StockInfo), paramValues);
+            }
+        }
+        catch
+        {
+            // Fallback to primary with at least some fields updated
+        }
+
+        return composite;
+    }
+
+    /// <summary>
+    /// Get stock quote and company information with parallel fetch and per-field compositing.
+    /// All available providers are called simultaneously. Fields are composited per priority matrix.
+    /// Identity fields (Symbol, ShortName, LongName) come from primary provider only.
     /// </summary>
     public async Task<StockInfo?> GetStockInfoAsync(string symbol)
     {
@@ -79,17 +226,45 @@ public class AggregatedStockDataService
             return cached;
         }
 
-        foreach (var provider in _providers.Where(p => p.IsAvailable))
+        // Filter available providers
+        var availableProviders = _providers.Where(p => p.IsAvailable).ToList();
+        if (availableProviders.Count == 0)
         {
-            _logger?.LogDebug("Trying {Provider} for {Symbol}", provider.ProviderName, LogSanitizer.Sanitize(symbol));
+            _logger?.LogWarning("No providers available for {Symbol}", LogSanitizer.Sanitize(symbol));
+            return null;
+        }
 
-            var result = await provider.GetStockInfoAsync(symbol);
-            if (result != null)
+        // Parallel fetch: call all providers simultaneously, each with its own error handling
+        var tasks = availableProviders.Select(async provider =>
+        {
+            try
             {
-                _logger?.LogInformation("Got {Symbol} from {Provider}", LogSanitizer.Sanitize(symbol), provider.ProviderName);
-                _cache.Set(cacheKey, result, SymbolCacheOptions(symbol.ToUpper(), QuoteCacheDuration));
-                return result;
+                var result = await provider.GetStockInfoAsync(symbol);
+                return (provider.ProviderName, Result: result);
             }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Provider {Provider} failed for {Symbol}",
+                    provider.ProviderName, LogSanitizer.Sanitize(symbol));
+                return (provider.ProviderName, Result: (StockInfo?)null);
+            }
+        }).ToList();
+
+        var results = await Task.WhenAll(tasks);
+        var providerResults = results.ToDictionary(r => r.ProviderName, r => r.Result);
+
+        // Composite the results
+        var composite = CompositeStockInfo(providerResults);
+
+        if (composite != null)
+        {
+            // Log which providers contributed
+            var contributingProviders = providerResults.Where(kv => kv.Value != null).Select(kv => kv.Key).ToList();
+            _logger?.LogInformation("Composited {Symbol} from providers: {Providers}",
+                LogSanitizer.Sanitize(symbol), string.Join(", ", contributingProviders));
+
+            _cache.Set(cacheKey, composite, SymbolCacheOptions(symbol.ToUpper(), QuoteCacheDuration));
+            return composite;
         }
 
         _logger?.LogWarning("All providers failed for {Symbol}", LogSanitizer.Sanitize(symbol));
