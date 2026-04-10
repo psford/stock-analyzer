@@ -10,8 +10,15 @@ using StockAnalyzer.Core.Models;
 namespace StockAnalyzer.Core.Services;
 
 /// <summary>
-/// Orchestrates multiple stock data providers with cascading fallback,
+/// Orchestrates multiple stock data providers with parallel fetch and per-field compositing,
 /// caching, and rate limit awareness.
+///
+/// Stock quote fetching: All available providers are called simultaneously. Fields are composited
+/// per provider priority matrix—each field is populated by the highest-priority provider that
+/// returns a non-null value. Identity fields (Symbol, ShortName, LongName) come from primary
+/// provider only to avoid mixing names.
+///
+/// Historical and search data still use sequential fallback for compatibility.
 ///
 /// Provider priority:
 /// 1. TwelveData (8/min, 800/day) - real-time quotes
@@ -66,6 +73,7 @@ public class AggregatedStockDataService
 
     /// <summary>
     /// Maps field groups to their property names.
+    /// Note: IpoDate is in CompanyInfo group despite its model location near MovingAverages (lines 54-56).
     /// </summary>
     private static readonly Dictionary<string, string[]> FieldGroupMembers = new()
     {
@@ -78,6 +86,22 @@ public class AggregatedStockDataService
         ["MovingAverages"] = ["FiftyDayAverage", "TwoHundredDayAverage"],
         ["CompanyInfo"] = ["Sector", "Industry", "Website", "Country", "Currency", "Exchange", "MicCode", "ExchangeName", "Description", "FullTimeEmployees", "IpoDate", "Isin", "Cusip", "Sedol"]
     };
+
+    /// <summary>
+    /// Cached PropertyInfo objects for all StockInfo fields (avoids per-lookup reflection).
+    /// Built once at class initialization.
+    /// </summary>
+    private static readonly Dictionary<string, System.Reflection.PropertyInfo?> _propertyInfoCache =
+        typeof(StockInfo).GetProperties()
+            .ToDictionary(p => p.Name, p => (System.Reflection.PropertyInfo?)p);
+
+    /// <summary>
+    /// Inverted field-to-group mapping (field name → group name).
+    /// Eliminates linear scan in GetCompositeFieldValue when locating a field's group.
+    /// </summary>
+    private static readonly Dictionary<string, string> _fieldToGroupMap =
+        FieldGroupMembers.SelectMany(g => g.Value.Select(field => (field, group: g.Key)))
+            .ToDictionary(x => x.field, x => x.group);
 
     public AggregatedStockDataService(
         IEnumerable<IStockDataProvider> providers,
@@ -127,15 +151,19 @@ public class AggregatedStockDataService
         }
 
         // Helper: Get composite value for a field from highest-priority provider
+        // Uses cached PropertyInfo and field-to-group mappings (no reflection per-lookup)
         T? GetCompositeFieldValue<T>(string fieldName)
         {
-            // Find which group this field belongs to
-            var group = FieldGroupMembers.FirstOrDefault(g => g.Value.Contains(fieldName));
-            if (group.Value == null)
+            // Find which group this field belongs to (O(1) lookup via inverted map)
+            if (!_fieldToGroupMap.TryGetValue(fieldName, out var groupName))
                 return default;
 
             // Look up priority list for this group
-            if (!FieldPriorityMatrix.TryGetValue(group.Key, out var priorityList))
+            if (!FieldPriorityMatrix.TryGetValue(groupName, out var priorityList))
+                return default;
+
+            // Get cached PropertyInfo (O(1) instead of reflection)
+            if (!_propertyInfoCache.TryGetValue(fieldName, out var prop) || prop == null)
                 return default;
 
             // Try each provider in priority order
@@ -143,13 +171,9 @@ public class AggregatedStockDataService
             {
                 if (providerResults.TryGetValue(providerName, out var provider) && provider != null)
                 {
-                    var prop = typeof(StockInfo).GetProperty(fieldName);
-                    if (prop != null)
-                    {
-                        var value = prop.GetValue(provider);
-                        if (value != null)
-                            return (T)value;
-                    }
+                    var value = prop.GetValue(provider);
+                    if (value != null)
+                        return (T)value;
                 }
             }
 
