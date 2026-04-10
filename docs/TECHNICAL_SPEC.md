@@ -176,7 +176,7 @@ This specification covers:
 
 ### 2.4 Stock Data Provider Architecture
 
-The application uses a multi-provider architecture with cascading fallback for stock data:
+The application uses a multi-provider architecture for stock data:
 
 ```
 AggregatedStockDataService (orchestrator)
@@ -185,7 +185,9 @@ AggregatedStockDataService (orchestrator)
     └── YahooFinanceService  (Priority 3 - fallback, full coverage)
 ```
 
-**Strategy:** Providers are tried in priority order. First successful response wins.
+**Quote strategy:** All available providers are called simultaneously via `Task.WhenAll`. A static priority matrix selects the highest-priority non-null value for each field independently (per-field compositing). Identity fields (Symbol, ShortName, LongName) come from a single primary provider to avoid mixing names across providers. If a provider throws or times out, its result is treated as null and other providers fill in.
+
+**Historical data / search strategy:** Providers are tried in priority order. First successful response wins (sequential fallback).
 
 **Caching:** In-memory cache with TTLs:
 - Quotes: 5 minutes
