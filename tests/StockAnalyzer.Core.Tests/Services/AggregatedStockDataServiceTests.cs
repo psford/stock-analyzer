@@ -500,4 +500,488 @@ public class AggregatedStockDataServiceTests
     }
 
     #endregion
+
+    #region Stock Data Compositing Tests (AC1 and AC3)
+
+    #region AC1.1 - TwelveData null, FMP has value
+
+    [Fact]
+    public async Task GetStockInfoAsync_WhenTwelveDataNullMarketCapAndFmpHasValue_CompositeContainsFmpMarketCap()
+    {
+        // Arrange
+        var symbol = "AAPL";
+        const decimal fmpMarketCap = 2_000_000_000m;
+
+        var mockTwelveData = new Mock<IStockDataProvider>();
+        mockTwelveData.Setup(p => p.ProviderName).Returns("TwelveData");
+        mockTwelveData.Setup(p => p.Priority).Returns(1);
+        mockTwelveData.Setup(p => p.IsAvailable).Returns(true);
+        mockTwelveData.Setup(p => p.GetStockInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StockInfo
+            {
+                Symbol = symbol,
+                ShortName = "Apple",
+                LongName = "Apple Inc.",
+                MarketCap = null,  // TwelveData doesn't have MarketCap
+                CurrentPrice = 150m
+            });
+
+        var mockFmp = new Mock<IStockDataProvider>();
+        mockFmp.Setup(p => p.ProviderName).Returns("FMP");
+        mockFmp.Setup(p => p.Priority).Returns(2);
+        mockFmp.Setup(p => p.IsAvailable).Returns(true);
+        mockFmp.Setup(p => p.GetStockInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StockInfo
+            {
+                Symbol = symbol,
+                ShortName = "Apple Inc",
+                LongName = "Apple Inc.",
+                MarketCap = fmpMarketCap,  // FMP has MarketCap
+                CurrentPrice = 149m
+            });
+
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var sut = new AggregatedStockDataService(new[] { mockTwelveData.Object, mockFmp.Object }, cache, null, null);
+
+        // Act
+        var result = await sut.GetStockInfoAsync(symbol);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.MarketCap.Should().Be(fmpMarketCap);
+        // Identity fields should come from TwelveData (primary provider)
+        result.Symbol.Should().Be(symbol);
+    }
+
+    #endregion
+
+    #region AC1.2 - TwelveData null PeRatio, FMP has value
+
+    [Fact]
+    public async Task GetStockInfoAsync_WhenTwelveDataNullPeRatioAndFmpHasValue_CompositeContainsFmpPeRatio()
+    {
+        // Arrange
+        var symbol = "MSFT";
+        const decimal fmpPeRatio = 25.5m;
+
+        var mockTwelveData = new Mock<IStockDataProvider>();
+        mockTwelveData.Setup(p => p.ProviderName).Returns("TwelveData");
+        mockTwelveData.Setup(p => p.Priority).Returns(1);
+        mockTwelveData.Setup(p => p.IsAvailable).Returns(true);
+        mockTwelveData.Setup(p => p.GetStockInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StockInfo
+            {
+                Symbol = symbol,
+                ShortName = "Microsoft",
+                LongName = "Microsoft Corporation",
+                PeRatio = null,  // TwelveData doesn't have PeRatio
+                CurrentPrice = 300m
+            });
+
+        var mockFmp = new Mock<IStockDataProvider>();
+        mockFmp.Setup(p => p.ProviderName).Returns("FMP");
+        mockFmp.Setup(p => p.Priority).Returns(2);
+        mockFmp.Setup(p => p.IsAvailable).Returns(true);
+        mockFmp.Setup(p => p.GetStockInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StockInfo
+            {
+                Symbol = symbol,
+                ShortName = "Microsoft Corporation",
+                LongName = "Microsoft Corporation",
+                PeRatio = fmpPeRatio,  // FMP has PeRatio
+                CurrentPrice = 299m
+            });
+
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var sut = new AggregatedStockDataService(new[] { mockTwelveData.Object, mockFmp.Object }, cache, null, null);
+
+        // Act
+        var result = await sut.GetStockInfoAsync(symbol);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.PeRatio.Should().Be(fmpPeRatio);
+        result.Symbol.Should().Be(symbol);
+    }
+
+    #endregion
+
+    #region AC1.3 - Only Yahoo available
+
+    [Fact]
+    public async Task GetStockInfoAsync_WhenOnlyYahooAvailable_CompositeContainsYahooValues()
+    {
+        // Arrange
+        var symbol = "GOOGL";
+        const decimal yahooMarketCap = 1_500_000_000m;
+        const decimal yahooPeRatio = 20.0m;
+
+        var mockTwelveData = new Mock<IStockDataProvider>();
+        mockTwelveData.Setup(p => p.ProviderName).Returns("TwelveData");
+        mockTwelveData.Setup(p => p.Priority).Returns(1);
+        mockTwelveData.Setup(p => p.IsAvailable).Returns(false);  // Not available
+
+        var mockFmp = new Mock<IStockDataProvider>();
+        mockFmp.Setup(p => p.ProviderName).Returns("FMP");
+        mockFmp.Setup(p => p.Priority).Returns(2);
+        mockFmp.Setup(p => p.IsAvailable).Returns(false);  // Not available
+
+        var mockYahoo = new Mock<IStockDataProvider>();
+        mockYahoo.Setup(p => p.ProviderName).Returns("Yahoo");
+        mockYahoo.Setup(p => p.Priority).Returns(3);
+        mockYahoo.Setup(p => p.IsAvailable).Returns(true);
+        mockYahoo.Setup(p => p.GetStockInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StockInfo
+            {
+                Symbol = symbol,
+                ShortName = "Alphabet",
+                LongName = "Alphabet Inc.",
+                MarketCap = yahooMarketCap,
+                PeRatio = yahooPeRatio,
+                CurrentPrice = 140m
+            });
+
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var sut = new AggregatedStockDataService(new[] { mockTwelveData.Object, mockFmp.Object, mockYahoo.Object }, cache, null, null);
+
+        // Act
+        var result = await sut.GetStockInfoAsync(symbol);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.MarketCap.Should().Be(yahooMarketCap);
+        result.PeRatio.Should().Be(yahooPeRatio);
+        result.Symbol.Should().Be(symbol);
+    }
+
+    #endregion
+
+    #region AC1.4 - All providers null for MarketCap
+
+    [Fact]
+    public async Task GetStockInfoAsync_WhenAllProvidersReturnNullMarketCap_CompositeMarketCapIsNull()
+    {
+        // Arrange
+        var symbol = "TSLA";
+
+        var mockTwelveData = new Mock<IStockDataProvider>();
+        mockTwelveData.Setup(p => p.ProviderName).Returns("TwelveData");
+        mockTwelveData.Setup(p => p.Priority).Returns(1);
+        mockTwelveData.Setup(p => p.IsAvailable).Returns(true);
+        mockTwelveData.Setup(p => p.GetStockInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StockInfo
+            {
+                Symbol = symbol,
+                ShortName = "Tesla",
+                LongName = "Tesla Inc.",
+                MarketCap = null,
+                CurrentPrice = 240m
+            });
+
+        var mockFmp = new Mock<IStockDataProvider>();
+        mockFmp.Setup(p => p.ProviderName).Returns("FMP");
+        mockFmp.Setup(p => p.Priority).Returns(2);
+        mockFmp.Setup(p => p.IsAvailable).Returns(true);
+        mockFmp.Setup(p => p.GetStockInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StockInfo
+            {
+                Symbol = symbol,
+                ShortName = "Tesla Inc",
+                LongName = "Tesla Inc.",
+                MarketCap = null,  // FMP also null
+                CurrentPrice = 239m
+            });
+
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var sut = new AggregatedStockDataService(new[] { mockTwelveData.Object, mockFmp.Object }, cache, null, null);
+
+        // Act
+        var result = await sut.GetStockInfoAsync(symbol);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.MarketCap.Should().BeNull();
+        result.Symbol.Should().Be(symbol);
+    }
+
+    #endregion
+
+    #region AC1.5 - Priority wins over value size
+
+    [Fact]
+    public async Task GetStockInfoAsync_WhenMultipleProvidersReturnMarketCap_HighestPriorityProviderWins()
+    {
+        // Arrange
+        var symbol = "AMZN";
+        const decimal twelveDataMarketCap = 1_000_000_000m;
+        const decimal fmpMarketCap = 2_000_000_000m;  // Larger, but FMP has higher priority for MarketCapPe
+
+        var mockTwelveData = new Mock<IStockDataProvider>();
+        mockTwelveData.Setup(p => p.ProviderName).Returns("TwelveData");
+        mockTwelveData.Setup(p => p.Priority).Returns(1);
+        mockTwelveData.Setup(p => p.IsAvailable).Returns(true);
+        mockTwelveData.Setup(p => p.GetStockInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StockInfo
+            {
+                Symbol = symbol,
+                ShortName = "Amazon",
+                LongName = "Amazon.com Inc.",
+                MarketCap = twelveDataMarketCap,
+                CurrentPrice = 175m
+            });
+
+        var mockFmp = new Mock<IStockDataProvider>();
+        mockFmp.Setup(p => p.ProviderName).Returns("FMP");
+        mockFmp.Setup(p => p.Priority).Returns(2);
+        mockFmp.Setup(p => p.IsAvailable).Returns(true);
+        mockFmp.Setup(p => p.GetStockInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StockInfo
+            {
+                Symbol = symbol,
+                ShortName = "Amazon Inc",
+                LongName = "Amazon.com Inc.",
+                MarketCap = fmpMarketCap,
+                CurrentPrice = 174m
+            });
+
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var sut = new AggregatedStockDataService(new[] { mockTwelveData.Object, mockFmp.Object }, cache, null, null);
+
+        // Act
+        var result = await sut.GetStockInfoAsync(symbol);
+
+        // Assert
+        result.Should().NotBeNull();
+        // Per FieldPriorityMatrix, MarketCapPe group has ["FMP", "Yahoo"], so FMP is first
+        result!.MarketCap.Should().Be(fmpMarketCap);
+        result.Symbol.Should().Be(symbol);
+    }
+
+    #endregion
+
+    #region AC3.1 - Per-field compositing across groups
+
+    [Fact]
+    public async Task GetStockInfoAsync_WhenProvidersHaveDifferentFields_CompositeIncludesAllFields()
+    {
+        // Arrange
+        var symbol = "META";
+        const decimal twelveDataPrice = 300m;
+        const decimal fmpFiftyDayAverage = 295m;
+
+        var mockTwelveData = new Mock<IStockDataProvider>();
+        mockTwelveData.Setup(p => p.ProviderName).Returns("TwelveData");
+        mockTwelveData.Setup(p => p.Priority).Returns(1);
+        mockTwelveData.Setup(p => p.IsAvailable).Returns(true);
+        mockTwelveData.Setup(p => p.GetStockInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StockInfo
+            {
+                Symbol = symbol,
+                ShortName = "Meta",
+                LongName = "Meta Platforms Inc.",
+                CurrentPrice = twelveDataPrice,  // TwelveData has price
+                FiftyDayAverage = null           // But no FiftyDayAverage
+            });
+
+        var mockFmp = new Mock<IStockDataProvider>();
+        mockFmp.Setup(p => p.ProviderName).Returns("FMP");
+        mockFmp.Setup(p => p.Priority).Returns(2);
+        mockFmp.Setup(p => p.IsAvailable).Returns(true);
+        mockFmp.Setup(p => p.GetStockInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StockInfo
+            {
+                Symbol = symbol,
+                ShortName = "Meta Inc",
+                LongName = "Meta Platforms Inc.",
+                CurrentPrice = null,                // FMP has no price
+                FiftyDayAverage = fmpFiftyDayAverage  // But has FiftyDayAverage
+            });
+
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var sut = new AggregatedStockDataService(new[] { mockTwelveData.Object, mockFmp.Object }, cache, null, null);
+
+        // Act
+        var result = await sut.GetStockInfoAsync(symbol);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.CurrentPrice.Should().Be(twelveDataPrice);          // From TwelveData
+        result.FiftyDayAverage.Should().Be(fmpFiftyDayAverage);     // From FMP
+        result.Symbol.Should().Be(symbol);
+    }
+
+    #endregion
+
+    #region AC3.2 - Identity fields from primary provider only
+
+    [Fact]
+    public async Task GetStockInfoAsync_WhenIdentityFieldsDifferAcrossProviders_UsesIdentityFromPrimaryProvider()
+    {
+        // Arrange
+        var symbol = "NFLX";
+        const string twelveDataShortName = "Netflix Inc";
+        const string fmpShortName = "Netflix Inc.";  // Different short name
+
+        var mockTwelveData = new Mock<IStockDataProvider>();
+        mockTwelveData.Setup(p => p.ProviderName).Returns("TwelveData");
+        mockTwelveData.Setup(p => p.Priority).Returns(1);
+        mockTwelveData.Setup(p => p.IsAvailable).Returns(true);
+        mockTwelveData.Setup(p => p.GetStockInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StockInfo
+            {
+                Symbol = symbol,
+                ShortName = twelveDataShortName,
+                LongName = "Netflix Inc",
+                CurrentPrice = 400m
+            });
+
+        var mockFmp = new Mock<IStockDataProvider>();
+        mockFmp.Setup(p => p.ProviderName).Returns("FMP");
+        mockFmp.Setup(p => p.Priority).Returns(2);
+        mockFmp.Setup(p => p.IsAvailable).Returns(true);
+        mockFmp.Setup(p => p.GetStockInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StockInfo
+            {
+                Symbol = symbol,
+                ShortName = fmpShortName,
+                LongName = "Netflix Inc",
+                CurrentPrice = 398m
+            });
+
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var sut = new AggregatedStockDataService(new[] { mockTwelveData.Object, mockFmp.Object }, cache, null, null);
+
+        // Act
+        var result = await sut.GetStockInfoAsync(symbol);
+
+        // Assert
+        result.Should().NotBeNull();
+        // Identity should come from TwelveData (primary provider, first in Price priority)
+        result!.ShortName.Should().Be(twelveDataShortName);
+        result.Symbol.Should().Be(symbol);
+    }
+
+    #endregion
+
+    #region AC3.3 - Provider failure doesn't abort others
+
+    [Fact]
+    public async Task GetStockInfoAsync_WhenOneProviderThrows_OtherProvidersFillInWithoutError()
+    {
+        // Arrange
+        var symbol = "IBM";
+        const decimal fmpMarketCap = 250_000_000m;
+
+        var mockTwelveData = new Mock<IStockDataProvider>();
+        mockTwelveData.Setup(p => p.ProviderName).Returns("TwelveData");
+        mockTwelveData.Setup(p => p.Priority).Returns(1);
+        mockTwelveData.Setup(p => p.IsAvailable).Returns(true);
+        mockTwelveData.Setup(p => p.GetStockInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("Connection timeout"));
+
+        var mockFmp = new Mock<IStockDataProvider>();
+        mockFmp.Setup(p => p.ProviderName).Returns("FMP");
+        mockFmp.Setup(p => p.Priority).Returns(2);
+        mockFmp.Setup(p => p.IsAvailable).Returns(true);
+        mockFmp.Setup(p => p.GetStockInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StockInfo
+            {
+                Symbol = symbol,
+                ShortName = "IBM",
+                LongName = "International Business Machines",
+                MarketCap = fmpMarketCap,
+                CurrentPrice = 190m
+            });
+
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var sut = new AggregatedStockDataService(new[] { mockTwelveData.Object, mockFmp.Object }, cache, null, null);
+
+        // Act
+        var result = await sut.GetStockInfoAsync(symbol);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.MarketCap.Should().Be(fmpMarketCap);
+        result.Symbol.Should().Be(symbol);
+    }
+
+    #endregion
+
+    #region AC3.4 - All providers fail
+
+    [Fact]
+    public async Task GetStockInfoAsync_WhenAllProvidersFail_ReturnsNull()
+    {
+        // Arrange
+        var symbol = "GE";
+
+        var mockTwelveData = new Mock<IStockDataProvider>();
+        mockTwelveData.Setup(p => p.ProviderName).Returns("TwelveData");
+        mockTwelveData.Setup(p => p.Priority).Returns(1);
+        mockTwelveData.Setup(p => p.IsAvailable).Returns(true);
+        mockTwelveData.Setup(p => p.GetStockInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("TwelveData failed"));
+
+        var mockFmp = new Mock<IStockDataProvider>();
+        mockFmp.Setup(p => p.ProviderName).Returns("FMP");
+        mockFmp.Setup(p => p.Priority).Returns(2);
+        mockFmp.Setup(p => p.IsAvailable).Returns(true);
+        mockFmp.Setup(p => p.GetStockInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("FMP failed"));
+
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var sut = new AggregatedStockDataService(new[] { mockTwelveData.Object, mockFmp.Object }, cache, null, null);
+
+        // Act
+        var result = await sut.GetStockInfoAsync(symbol);
+
+        // Assert
+        result.Should().BeNull();
+    }
+
+    #endregion
+
+    #region AC3.5 - Single provider is pass-through
+
+    [Fact]
+    public async Task GetStockInfoAsync_WhenOnlyOneProviderAvailable_ReturnsThatProviderResultAsIs()
+    {
+        // Arrange
+        var symbol = "INTC";
+        var stockInfo = new StockInfo
+        {
+            Symbol = symbol,
+            ShortName = "Intel",
+            LongName = "Intel Corporation",
+            CurrentPrice = 45m,
+            MarketCap = 180_000_000_000m,
+            PeRatio = 12.5m
+        };
+
+        var mockTwelveData = new Mock<IStockDataProvider>();
+        mockTwelveData.Setup(p => p.ProviderName).Returns("TwelveData");
+        mockTwelveData.Setup(p => p.Priority).Returns(1);
+        mockTwelveData.Setup(p => p.IsAvailable).Returns(true);
+        mockTwelveData.Setup(p => p.GetStockInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(stockInfo);
+
+        var mockFmp = new Mock<IStockDataProvider>();
+        mockFmp.Setup(p => p.ProviderName).Returns("FMP");
+        mockFmp.Setup(p => p.Priority).Returns(2);
+        mockFmp.Setup(p => p.IsAvailable).Returns(false);  // Not available
+
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var sut = new AggregatedStockDataService(new[] { mockTwelveData.Object, mockFmp.Object }, cache, null, null);
+
+        // Act
+        var result = await sut.GetStockInfoAsync(symbol);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Should().BeEquivalentTo(stockInfo);
+    }
+
+    #endregion
+
+    #endregion
 }
