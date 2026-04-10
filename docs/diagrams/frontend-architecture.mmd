@@ -1,0 +1,48 @@
+%% MANUAL - Update when frontend structure changes
+graph TB
+    subgraph HTML["Pages"]
+        Index["index.html<br/><small>Main Dashboard</small>"]
+        Docs["docs.html<br/><small>Documentation Viewer</small>"]
+        Status["status.html<br/><small>Health Dashboard</small>"]
+    end
+
+    subgraph JS["JavaScript Modules"]
+        App["app.js<br/><small>Main Application Logic</small>"]
+        Charts["charts.js<br/><small>Plotly Chart Rendering</small>"]
+        Storage["storage.js<br/><small>LocalStorage Watchlists</small>"]
+        Portfolio["portfolio.js<br/><small>Portfolio Aggregation</small>"]
+    end
+
+    subgraph Libraries["CDN Libraries"]
+        Tailwind["Tailwind CSS"]
+        Plotly["Plotly.js"]
+        Mermaid["Mermaid.js"]
+        Marked["Marked.js"]
+        Fuse["Fuse.js"]
+    end
+
+    subgraph API["Backend API"]
+        Stock["/api/stock/*"]
+        Watchlist["/api/watchlist/*"]
+        News["/api/news/*"]
+        Images["/api/images/*"]
+    end
+
+    Index --> App
+    App --> Charts
+    App --> Storage
+    App --> Portfolio
+    App --> Stock
+    App --> Watchlist
+    App --> News
+    App --> Images
+    Charts --> Plotly
+    Docs --> Marked
+    Docs --> Mermaid
+    Docs --> Fuse
+    Index --> Tailwind
+
+    style HTML fill:#3B82F6,color:#fff
+    style JS fill:#10B981,color:#fff
+    style Libraries fill:#8B5CF6,color:#fff
+    style API fill:#F59E0B,color:#fff
