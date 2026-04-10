@@ -127,16 +127,16 @@ public class AggregatedStockDataService
         }
 
         // Helper: Get composite value for a field from highest-priority provider
-        object? GetCompositeFieldValue(string fieldName)
+        T? GetCompositeFieldValue<T>(string fieldName)
         {
             // Find which group this field belongs to
             var group = FieldGroupMembers.FirstOrDefault(g => g.Value.Contains(fieldName));
             if (group.Value == null)
-                return null;
+                return default;
 
             // Look up priority list for this group
             if (!FieldPriorityMatrix.TryGetValue(group.Key, out var priorityList))
-                return null;
+                return default;
 
             // Try each provider in priority order
             foreach (var providerName in priorityList)
@@ -148,65 +148,65 @@ public class AggregatedStockDataService
                     {
                         var value = prop.GetValue(provider);
                         if (value != null)
-                            return value;
+                            return (T)value;
                     }
                 }
             }
 
-            return null;
+            return default;
         }
 
-        // Build composite by collecting all field values
-        var compositeFields = new Dictionary<string, object?>();
-
-        // Add identity fields from primary (never composite these)
-        compositeFields["Symbol"] = primaryResult!.Symbol;
-        compositeFields["ShortName"] = primaryResult!.ShortName;
-        compositeFields["LongName"] = primaryResult!.LongName;
-
-        // Composite all other fields
-        foreach (var group in FieldGroupMembers)
+        // Build composite using record copy with all fields set from highest-priority providers
+        var composite = primaryResult! with
         {
-            foreach (var fieldName in group.Value)
-            {
-                // Skip identity fields
-                if (fieldName == "Symbol" || fieldName == "ShortName" || fieldName == "LongName")
-                    continue;
+            // Price fields
+            CurrentPrice = GetCompositeFieldValue<decimal?>("CurrentPrice") ?? primaryResult!.CurrentPrice,
+            PreviousClose = GetCompositeFieldValue<decimal?>("PreviousClose") ?? primaryResult!.PreviousClose,
+            Open = GetCompositeFieldValue<decimal?>("Open") ?? primaryResult!.Open,
+            DayHigh = GetCompositeFieldValue<decimal?>("DayHigh") ?? primaryResult!.DayHigh,
+            DayLow = GetCompositeFieldValue<decimal?>("DayLow") ?? primaryResult!.DayLow,
 
-                compositeFields[fieldName] = GetCompositeFieldValue(fieldName);
-            }
-        }
+            // Volume fields
+            Volume = GetCompositeFieldValue<long?>("Volume") ?? primaryResult!.Volume,
+            AverageVolume = GetCompositeFieldValue<long?>("AverageVolume") ?? primaryResult!.AverageVolume,
 
-        // Use primary as base and apply composited values via 'with' expression
-        var composite = primaryResult! with { };
+            // MarketCap & P/E
+            MarketCap = GetCompositeFieldValue<decimal?>("MarketCap") ?? primaryResult!.MarketCap,
+            PeRatio = GetCompositeFieldValue<decimal?>("PeRatio") ?? primaryResult!.PeRatio,
 
-        // For record types, we need to reconstruct with new values
-        // Build a new StockInfo by reading constructor signature and applying values
-        var props = typeof(StockInfo).GetProperties().Where(p => p.CanRead).ToList();
-        var fieldValues = props.ToDictionary(p => p.Name, p => compositeFields.TryGetValue(p.Name, out var v) ? v : p.GetValue(primaryResult));
+            // Forward valuation
+            ForwardPeRatio = GetCompositeFieldValue<decimal?>("ForwardPeRatio") ?? primaryResult!.ForwardPeRatio,
+            PegRatio = GetCompositeFieldValue<decimal?>("PegRatio") ?? primaryResult!.PegRatio,
+            PriceToBook = GetCompositeFieldValue<decimal?>("PriceToBook") ?? primaryResult!.PriceToBook,
 
-        // Construct via reflection by building the record
-        try
-        {
-            var ctor = typeof(StockInfo).GetConstructors(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
-                .FirstOrDefault();
+            // Dividend
+            DividendYield = GetCompositeFieldValue<decimal?>("DividendYield") ?? primaryResult!.DividendYield,
+            DividendRate = GetCompositeFieldValue<decimal?>("DividendRate") ?? primaryResult!.DividendRate,
 
-            if (ctor != null)
-            {
-                var parameters = ctor.GetParameters();
-                var paramValues = parameters.Select(p =>
-                {
-                    var propName = char.ToUpper(p.Name![0]) + p.Name.Substring(1);
-                    return fieldValues.TryGetValue(propName, out var val) ? val : null;
-                }).ToArray();
+            // 52-week
+            FiftyTwoWeekHigh = GetCompositeFieldValue<decimal?>("FiftyTwoWeekHigh") ?? primaryResult!.FiftyTwoWeekHigh,
+            FiftyTwoWeekLow = GetCompositeFieldValue<decimal?>("FiftyTwoWeekLow") ?? primaryResult!.FiftyTwoWeekLow,
 
-                return (StockInfo?)Activator.CreateInstance(typeof(StockInfo), paramValues);
-            }
-        }
-        catch
-        {
-            // Fallback to primary with at least some fields updated
-        }
+            // Moving averages
+            FiftyDayAverage = GetCompositeFieldValue<decimal?>("FiftyDayAverage") ?? primaryResult!.FiftyDayAverage,
+            TwoHundredDayAverage = GetCompositeFieldValue<decimal?>("TwoHundredDayAverage") ?? primaryResult!.TwoHundredDayAverage,
+
+            // Company info
+            Sector = GetCompositeFieldValue<string?>("Sector") ?? primaryResult!.Sector,
+            Industry = GetCompositeFieldValue<string?>("Industry") ?? primaryResult!.Industry,
+            Website = GetCompositeFieldValue<string?>("Website") ?? primaryResult!.Website,
+            Country = GetCompositeFieldValue<string?>("Country") ?? primaryResult!.Country,
+            Currency = GetCompositeFieldValue<string?>("Currency") ?? primaryResult!.Currency,
+            Exchange = GetCompositeFieldValue<string?>("Exchange") ?? primaryResult!.Exchange,
+            MicCode = GetCompositeFieldValue<string?>("MicCode") ?? primaryResult!.MicCode,
+            ExchangeName = GetCompositeFieldValue<string?>("ExchangeName") ?? primaryResult!.ExchangeName,
+            Description = GetCompositeFieldValue<string?>("Description") ?? primaryResult!.Description,
+            FullTimeEmployees = GetCompositeFieldValue<int?>("FullTimeEmployees") ?? primaryResult!.FullTimeEmployees,
+            IpoDate = GetCompositeFieldValue<string?>("IpoDate") ?? primaryResult!.IpoDate,
+            Isin = GetCompositeFieldValue<string?>("Isin") ?? primaryResult!.Isin,
+            Cusip = GetCompositeFieldValue<string?>("Cusip") ?? primaryResult!.Cusip,
+            Sedol = GetCompositeFieldValue<string?>("Sedol") ?? primaryResult!.Sedol
+        };
 
         return composite;
     }
