@@ -1,7 +1,7 @@
 # Functional Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 3.12
-**Last Updated:** 2026-03-10
+**Version:** 3.13
+**Last Updated:** 2026-05-27
 **Author:** Claude (AI Assistant)
 **Status:** Production
 **Audience:** Business Users, Product Owners, QA Testers
@@ -48,7 +48,11 @@ The Stock Analyzer Dashboard allows users to:
 5. **Read** news headlines associated with major price swings
 6. **Review** key company metrics (P/E ratio, dividend yield, market cap, etc.)
 
-### 2.2 What the System Does NOT Do
+### 2.2 Data Sources
+
+**Data Sources:** Quote data is fetched in parallel from all available providers (TwelveData, FMP, Yahoo Finance) and composited per-field using a priority matrix — each metric is taken from the highest-priority provider that returns a non-null value. This makes quotes more complete than any single provider could deliver. Identity fields (Symbol, Short Name, Long Name) always come from the primary provider for consistency. Historical price data comes from EODHD. News comes from Marketaux. Company bios come from Wikipedia (cached). Cat/dog images come from cataas.com and dog.ceo respectively.
+
+### 2.3 What the System Does NOT Do
 
 - Does not provide real-time streaming prices (data has ~15 minute delay)
 - Does not execute trades or connect to brokerage accounts
@@ -239,8 +243,8 @@ Page Load                    User Types Query
 | FR-005.9 | The hover popup headline must be a clickable link to the full news article |
 | FR-005.10 | The hover popup must remain visible when the user moves their mouse to interact with it |
 | FR-005.11 | The system must allow users to choose between cat or dog images for popup thumbnails |
-| FR-005.12 | The system must pre-cache 50 images of each type on page load for instant display |
-| FR-005.13 | The system must automatically refill the image cache when it drops below 10 images |
+| FR-005.12 | The system uses an idle-time image cache targeting 20 images of each (cat / dog) type. Initial page load pre-fetches only 5 of each to avoid delaying chart data; the remaining slots are filled during browser idle time. |
+| FR-005.13 | The system must automatically refill the image cache during idle time whenever the per-type count drops below the cache target (20). |
 | FR-005.14 | The system must use each cached image only once (no repeats) |
 | FR-005.15 | The system must clear the previous image when hiding the popup to prevent flash |
 | FR-005.16 | The system must filter news headlines so their sentiment matches the price direction |
@@ -279,7 +283,7 @@ Page Load                    User Types Query
 | FR-007.3 | The system must display 52-week high and low |
 | FR-007.4 | The system must display average volume |
 | FR-007.5 | The system must display dividend yield as a percentage |
-| FR-007.6 | The system must display "N/A" when a metric is unavailable |
+| FR-007.6 | The system must display "N/A" when a metric is unavailable, **with one exception**: the Dividend Yield row is omitted entirely when the value is null or zero (non-dividend-paying stocks). This reduces visual clutter for the common case. |
 
 ### 3.8 Performance Summary (FR-008)
 
@@ -291,6 +295,8 @@ Page Load                    User Types Query
 | FR-008.4 | The system must display the lowest close during the selected period |
 | FR-008.5 | The system must display average volume for the period |
 | FR-008.6 | The system must color-code return (green for positive, red for negative) |
+
+**Implementation Note:** The Performance tile loads from targeted SQL date-window queries rather than fetching the full price history for the security. Users on slower connections or with large portfolios should see noticeably faster tile rendering (typically under 1 second instead of multi-second waits).
 
 ### 3.9 News Integration (FR-009)
 
@@ -468,10 +474,9 @@ The theme editor (`/theme-editor.html`) provides an AI-powered tool for creating
 |----|-------------|
 | FR-012.1 | The system must allow users to compare the primary stock to a second stock or index |
 | FR-012.2 | The system must provide a second search box labeled "Compare to (Optional)" |
-| FR-012.3 | The system must provide quick benchmark buttons for SPY, QQQ, and ^DJI |
 | FR-012.4 | The system must display both stocks as normalized percentage change from period start |
 | FR-012.5 | The system must disable technical indicators (RSI/MACD) when comparing |
-| FR-012.6 | The system must provide a "Clear Comparison" button to return to single-stock view |
+| FR-012.6 | The system must provide a small × button to clear the comparison and return to single-stock view. |
 | FR-012.7 | The system must re-fetch comparison data when the time period changes |
 | FR-012.8 | The system must prevent comparing a stock to itself |
 | FR-012.9 | The comparison chart must show a zero baseline reference line |
@@ -514,7 +519,7 @@ The theme editor (`/theme-editor.html`) provides an AI-powered tool for creating
 | ID | Requirement |
 |----|-------------|
 | FR-013.1 | The system must provide a documentation page accessible via footer link "View Documentation" |
-| FR-013.2 | The documentation page must display four tabs: Project Guidelines, Functional Spec, Technical Spec, Architecture |
+| FR-013.2 | The documentation page must display seven tabs: App Explanation, Project Guidelines, Functional Spec, Technical Spec, Architecture, Security, Privacy |
 | FR-013.3 | The system must render Markdown files as formatted HTML using marked.js |
 | FR-013.4 | The system must display a Table of Contents (TOC) sidebar generated from document headings |
 | FR-013.5 | The system must highlight the currently visible section in the TOC as the user scrolls (scroll spy) |
@@ -831,6 +836,20 @@ Overlay benchmark index data (e.g., S&P 500, NASDAQ-100) on the stock chart for 
 
 ---
 
+### 3.19 About Page (FR-019)
+
+| ID | Requirement |
+|----|-------------|
+| FR-019.1 | The system must provide an /about.html page linked from the application footer, describing the project, its purpose, and credits. |
+
+### 3.20 Status Page (FR-020)
+
+| ID | Requirement |
+|----|-------------|
+| FR-020.1 | The system must provide a /status.html page exposing live application health information (DB connectivity, API provider reachability, last successful price refresh timestamp). |
+
+---
+
 ## 4. User Interface Specifications
 
 ### 4.1 Page Layout
@@ -865,7 +884,7 @@ Overlay benchmark index data (e.g., S&P 500, NASDAQ-100) on the stock chart for 
 │  │ └──────────────────────────────────────────────────────────┘ │  │            │
 │  └──────────────────────────────────────────────────────────────┘  │            │
 ├─────────────────────────────────────────────────────────────────────┴────────────┤
-│  Stock Analyzer v3.1.0 © 2026 | Data from Yahoo Finance & Finnhub               │
+│  Stock Analyzer v5.0.0 © 2026 | By Patrick Ford and Claude                      │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1011,8 +1030,8 @@ The dashboard is fully responsive and adapts to mobile devices.
 
 | Rule ID | Rule Description |
 |---------|------------------|
-| BR-005 | Default threshold for "significant move" is ±3% (configurable via API) |
-| BR-006 | Daily return is calculated using close-to-close prices |
+| BR-005 | Default threshold for "significant move" is ±5% (UI default; the API supports configurable thresholds per request). |
+| BR-006 | Daily return for significant moves is calculated as intraday open-to-close: (Close - Open) / Open × 100. This is consistent with Section 3.5's Calculation Method note. |
 | BR-007 | Top 10 significant moves are displayed in the UI |
 
 ### 6.3 Search Rules
@@ -1062,7 +1081,7 @@ The dashboard is fully responsive and adapts to mobile devices.
 | Test | Expected Result | Pass/Fail |
 |------|-----------------|-----------|
 | Analyze invalid ticker "XXXXX" | Error message displayed | |
-| Analyze stock with no dividends | Dividend Yield shows "N/A" | |
+| Analyze stock with no dividends | Dividend Yield row is not rendered (row absent from Key Metrics table) | |
 | No news available | Shows "No recent news available" | |
 
 ### 7.4 Watchlist Functionality
@@ -1099,7 +1118,7 @@ The dashboard is fully responsive and adapts to mobile devices.
 
 | Constraint | Description | Impact |
 |------------|-------------|--------|
-| News rate limit | 60 news requests per minute (Finnhub free tier) | Heavy use may cause news delays |
+| News rate limit | Governed by Marketaux's free tier (~100 requests/day at time of writing). Stock quote data is composited across TwelveData, FMP, and Yahoo Finance — each subject to its own rate limit; the aggregator deduplicates calls. | Heavy use may exhaust daily news quota; quote calls are deduplicated to minimize provider limit exposure |
 | Browser-based | Requires modern browser with JavaScript | Responsive web app, no native mobile app |
 | Single user (current) | No authentication; multi-user architecture ready | Add auth layer for team use |
 
@@ -1109,6 +1128,7 @@ The dashboard is fully responsive and adapts to mobile devices.
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
+| 3.13 | 2026-05-27 | **Drift corrections and new pages:** Fixed contradictory significant-move threshold (BR-005 now ±5% UI default; was ±3%). Corrected daily-return calculation to open-to-close in BR-006 (was incorrectly stated as close-to-close). Updated FR-007.6 and Section 7.3 acceptance test — Dividend Yield row is omitted entirely for non-dividend stocks (not shown as "N/A"). Corrected image cache sizes in FR-005.12-13: target 20 per type with 5 pre-fetched on load (was 50/10). Removed FR-012.3 (quick-compare buttons removed in v3.10 but never deleted from spec); FR-012.6 updated to reference × button. Updated FR-013.2 tab count to 7 (was 4). Updated Section 4.1 ASCII footer to match actual app footer. Updated Section 8.2 technical constraints: news provider is Marketaux (not Finnhub); quote data composited across TwelveData, FMP, Yahoo Finance. Added Section 2.2 Data Sources note describing parallel-fetch compositing and provider responsibilities. Added Performance tile date-window optimization note under FR-008. Added FR-019 (About page) and FR-020 (Status page). | Claude |
 | 3.12 | 2026-03-11 | **Overlays match visible chart range:** Adding benchmarks or comparisons after zooming out now fetches data for the full visible range, not just the original date picker range. | Claude |
 | 3.11 | 2026-03-10 | **Scroll-zoom extends all overlays:** Zooming out on the chart now extends benchmark and comparison lines to fill the new date range (previously only the primary stock extended). | Claude |
 | 3.10 | 2026-03-10 | **Data freshness fallback:** Historical data API now falls through to external providers when local database has sparse (<20% coverage) or stale (>7 days behind requested end) data. Removed Quick Compare chip row (redundant with comparison input + benchmark chips). | Claude |

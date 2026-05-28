@@ -1,7 +1,7 @@
 # Technical Specification: Stock Analyzer Dashboard (.NET)
 
-**Version:** 2.80
-**Last Updated:** 2026-03-22
+**Version:** 2.82
+**Last Updated:** 2026-05-27
 **Author:** Claude (AI Assistant)
 **Status:** Production (Azure)
 
@@ -34,7 +34,7 @@ This specification covers:
 | RSI | Relative Strength Index - momentum oscillator measuring overbought/oversold conditions (0-100) |
 | MACD | Moving Average Convergence Divergence - trend-following momentum indicator |
 | Ticker | Unique stock symbol (e.g., AAPL for Apple Inc.) |
-| Significant Move | Daily price change of ±3% or greater (configurable) |
+| Significant Move | Daily price change of ±5% or greater (UI default; the API method has a 3% default but the UI always passes 5%, configurable per request) |
 | Minimal APIs | ASP.NET Core lightweight API approach without controllers |
 | Finnhub | Third-party financial news API service |
 | Dog CEO API | Third-party random dog image API |
@@ -224,6 +224,7 @@ Environment variables: `TWELVEDATA_API_KEY`, `FMP_API_KEY`
 | `/api/stock/{ticker}/significant` | GET | Significant price moves (no news) | `ticker`, `threshold` (optional, default: 3.0), `period` (optional), `from`/`to` (optional, ISO dates - takes precedence over period) |
 | `/api/stock/{ticker}/news/move` | GET | News for specific move with metadata | `ticker`, `date`, `change`, `limit` (optional, default: 5) |
 | `/api/stock/{ticker}/analysis` | GET | Performance metrics + MAs | `ticker`, `period` (optional) |
+| `/api/stock/{ticker}/returns` | GET | Returns period-return table for ticker (1D, 5D, MTD, 3M, 6M, YTD, 1Y, 3Y, 5Y, Since Inception). Computed via `ReturnCalculationService` using targeted ±7-day SQL window seeks rather than full-history pulls. See `Program.cs:897`. | `ticker` |
 | `/api/stock/{ticker}/chart-data` | GET | Combined history + analysis (single request) | `ticker`, `period` (optional, default: 1y; same values as /history), `from`/`to` (optional, ISO dates) |
 | `/api/search` | GET | Ticker search | `q`: Search query (min 2 chars) |
 | `/api/trending` | GET | Trending stocks | `count` (optional, default: 10) |
@@ -241,6 +242,9 @@ Environment variables: `TWELVEDATA_API_KEY`, `FMP_API_KEY`
 | `/api/watchlists/{id}/holdings` | PUT | Update holdings | `id`, `weightingMode`, `holdings` (body) |
 | `/api/watchlists/{id}/combined` | GET | Get combined portfolio | `id`, `period`, `benchmark` (optional) |
 | `/api/news/market` | GET | Get general market news | `category` (optional, default: general) |
+| `/api/stock/{ticker}/news/aggregated` | GET | Aggregated per-ticker news combining Finnhub and Marketaux providers. See `Program.cs:4232`. | `ticker` |
+| `/api/news/market/aggregated` | GET | Aggregated market-wide news combining Finnhub and Marketaux providers. See `Program.cs:4253`. | None |
+| `/api/version` | GET | Returns the running app version string. See `Program.cs:4039`. | None |
 | `/api/health` | GET | Health check | None |
 
 ### 3.2 Response Examples
@@ -1044,6 +1048,26 @@ POST /api/admin/securities/calculate-importance
 
 Processes all active securities, updates ImportanceScore in SecurityMaster table. Returns count of processed securities.
 
+### 5.11 ReturnCalculationService
+
+**File:** `StockAnalyzer.Core/Services/ReturnCalculationService.cs`
+
+**Purpose:** Compute period-bracketed return percentages for a security (1D, 5D, MTD, 3M, 6M, YTD, 1Y, 3Y, 5Y, Since Inception) for the Performance tile on the dashboard.
+
+**Lifecycle:** Scoped. Registered in DI at `Program.cs:188`.
+
+**Key methods:**
+
+| Method | Description |
+|--------|-------------|
+| `GetReturnsAsync(ticker)` | Returns all period returns as a named dictionary |
+
+**Implementation note:** Originally loaded the full price history for the security and computed returns in C#, which was instant in development but catastrophically slow in production (Azure SQL Basic 5 DTU tier, cold buffer pool, 63M-row Prices table). Replaced with targeted seeks: for each period boundary, the service queries `data.Prices` with a tight date window (±7 days) and picks the closest available trading day. This drops the read footprint from ~30 years of rows per call to ~15 indexed seeks (see `ReturnCalculationService.cs:31-36`).
+
+**Dependencies:** `IPriceRepository` (read-only), `data.BusinessCalendar` for boundary resolution.
+
+**Exposed via:** `GET /api/stock/{ticker}/returns`.
+
 ---
 
 ## 6. Frontend Architecture
@@ -1776,10 +1800,10 @@ Guard: if (initialized) return; — prevents re-init on subsequent searches
   },
   "ImageProcessing": {
     "ModelPath": "MLModels/yolov8n.onnx",
-    "CacheSize": 50,
-    "RefillThreshold": 10,
+    "CacheSize": 1000,
+    "RefillThreshold": 100,
     "TargetWidth": 320,
-    "TargetHeight": 150
+    "TargetHeight": 320
   },
   "Logging": {
     "LogLevel": {
@@ -1836,6 +1860,11 @@ builder.Services.AddSingleton<ImageProcessingService>();
 builder.Services.AddSingleton<ImageCacheService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ImageCacheService>());
 ```
+
+The actual DI registration includes additional services not shown here for brevity, including:
+- `ReturnCalculationService` registered as scoped (`Program.cs:188`)
+- `PriceRefreshService` registered as a hosted background service (`Program.cs:283`)
+- `EodhdService`, `WikipediaService`, `SymbolRefreshService`, `DbWarmupService`, and `SentimentCacheService` are also wired in the full registration block
 
 ---
 
@@ -2028,7 +2057,7 @@ stock_analyzer_dotnet/
 │       │   ├── DesignTimeDbContextFactory.cs
 │       │   ├── Entities/
 │       │   │   ├── WatchlistEntity.cs       # EF Core entities
-│       │   │   └── CachedImageEntity.cs     # Cached image entity
+│       │   │   └── CachedImageEntity.cs     # (and 17 more — see below)
 │       │   └── Migrations/                   # EF Core migrations
 │       ├── Models/
 │       │   ├── StockInfo.cs
@@ -2056,6 +2085,8 @@ stock_analyzer_dotnet/
         ├── Models/
         └── TestHelpers/
 ```
+
+**Entity Inventory:** `Data/Entities/` contains 19 entity files: `BusinessCalendarEntity`, `CachedImageEntity`, `CachedSentimentEntity`, `CompanyBioEntity`, `CoverageSummaryEntity`, `IndexConstituentEntity`, `IndexDefinitionEntity`, `MicExchangeEntity`, `PriceEntity`, `PriceStagingEntity`, `SecurityIdentifierEntity`, `SecurityIdentifierHistEntity`, `SecurityMasterEntity`, `SecurityPriceCoverageByYearEntity`, `SecurityPriceCoverageEntity`, `SourceEntity`, `SymbolEntity`, `TrackedSecurityEntity`, `WatchlistEntity`.
 
 ### 9.4 CI/CD Pipelines
 
@@ -2256,6 +2287,11 @@ See `docs/DEPLOYMENT_AZURE.md` for the complete Azure deployment guide.
 │  │  Container Registry  │    │  Key Vault              │   │
 │  │  (ACR Basic)         │    │  (kv-stockanalyzer)     │   │
 │  │  stockanalyzer:prod  │    │  SQL password, API keys │   │
+│  └──────────────────────┘    └─────────────────────────┘   │
+│  ┌──────────────────────┐    ┌─────────────────────────┐   │
+│  │  Application Insights│    │  Log Analytics Workspace│   │
+│  │  (appi-stockanalyzer │    │  (log-stockanalyzer-    │   │
+│  │   -prod)             │    │   prod)                 │   │
 │  └──────────────────────┘    └─────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
           │
@@ -2679,10 +2715,21 @@ Maintains the historical price database with automatic daily updates.
 
 | Behavior | Description |
 |----------|-------------|
-| Startup | Checks `MAX(EffectiveDate)` and backfills missing days |
-| Daily Schedule | 2:30 AM UTC - fetches previous trading day |
-| Weekend Skip | No refresh on Saturday/Sunday |
-| Rate Limiting | 2-second delay between bulk requests |
+| **Schedule** | Daily 02:30 UTC, including weekends and holidays (configurable via `PriceDatabase:RefreshHourUtc` / `RefreshMinuteUtc`). See `PriceRefreshService.cs:88`. |
+| **Business-day source** | `data.BusinessCalendar` table (SourceId=1 = US market) — replaces hardcoded weekday checks; correctly accounts for market holidays. |
+| **Lookback window** | 14 days — fetches any missing business days within the window via `RunDailyRefreshCycleAsync`. See `PriceRefreshService.cs:149`. |
+| **Forward-fill** | Non-business days (weekends and holidays) are forward-filled idempotently via `IPriceRepository.ForwardFillHolidaysAsync(maxFillDate)`; safe to run daily without producing duplicate rows. |
+| **Startup behavior** | `CheckAndBackfillRecentDataAsync` runs on app startup after a `StartupDelaySeconds` delay (default 45s); uses a `MAX(EffectiveDate)` single-aggregate lookup — not row-sampling — to detect staleness (see `PriceRefreshService.cs:131-144`). |
+| **Failure handling** | Wraps each cycle in try/catch; on error, logs and waits 1 hour before retry. No per-batch checkpointing — flagged in backlog. See `PriceRefreshService.cs:209-253`. |
+| **Rate limiting** | 2-second delay between bulk requests. |
+
+**`UsMarketCalendar` Fallback Utility:**
+
+`UsMarketCalendar` (`Services/UsMarketCalendar.cs`) is a static utility providing holiday/business-day calculations as a fallback when `data.BusinessCalendar` is unavailable (e.g., during early startup before the database connection is established). Used in `PriceRefreshService.cs:998-1009`.
+
+**`BulkInsertAsync` Command Timeout:**
+
+`BulkInsertAsync` sets `CommandTimeout = 120` seconds (vs. SQL Server's 30s default) to accommodate large batch sizes on Azure SQL Basic (5 DTU). See `SqlPriceRepository.cs:224, 277, 455`. The previous 30s default caused bulk-insert failures on cold buffer pools — fixed in commit `1e440d8` (2026-05-26).
 
 **Admin Endpoints:**
 | Endpoint | Description |
@@ -2695,7 +2742,10 @@ Maintains the historical price database with automatic daily updates.
 | `POST /api/admin/prices/refresh-date` | Fetch prices for specific date (body: `{Date: "yyyy-MM-dd"}`) |
 | `POST /api/admin/prices/load-tickers` | Load historical prices for specific tickers (body: `{Tickers[], StartDate, EndDate}`) |
 | `POST /api/admin/prices/backfill` | Parallel backfill for multiple tickers (body: `{Tickers[], StartDate, EndDate}`, 10 concurrent) |
-| `POST /api/admin/prices/backfill-coverage` | Backfill SecurityPriceCoverage and SecurityPriceCoverageByYear from existing Prices data (one-time bootstrap, 600s timeout, MERGE idempotent) |
+| `POST /api/admin/prices/backfill-coverage` | Bootstrap `data.SecurityPriceCoverage` and `data.SecurityPriceCoverageByYear` tables from current Prices data. One-shot bootstrap; ongoing maintenance is incremental via `BulkInsertAsync`. |
+| `POST /api/admin/prices/backfill-gaps?maxConcurrency=N` | Gap-aware backfill orchestrator. Runs SQL gap audit, fetches missing data per ticker concurrently via EODHD per-ticker API, flags securities returning no data as `IsEodhdUnavailable=true`, re-runs audit to verify. `maxConcurrency` clamped 1-10 (default 3). See `PriceRefreshService.BackfillGapsAsync`. |
+| `POST /api/admin/prices/sync-eodhd` | Sync SecurityMaster from EODHD exchange symbol list (default exchange: US). Upserts SecurityMaster entries. See `SyncSecurityMasterFromEodhdAsync` (`Program.cs:1255`). |
+| `POST /api/admin/securities/backfill-mic-codes` | Backfill MIC codes on SecurityMaster from EODHD exchange-symbol mapping. See `Program.cs:3147`. |
 | `POST /api/admin/prices/bulk-load` | Start bulk historical load (body: `{StartDate, EndDate}`) |
 | `POST /api/admin/securities/calculate-importance` | Calculate importance scores for all active securities |
 | `POST /api/admin/securities/promote-untracked` | Promote untracked securities to tracked (query: `count`, default 500, max 500) |
@@ -2980,6 +3030,10 @@ WPF desktop application (.NET 8, `net8.0-windows10.0.19041`) for managing price 
 - Azure Container Registry (Basic tier)
 - Azure SQL Server (Basic tier) - **Note: Database NOT managed by Bicep**
 - Azure Key Vault (secrets management)
+- Application Insights (`appi-stockanalyzer-prod`) — wired via `AddApplicationInsightsTelemetry()` at startup (`Program.cs:42`). Provisioned by `infrastructure/azure/main.bicep:258-260`.
+- Log Analytics Workspace (`log-stockanalyzer-prod`) — backing store for Application Insights
+
+**Note on Application Insights configuration:** The `APPLICATIONINSIGHTS_CONNECTION_STRING` environment variable is auto-discovered by the SDK at startup and is **not** resolved through `EndpointRegistry`. The telemetry SDK gracefully no-ops if the connection string is unset (development environments without Application Insights configured will still run normally).
 
 **Database Management:**
 The production database (`stockanalyzer-db`) is **NOT created or managed by Bicep**. It was created via BACPAC import containing 3.5M+ pre-loaded historical price records. The Bicep template only references the database name in connection strings. This prevents accidental data loss from infrastructure deployments.
@@ -3324,8 +3378,7 @@ SRI hashes verify that CDN-loaded scripts haven't been tampered with.
 
 ### 13.1 Caching
 
-**Backend:** Currently no caching implemented. Each request fetches fresh data.
-**Future Enhancement:** Add `IMemoryCache` for API responses.
+**Backend:** Multi-layer caching is in place. `AggregatedStockDataService` uses `IMemoryCache` for quote (~30s TTL), history (~5min TTL), and search (~10min TTL) responses. Dashboard statistics endpoint cached 10 minutes via `IMemoryCache`. Heatmap endpoint cached 30 minutes. Wikipedia company descriptions cached in `data.CompanyBio` (24h+ persistent). Image cache uses both `IMemoryCache` and persistent `data.CachedImage` (SQL) for cat/dog images. Sentiment scores cached in `data.CachedSentiment`. Persistent SQL caches survive restarts; in-memory caches are intentionally short-lived to limit staleness.
 
 **Server-Side Image Processing:**
 - YOLOv8n ONNX model loaded once at startup (~12MB)
@@ -3369,6 +3422,7 @@ const newsPromise = API.getAggregatedNews(ticker, 30, 10);
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.82 | 2026-05-27 | **Drift corrections and new service documentation:** Updated `PriceRefreshService` section to reflect `data.BusinessCalendar`-driven scheduling and 14-day lookback (replaces hardcoded weekday logic). Added `BackfillGapsAsync`, `sync-eodhd`, `backfill-mic-codes`, and `backfill-coverage` admin endpoints. Added `ReturnCalculationService` (Section 5.11) and `UsMarketCalendar` fallback utility documentation. Added `/api/stock/{ticker}/returns`, `/api/version`, and aggregated news endpoints to Section 3.1 API reference. Added Application Insights (`appi-stockanalyzer-prod`) and Log Analytics Workspace (`log-stockanalyzer-prod`) to architecture diagram and resource list. Documented `BulkInsertAsync` 120s command timeout fix (commit `1e440d8`, 2026-05-26). Corrected significant-move default threshold to 5% UI / 3% API. Replaced false "no caching" claim in Section 13.1 with actual cache-layer summary. Updated `appsettings.json` example values (`CacheSize` 50→1000, `RefillThreshold` 10→100, `TargetHeight` 150→320). Expanded `Data/Entities/` inventory from 2 to 19 files. |
 | 2.79 | 2026-03-21 | **SDLC retro mitigations:** Added `stderr_suppression_guard.py` (blocks `2>/dev/null` on substantive commands), `plan_config_drift_guard.py` (blocks commits when plan docs contradict implementation), ShellCheck pre-commit hook for `.sh` files. |
 | 2.78 | 2026-03-21 | **Hook Test Suite — PostToolUse coverage:** Added `test_post_hook()` helper to `projects/hook-test/test_hooks.py` for testing PostToolUse hooks (stdin JSON, stdout additionalContext check, exit code check). Added test cases for `eodhd_rebuild_guard.py` (silence on non-commit Bash and non-Bash tools) and `spec_staleness_guard.py` (silence on non-push Bash and non-Bash tools). Added `is_wsl()` unit test via `importlib.util` module loading. Suite now covers 52 cases across PreToolUse and PostToolUse hooks. |
 | 2.77 | 2026-03-21 | **WSL2 runtime connection string support:** `Program.cs` checks `WSL_SQL_CONNECTION` environment variable before falling back to `appsettings` `ConnectionStrings:DefaultConnection`. Enables running from WSL2 with TCP/SQL auth without modifying appsettings. |
