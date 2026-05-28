@@ -1403,7 +1403,7 @@ input[type="range"]::-moz-range-thumb {
 
 .date-input {
     width: auto;
-    min-width: 10rem;
+    min-width: 12rem;
 }
 
 .date-input.readonly {
