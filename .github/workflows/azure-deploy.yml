@@ -28,37 +28,31 @@ env:
   ACR_LOGIN_SERVER: acrstockanalyzerer34ug.azurecr.io
 
 jobs:
-  # Validate deployment confirmation and test credentials BEFORE building
+  # Generic Azure preflight: confirm + log + checkout + login + verify-RG.
+  # Lives in claude-env so road-trip and any future Azure-deploying repo
+  # consume the same gate.
   preflight:
+    uses: psford/claude-env/.github/workflows/azure-deploy-preflight.yml@main
+    with:
+      resource_group: rg-stockanalyzer-prod
+      confirm_deploy: ${{ inputs.confirm_deploy }}
+      reason: ${{ inputs.reason }}
+    secrets:
+      azure_credentials: ${{ secrets.AZURE_CREDENTIALS }}
+
+  # Stock-analyzer-specific preflight checks: Bicep drift vs live Azure,
+  # endpoint-registry Key Vault secret existence, ACR credential test.
+  # These differ in shape across companion repos and stay project-local.
+  project-preflight:
+    needs: preflight
     runs-on: ubuntu-latest
     steps:
-      - name: Validate confirmation
-        if: ${{ github.event.inputs.confirm_deploy != 'deploy' }}
-        run: |
-          echo "::error::Deployment not confirmed. You must type 'deploy' to proceed."
-          exit 1
-
-      - name: Log deployment reason
-        run: |
-          echo "## Production Deployment" >> $GITHUB_STEP_SUMMARY
-          echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Reason:** ${{ github.event.inputs.reason }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-
       - uses: actions/checkout@v6
 
-      # Test Azure credentials BEFORE doing expensive build/push
-      - name: Test Azure credentials
+      - name: Azure Login
         uses: azure/login@v3
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Verify Azure access
-        run: |
-          echo "Testing Azure resource group access..."
-          az group show --name rg-stockanalyzer-prod --query "name" -o tsv
-          echo "✅ Azure credentials valid and resource group accessible"
 
       - name: Verify Bicep matches live Azure config
         run: |
@@ -155,7 +149,7 @@ jobs:
         run: az logout || true
 
   build-and-test:
-    needs: preflight
+    needs: project-preflight
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
