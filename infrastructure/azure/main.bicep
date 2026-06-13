@@ -120,6 +120,9 @@ resource appService 'Microsoft.Web/sites@2023-01-01' = {
     }
     httpsOnly: true
   }
+  dependsOn: [
+    kv
+  ]
 }
 
 // SQL Server
@@ -150,20 +153,26 @@ resource sqlFirewallAzure 'Microsoft.Sql/servers/firewallRules@2023-05-01-previe
   }
 }
 
-// Key Vault for secrets
-resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
-  name: keyVaultName
-  location: location
-  properties: {
-    sku: {
-      family: 'A'
-      name: 'standard'
-    }
-    tenantId: subscription().tenantId
-    enableRbacAuthorization: true
-    enableSoftDelete: true
+// Key Vault for secrets — provisioned via the claude-env shared module
+// (replaces the former inline 'Microsoft.KeyVault/vaults' resource). Params
+// map the previous inline values exactly: standard SKU + RBAC auth are baked
+// into the module; soft-delete retention stays at 7 days.
+module kv 'br:acrstockanalyzerer34ug.azurecr.io/bicep/modules/key-vault:1.0.0' = {
+  name: 'kv'
+  params: {
+    keyVaultName: keyVaultName
+    location: location
     softDeleteRetentionInDays: 7
   }
+}
+
+// Existing-reference to the module-created vault. Secrets (parent:) and role
+// assignments (scope:) keep their original symbolic wiring and — critically —
+// their original guid()-derived names, so an incremental redeploy does NOT hit
+// RoleAssignmentExists. Each dependent resource dependsOn the module so the
+// vault is provisioned first (an `existing` ref carries no implicit dependency).
+resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
+  name: keyVaultName
 }
 
 // Store Finnhub API key in Key Vault
@@ -173,6 +182,7 @@ resource finnhubSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   properties: {
     value: finnhubApiKey
   }
+  dependsOn: [ kv ]
 }
 
 // Store EODHD API key in Key Vault
@@ -182,6 +192,7 @@ resource eodhdSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   properties: {
     value: eodhdApiKey
   }
+  dependsOn: [ kv ]
 }
 
 // Store TwelveData API key in Key Vault
@@ -191,6 +202,7 @@ resource twelveDataSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   properties: {
     value: twelveDataApiKey
   }
+  dependsOn: [ kv ]
 }
 
 // Store FMP API key in Key Vault
@@ -200,6 +212,7 @@ resource fmpSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   properties: {
     value: fmpApiKey
   }
+  dependsOn: [ kv ]
 }
 
 // Store Marketaux API token in Key Vault
@@ -209,6 +222,7 @@ resource marketauxSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   properties: {
     value: marketauxApiToken
   }
+  dependsOn: [ kv ]
 }
 
 // Store database connection string in Key Vault
@@ -218,6 +232,7 @@ resource dbConnectionSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   properties: {
     value: 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabaseName};User ID=${sqlAdminUsername};Password=${sqlAdminPassword};Encrypt=true;TrustServerCertificate=false;Connection Timeout=30;Min Pool Size=2;'
   }
+  dependsOn: [ kv ]
 }
 
 // Grant App Service access to Key Vault
@@ -229,6 +244,7 @@ resource keyVaultAccessPolicy 'Microsoft.Authorization/roleAssignments@2022-04-0
     principalId: appService.identity.principalId
     principalType: 'ServicePrincipal'
   }
+  dependsOn: [ kv ]
 }
 
 // Grant GitHub Actions deploy SP access to Key Vault (preflight validation)
@@ -241,6 +257,7 @@ resource keyVaultDeployAccess 'Microsoft.Authorization/roleAssignments@2022-04-0
     principalId: deploySpObjectId
     principalType: 'ServicePrincipal'
   }
+  dependsOn: [ kv ]
 }
 
 // Log Analytics workspace (required by App Insights)
