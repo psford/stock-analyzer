@@ -45,14 +45,17 @@ var sqlServerName = 'sql-${appName}-${shortSuffix}'
 var sqlDatabaseName = 'stockanalyzer-db'
 var keyVaultName = 'kv-stockanalyzer-prod'
 
-// App Service Plan (Linux, B1 Basic tier — enables Always On to eliminate cold starts)
+// App Service Plan (Linux, P0v3 Premium v3 — matches live Azure; enables Always On)
+// Live SKU confirmed via `az appservice plan show ... --query sku` (2026-06-14):
+// name=P0v3, tier=Premium0V3, family=Pv3, capacity=1. Was declared B1/Basic, which
+// drifted from the live P0v3 plan and blocked deploys via the preflight drift guard.
 resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
   name: appServicePlanName
   location: location
   kind: 'linux'
   sku: {
-    name: 'B1'
-    tier: 'Basic'
+    name: 'P0v3'
+    tier: 'Premium0V3'
     capacity: 1
   }
   properties: {
@@ -72,7 +75,7 @@ resource appService 'Microsoft.Web/sites@2023-01-01' = {
     serverFarmId: appServicePlan.id
     siteConfig: {
       linuxFxVersion: 'DOCKER|ghcr.io/psford/stockanalyzer:latest'
-      alwaysOn: true // B1 tier supports Always On — keeps app warm, eliminates idle cold starts
+      alwaysOn: true // Premium v3 supports Always On — keeps app warm, eliminates idle cold starts
       http20Enabled: true
       minTlsVersion: '1.2'
       ftpsState: 'Disabled'
