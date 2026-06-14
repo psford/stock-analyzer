@@ -1,96 +1,210 @@
-# CLAUDE.md
+<!-- GENERATED FILE — DO NOT EDIT. -->
+<!-- Shared rules: claude-env/shared/claude-md/. Project rules: CLAUDE.local.md. -->
+<!-- Regenerate: helpers/sync-claude-md.sh <repo> -->
 
-Instructions and shared knowledge for Stock Analyzer development.
 
----
+# Shared Rules (universal)
 
-## CRITICAL CHECKPOINTS (READ FIRST)
+<!-- Canonical source: claude-env/shared/claude-md/00-universal.md. Edit HERE, not in any generated CLAUDE.md. -->
 
-Enforced by Claude Code hooks. Violations are blocked automatically.
+These behavioral rules are shared across all of Patrick's repos. They are assembled into each repo's `CLAUDE.md` by `claude-env/helpers/sync-claude-md.sh`. Project-specific contracts live in that repo's `CLAUDE.local.md`.
+
+## Critical Behavioral Checkpoints
+
+| Checkpoint | Rule |
+|------------|------|
+| **DIAGNOSE BEFORE FIX** | Diagnose root cause first (inspect, measure, log). NEVER guess. Verify the fix before reporting. |
+| **PRODUCT DECISIONS** | When Patrick makes a UX/product decision, implement it. Technical objections only for data loss, security, or irreversibility. Record in `docs/decisions.md`. |
+| **TEST BEFORE SUGGESTING** | NEVER tell the user to do something without verifying it works. If you can't test it, say so. |
+| **VERIFY BEFORE CLAIMING DONE** | Every "✓ / verified / works / passing" must be backed by an exact command and its real output. Label provenance: verified-by-me, trusted-from-agent, or not-verified. A bundle-grep proves code shipped, not that the feature works; `curl` does not enforce CORS; a "Skipping X / not installed" message that exits 0 is failure wearing a success mask — treat it as a blocker. |
+| **AUDIT THE CLASS** | When a bug is found as "we forgot X in location Y," immediately search every other location where X might also be missing. Fix the class, not the instance. |
+
+## Principles
+
+| Principle | Description |
+|-----------|-------------|
+| **Rules are hard blocks** | Patrick's rules are HARD BLOCKS. Hooks must fail (non-zero), never warn-and-pass. |
+| **Challenge me** | Push back against bad practices or security vulnerabilities. |
+| **Admit limitations** | Never pretend capabilities you lack. Say so and suggest mitigations. |
+| **UI matches implementation** | Never put placeholder text suggesting unbuilt functionality. |
+| **Evaluate all options** | Before saying "no", consider all tools: Bash, PowerShell, web access, APIs, system commands. |
+| **Do it yourself** | Work autonomously. Never ask the user to do something you can do. Escalate only for commit/deploy approval or genuine capability gaps. |
+| **Act on credentials** | When given API keys/passwords, use them directly — don't hand instructions back. Pull from Key Vault / `.env` before asking. |
+| **Don't propose deferring** | When blocked, push through or ask Patrick to unblock and stand by. Don't recommend "defer to a later session." |
+| **Questions require answers** | If you ask "Ready to commit?" — STOP and wait. Never ask then immediately act. |
+| **No feature regression** | Changes must never silently lose functionality. |
+| **Fix problems immediately** | No technical debt. Fix deprecated code, broken things, suboptimal patterns now. |
+| **Flag deprecated APIs** | Use current APIs in new code. Fix straightforward deprecations; flag complex ones. |
+| **Right-size to scale** | Match engineering effort to actual scope; don't over-engineer hobby projects. But never dodge a firm requirement the user set. |
+| **Design prototypes are contracts** | Implement EVERY effect in a prototype. |
+| **PowerShell ONLY for Windows** | The Bash tool runs actual bash. For Windows: `powershell.exe -Command "..."`. Never raw bash syntax for Windows targets. |
+| **Prefer FOSS / winget** | MIT/Apache/BSD over proprietary. Lightweight, offline-capable. |
+| **No paid services** | Never sign up for paid services on Patrick's behalf. |
+| **No ad tech/tracking** | No advertising, tracking pixels, or data sharing with X/Meta. |
+| **Cite sources** | When making recommendations, cite sources so Patrick can verify. |
+| **Respect public APIs** | Rate limit (single-concurrency, 2s gap), cache in DB, polite User-Agent. |
+| **Log sanitization** | ALL user strings in logs wrapped in sanitization wrappers where applicable. |
+| **Cross-browser / local CSS** | Standard APIs and CSS only. Locally compiled CSS; CDN only for large libs with SRI hashes. Firefox is Patrick's primary browser — verify UI changes there, not just Chromium. |
+| **Verify repo context** | Before writing files or committing to a repo other than the one open in the IDE, verify the target repo's current branch and confirm it's the correct destination. |
+| **Preserve original media** | Never degrade user-uploaded media. Store originals at full quality; use resized/compressed versions for display only, always with a path to the original. |
+| **Own it all** | Any Claude instance is "me" — don't distance from prior-session work. Environment gaps blocking verification (missing binaries, locked sudo, missing creds) are mine to surface and unblock; "pre-existing on main" is descriptive, not exculpatory. |
+
+## Coding Standards
+
+- **Naming:** JavaScript/TypeScript `camelCase` | Python `snake_case` (PEP 8) | Bash `snake_case` | Docs GitHub-flavored Markdown.
+- **Testing:** Code compiling is NOT sufficient. Run tests before committing. Test external dependencies before integrating.
+- **Script validation:** Bash scripts must be shellcheck-clean. Python scripts must pass linting (flake8 or ruff).
+- **Hot loops:** Default to numba `@njit` for tight numerical Python loops (standing approval).
+- **Dependencies:** Walk the peer-dep graph with `npm view` BEFORE installing; never `--force` past a conflict; treat the runtime version as fixed.
+
+### Model Delegation
+| Model | Use for |
+|-------|---------|
+| **Haiku** | Quick scripts, simple file ops, straightforward fixes, running tests |
+| **Sonnet** | General development, coding, debugging (default) |
+| **Opus** | Architecture, complex refactors, deep research, system design |
+
+Run agents in parallel when possible.
+
+## Communication
+
+- **Research before asking** — search the web first; only ask Patrick if still unclear.
+- **Correction vs inquiry** — if Patrick asks "Did you do X?", ask whether it should become a guideline.
+- **Proactive updates** — when agreement is reached on a feedback-based rule, add it to the shared rules immediately.
+- **Always give links** — provide PR/deploy links immediately after pushing; don't make Patrick ask.
+
+## Session Protocol
+
+- **Starting ("hello!"):** read `CLAUDE.md` + the repo's stated session files (e.g. `sessionState.md`, `claudeLog.md`, `docs/decisions.md`).
+- **During:** checkpoint to `sessionState.md` after major tasks, every 10–15 exchanges, and before complex work. Only load files actively needed (CLAUDE.md always loaded). Delete completed plan files; verify git state before working from plans.
+- **Ending ("night!"):** update `sessionState.md`, commit pending changes, update `claudeLog.md`.
+
+## File Management
+
+- **CLAUDE.md backups:** save as `claude_MMDDYYYY-N.md` before a manual update (N/A for generated CLAUDE.md — edit `CLAUDE.local.md` or the shared fragments instead).
+- **Logging:** log to `claudeLog.md` with date, description, result. Omit sensitive data.
+- **Archives:** source to `archive/`. Delete `__pycache__`, `node_modules`, `bin/`, `obj/`, logs, temp files.
+
+## Security
+
+- **Personal identifiers are secrets.** Personal email addresses, phone numbers, home addresses, and personal domains (e.g. `psford.com`) are credentials — never hardcoded in source committed to public repos. Use `example.com` in defaults, docs, and config templates. Real values belong in `.env` (gitignored) or environment variables only. Support/business emails created for a project are fine.
+- Review SAST/DAST coverage when introducing new frameworks (SecurityCodeScan for C#, Bandit for Python).
+- Hooks run automatically — if blocked, try to adjust; if stuck, ask Patrick.
+
+# Git Flow (develop → main)
+
+<!-- Canonical source: claude-env/shared/claude-md/git-flow-develop-main.md. -->
+<!-- Branch names are parameterized: develop / main. -->
+<!-- Repos that do not follow this flow (e.g. a single-trunk `master` model) should -->
+<!-- omit this fragment and document their flow in CLAUDE.local.md. -->
+
+## Critical Git Checkpoints
 
 | Checkpoint | Rule | Enforcement |
 |------------|------|-------------|
 | **COMMITS** | Show status → diff → log → message → WAIT for explicit approval. A question is NOT approval. | Hook reminds; manual |
-| **MAIN BRANCH** | NEVER commit, merge, push --force, or rebase on main | **BLOCKED** |
-| **REVERSE MERGE** | NEVER merge main INTO develop (flow is develop → main only) | **BLOCKED** |
-| **PR MERGE** | Patrick merges via GitHub web only — NEVER use `gh pr merge` | **BLOCKED** |
-| **DEPLOY** | Only when Patrick says "deploy" + pre-deploy checklist complete | Hook reminds; manual |
-| **SPECS** | Update TECHNICAL_SPEC.md AS you code, stage with code commits | **BLOCKED** |
-| **EF CORE MIGRATIONS** | Database schema changes use EF Core migrations, never raw SQL scripts | **BLOCKED** |
+| **main BRANCH** | NEVER commit, merge, push --force, or rebase on `main`. | **BLOCKED** |
+| **REVERSE MERGE** | NEVER merge `main` INTO `develop` (flow is `develop` → `main` only). | **BLOCKED** |
+| **PR MERGE** | Patrick merges via GitHub web only — NEVER use `gh pr merge`. | **BLOCKED** |
 | **MERGED PRs** | NEVER edit/push to merged/closed PRs. Always create a NEW PR. | **BLOCKED** |
-| **DTU EXHAUSTION** | Every Azure SQL query must consider DTU limits (5 DTU / 60 workers). No concurrent heavy queries. | Manual |
-| **EODHD-LOADER REBUILD** | After committing eodhd-loader changes: kill → rebuild → relaunch. Zero effect until rebuilt. | **Hook reminds** |
-| **DIAGNOSE BEFORE FIX** | Diagnose root cause first (inspect, measure, log). NEVER guess. Verify fix before reporting. | Manual |
-| **PRODUCT DECISIONS** | When Patrick makes a UX/product decision, implement it. Technical objections only for data loss, security, or irreversibility. Record in `docs/decisions.md`. | Manual |
-| **TEST BEFORE SUGGESTING** | NEVER tell user to do something without verifying it works. If you can't test, say so. | Manual |
-| **NO RESET --HARD** | NEVER run `git reset --hard`. Use `git merge` or `git rebase` to sync branches. If uncommitted changes exist, `git stash` first. No exceptions. | **BLOCKED** |
+| **NO RESET --HARD** | NEVER run `git reset --hard` (it destroyed uncommitted work once). Use `git merge`/`git rebase` to sync; `git stash` first if the tree is dirty. | **BLOCKED** |
 
-**If you're about to commit, deploy, or touch main: STOP and verify these checkpoints first.**
-
----
-
-## About
-
-Last verified: 2026-04-10
-
-**User:** Patrick — business analyst background, experience with Matlab, Python, Ruby, C# (.NET).
-**Project:** Stock Analyzer (.NET) — web application for stock market analysis.
-
----
-
-## Git Flow
-
-### Branching Strategy
+## Branching Strategy
 
 ```
 develop (work here) → PR → main (production)
-                      ↑
-               NEVER reverse this
+                                  ↑
+                           NEVER reverse this
 ```
 
-| Branch | Purpose | Protection |
-|--------|---------|------------|
-| `develop` | Working branch | None — commit directly |
-| `main` | Production ONLY | PR required, CI must pass |
-
-- **Feature branches** for: new services, architecture changes, multi-file refactors, big UI changes, multi-session work, 5+ files
-- **Direct on develop** for: small fixes, tweaks, internal docs
-- **NEVER** commit directly to main, merge to main via CLI, deploy without "deploy", or click "Update branch" on GitHub PR page
+- **Feature branches** for: new services, architecture changes, multi-file refactors, big UI changes, multi-session work, 5+ files.
+- **Direct on `develop`** for: small fixes, tweaks, internal docs.
+- **NEVER** commit directly to `main`, merge to it via CLI, deploy without an explicit "deploy", or click "Update branch" on the GitHub PR page.
+- Before branching: `git fetch origin` and check `git log origin/main..develop` — never assume branches are in sync, and never offer to reuse the current branch without confirming it isn't `main`.
 
 ### Forbidden Operations (on develop)
-
 | Operation | Why |
 |-----------|-----|
-| `git merge main` | Develop flows TO main only |
-| `git pull origin main` | Pulls and merges main into develop |
-| `git rebase main` | Rewrites develop history based on main |
+| `git merge main` | `develop` flows TO `main` only |
+| `git pull origin main` | Pulls and merges `main` into `develop` |
+| `git rebase main` | Rewrites `develop` history based on `main` |
 
-If main and develop diverge, merge develop into main via PR — never the reverse.
+If the branches diverge, merge `develop` into `main` via PR — never the reverse.
 
-### PR Rules
+## PR Rules
 
-**Verification** — When asked to check a PR:
-1. `git fetch origin` (ALWAYS fetch first)
-2. `git log origin/main..develop --oneline` (ALWAYS origin/main, not local main)
-3. `gh pr view <N> --json commits` to see what's in the PR
-4. Report the delta — never just update PR title/body
+**Verification — when asked to check a PR:**
+1. `git fetch origin` (ALWAYS fetch first).
+2. `git log origin/main..develop --oneline` (ALWAYS `origin/main`, not local).
+3. `gh pr view <N> --json commits` to see what's in the PR.
+4. Report the delta — never just update PR title/body. Never assert PR state from memory; confirm with `gh pr view`.
 
-**Merged PRs** — Once merged/closed, a PR is DEAD. After any `git push`:
-1. Check: `gh pr list --head develop --base main --state open`
-2. No open PR → create NEW one. NEVER reference old PR numbers without checking state.
+**Merged PRs** — once merged/closed, a PR is DEAD. After any `git push`:
+1. Check `gh pr list --head develop --base main --state open`.
+2. No open PR → create a NEW one. Never reference old PR numbers without checking state. If Patrick is deploying, the previous PR is already merged — create a new PR for any follow-up fix.
 
-### Pre-Commit Protocol
+## Pre-Commit Protocol
 
 Before every commit, show Patrick:
 1. `git status` — staged, unstaged, untracked
 2. `git diff` — actual changes
 3. `git log -3` — recent commits for style
 4. Planned commit message
-5. What will NOT happen (no main, no deploy, no PR)
+5. What will NOT happen (no `main`, no deploy, no PR)
 
-Then **WAIT for explicit approval**. A question or comment resets the checkpoint — answer it, then wait again.
+Then **WAIT for explicit approval**. A question or comment resets the checkpoint — answer it, then wait again. Also verify: `claudeLog.md` updated, all files staged, feature tested.
 
-Also verify: specs updated (TECHNICAL_SPEC.md always, FUNCTIONAL_SPEC.md for user-facing), claudeLog.md updated, all files staged, feature tested.
+# Stack: Web App on Azure
+
+<!-- Canonical source: claude-env/shared/claude-md/stack-web-azure.md. -->
+<!-- Shared by stock-analyzer, road-trip, and (partially) photo-portfolio. -->
+<!-- Project-specific resource names/keys belong in the repo's CLAUDE.local.md. -->
+
+## Endpoint Registry
+- All connection strings and API keys resolve through the endpoint registry (`EndpointRegistry.Resolve("name")`) backed by `endpoints.json`. NEVER read env vars directly for a known endpoint key, and never hardcode connection strings.
+- Enforced by `endpoint_registry_guard.py` + `endpoint_schema_validator.py` (activate when `endpoints.json` exists at repo root).
+
+## Azure Hygiene
+- **Verify from the Azure source of truth** (App Service config / live resource state). Bicep files can be stale — don't trust them as current state.
+- Infrastructure uses the shared Bicep modules published to ACR (e.g. `br:<registry>/bicep/modules/key-vault:<version>`) rather than inline resource blocks.
+- Key Vault secret names and resource group names are project-specific — see CLAUDE.local.md. `azure_sp_identity_guard.py` blocks Azure CLI ops when the logged-in SP doesn't match `.claude/azure-identity.json`.
+- Periodically clean up orphaned resources: stale SQL DBs, old container-registry tags, unused blobs.
+
+## Deployment
+- Deploy only on an explicit "deploy" + the repo's pre-deploy checklist. Deploys run through GitHub Actions (Azure preflight uses the shared `azure-deploy-preflight.yml`); no manual/CLI production deploys, and never click "Update branch" on the PR page.
+- If the user is deploying, the previous PR is already merged — any follow-up fix is a NEW PR.
+
+## Browser-Facing Changes
+- Responsive testing before committing CSS: verify at mobile (390×844), tablet (768×1024), desktop (1400×900). Firefox is the primary browser — test there, and for any origin/CORS change include an OPTIONS preflight check plus a real browser check (curl does not enforce CORS).
+
+# stock-analyzer — project-specific
+
+<!-- Project-specific rules. Universal rules + git flow (develop→main) + web/Azure -->
+<!-- stack rules above are assembled from claude-env/shared/claude-md/ by -->
+<!-- sync-claude-md.sh. Edit THIS file (or the shared fragments) — never edit the -->
+<!-- generated CLAUDE.md. eodhd-loader/CLAUDE.md is a separate module-context file, -->
+<!-- intentionally NOT part of the shared layer. -->
+
+Last verified: 2026-06-14
+
+## Project Checkpoints (stock-analyzer-specific)
+
+The universal behavioral checkpoints, git-flow checkpoints, and the deploy gate come
+from the shared fragments above. These are the stock-analyzer-specific ones:
+
+| Checkpoint | Rule | Enforcement |
+|------------|------|-------------|
+| **SPECS** | Update TECHNICAL_SPEC.md AS you code; stage with code commits. | Advisory — `spec_staleness_guard.py` injects a reminder, it does NOT block. (Previously mislabeled "BLOCKED" — the hook only exits 0.) |
+| **EF CORE MIGRATIONS** | DB schema changes use EF Core migrations, never raw SQL scripts. | **BLOCKED** |
+| **DTU EXHAUSTION** | Every Azure SQL query must consider DTU limits (5 DTU / 60 workers). No concurrent heavy queries. | Manual |
+| **EODHD-LOADER REBUILD** | After committing eodhd-loader changes: kill → rebuild → relaunch. Zero effect until rebuilt. | `eodhd_rebuild_guard.py` reminds |
+
+---
+
+## About
+
+**User:** Patrick — business analyst background, experience with Matlab, Python, Ruby, C# (.NET).
+**Project:** Stock Analyzer (.NET) — web application for stock market analysis.
 
 ---
 
@@ -188,106 +302,6 @@ Both fall back to Windows defaults (appsettings / localdb) when unset, so Window
 **SQL logins:** `wsl_claude` (read/write, no DDL) and `wsl_claude_admin` (DDL for migrations). Created on Windows SQL Express for TCP access from WSL2.
 
 **Hooks:** `.claude/hooks/eodhd_rebuild_guard.py` detects WSL2 (`/proc/version`) and adjusts its message (cannot rebuild WPF app from Linux).
-
----
-
-## Principles
-
-| Principle | Description |
-|-----------|-------------|
-| **Rules are hard blocks** | Patrick's rules are HARD BLOCKS. Hooks must fail (non-zero), never warn-and-pass. |
-| **Challenge me** | Push back against bad practices or security vulnerabilities. |
-| **Admit limitations** | Never pretend capabilities you lack. Say so and suggest mitigations. |
-| **UI matches implementation** | Never put placeholder text suggesting unbuilt functionality. |
-| **Evaluate all options** | Before saying "no", consider all tools: Bash, PowerShell, web access, APIs, system commands. |
-| **Do it yourself** | Work autonomously. Never ask user to do something you can do. Only escalate for commit/deploy approval or genuine capability gaps. |
-| **Act on credentials** | When given API keys/passwords, use them directly — don't give instructions back. |
-| **Questions require answers** | If asking "Ready to commit?" — STOP and wait. Never ask then immediately act. |
-| **No feature regression** | Changes should never lose functionality. |
-| **Fix problems immediately** | No technical debt. Fix deprecated code, broken things, suboptimal patterns now. |
-| **Flag deprecated APIs** | Use current APIs in new code. Fix straightforward deprecations; flag complex ones. |
-| **Update specs proactively** | Update TECHNICAL_SPEC.md, ROADMAP.md as you code, not after. |
-| **Commit client with API changes** | Update dependent clients (e.g., eodhd-loader) in same session as backend changes. |
-| **Version new behaviors** | Don't overwrite working deployed code — ask first or create new version. |
-| **Design prototypes are contracts** | Implement EVERY effect in a prototype. |
-| **Test environment readiness** | Before asking user to test: endpoints MUST be running in the target environment. |
-| **PowerShell ONLY** | Bash tool runs actual bash. For Windows: `powershell.exe -Command "..."`. Never raw bash syntax. |
-| **Prefer FOSS / winget** | MIT/Apache/BSD over proprietary. Lightweight, offline-capable. Use winget for installs. |
-| **No paid services** | Never sign up for paid services on Patrick's behalf. |
-| **No ad tech/tracking** | No advertising, tracking pixels, or data sharing with X/Meta. |
-| **Cite sources** | When making recommendations, cite sources so Patrick can verify. |
-| **Respect public APIs** | Rate limit (single-concurrency, 2s gap), cache in DB, polite User-Agent. Wikipedia cached in `data.CompanyBio`. |
-| **Log sanitization** | ALL user strings in C# logs wrapped in `LogSanitizer.Sanitize()` (CWE-117). Enforced by hook. |
-| **Cross-browser / local CSS** | Standard APIs and CSS only. Locally compiled CSS, CDN only for large libs with SRI hashes. |
-| **Fetch before comparing** | ALWAYS `git fetch origin` first. Compare `origin/main` not local `main`. |
-| **Validate doc links** | Validate documentation links are correct and working before committing doc changes. |
-| **Audit the class** | When a bug is found as "we forgot X in location Y," immediately search for every other location where X might also be missing. Don't fix one instance — fix the class. |
-| **Preserve original media** | Never degrade user-uploaded images/media. Store originals at full quality. Use resized/compressed versions for display performance (thumbnails, map previews), but always provide a way to view or download the original. |
-
----
-
-## Session Protocol
-
-### Starting ("hello!")
-1. Read: `CLAUDE.md`, `sessionState.md`, `claudeLog.md`, `whileYouWereAway.md`, `docs/decisions.md`
-2. If WYA has tasks, ask about them. Complete one step at a time.
-
-### During
-- **Checkpoints:** Save to `sessionState.md` after major tasks, every 10-15 exchanges, before complex work
-- **Context efficiency:** Only load files actively needed. Exception: CLAUDE.md always loaded.
-- **Plan hygiene:** Delete completed plan files. Verify git state before working from plans.
-- **Between tasks:** Review WYA, check ROADMAP, suggest 2-3 items.
-- **Slack triggers:** Check after deployments, PR merges, multi-step tasks, idle moments, before reporting "done".
-- **Post-compaction:** Track what info was lost, update docs with reusable context that survives compaction.
-
-### Ending ("night!")
-1. Update `sessionState.md`
-2. Commit pending changes
-3. Update `claudeLog.md`
-
----
-
-## Coding Standards
-
-- C#: PascalCase (classes, methods), camelCase (local variables, parameters)
-- JavaScript/TypeScript: `camelCase`
-- Python: `snake_case` (PEP 8)
-- Docs: GitHub-flavored Markdown
-- **Testing:** Code compiling is NOT sufficient. Use Playwright for UI testing. Run responsive tests at mobile (390x844) / tablet (768x1024) / desktop (1400x900) before committing CSS changes. Test external dependencies before integrating.
-- **Specs:** Update incrementally as you code, not after. Stage with code commits.
-
-### Model Delegation
-
-| Model | Use for |
-|-------|---------|
-| **Haiku** | Quick scripts, simple file ops, straightforward fixes, running tests |
-| **Sonnet** | General development, coding, debugging (default) |
-| **Opus** | Architecture, complex refactors, deep research, system design |
-
----
-
-## Communication
-
-- **Research before asking** — search the web first, only ask Patrick if unclear
-- **Correction vs inquiry** — if Patrick asks "Did you do X?", ask if it should be a guideline
-- **Proactive updates** — add feedback-based rules to CLAUDE.md immediately when agreement is reached
-- **Slack:** React to every message, mark `read: true` in `slack_inbox.json`, restart listener if disconnected
-
----
-
-## File Management
-
-- **CLAUDE.md backups:** Save as `claude_MMDDYYYY-N.md` before updating
-- **Logging:** Log to `claudeLog.md` with date, description, result. Omit sensitive data.
-- **Archives:** Source to `archive/`. Delete `__pycache__`, `node_modules`, `bin/`, `obj/`, logs, temp files.
-
----
-
-## Security
-
-- **Personal identifiers are secrets.** Personal email addresses, phone numbers, home addresses, and personal domains (e.g., `psford.com`) must be treated as credentials — never hardcoded in source files committed to public repos. Use `example.com` in defaults, documentation, and config templates. Real values belong in `.env` (gitignored) or environment variables only. Support/business emails created for a project are fine.
-- Review SAST/DAST coverage when introducing new frameworks (SecurityCodeScan for C#, Bandit for Python)
-- Hooks run automatically — if blocked, try to adjust; if stuck, ask Patrick
 
 ---
 
