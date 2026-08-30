@@ -31,11 +31,17 @@ These behavioral rules are shared across all of Patrick's repos. They are assemb
 | **Do it yourself** | Work autonomously. Never ask the user to do something you can do. Escalate only for commit/deploy approval or genuine capability gaps. |
 | **Act on credentials** | When given API keys/passwords, use them directly — don't hand instructions back. Pull from Key Vault / `.env` before asking. |
 | **Don't propose deferring** | When blocked, push through or ask Patrick to unblock and stand by. Don't recommend "defer to a later session." |
+| **Don't freelance the design** | Implementation executes the agreed design — do NOT invent alternative mechanisms, swap approaches, or unilaterally descope when it fights back. The moment a designed mechanism needs a *second* workaround to function, STOP and go back to the drawing board with Patrick. Never ship a freelanced substitute or quiet descope. |
+| **Tasks are pass/fail** | A dispatched task — to a subagent, or to yourself executing a plan phase — is pass/fail. PASS → return the artifact + info the orchestrator needs (normal flow). FAIL (plan wrong / tests can't pass / approach fights constraints) → STOP and report "this didn't work + why" up to the orchestrator or human; do NOT redesign, descope, weaken tests, or try a second mechanism to force a pass. Attempt budget for the *approach itself* is one. The way forward is the orchestrator's/human's call — "theirs not to reason why." |
 | **Questions require answers** | If you ask "Ready to commit?" — STOP and wait. Never ask then immediately act. |
 | **No feature regression** | Changes must never silently lose functionality. |
 | **Fix problems immediately** | No technical debt. Fix deprecated code, broken things, suboptimal patterns now. |
+| **Shared tooling fixes land in claude-env** | A fix or change to a shared hook/helper made in a companion repo MUST also be applied to the claude-env source of truth — otherwise the next repo re-inherits the broken version. |
 | **Flag deprecated APIs** | Use current APIs in new code. Fix straightforward deprecations; flag complex ones. |
 | **Right-size to scale** | Match engineering effort to actual scope; don't over-engineer hobby projects. But never dodge a firm requirement the user set. |
+| **Do the work** | Integrating an external source is a slog and tooling only makes it cheaper, never optional. Understand the API before registering it: its error shapes, its sentinel values, what it returns at a boundary. Spotty data is acceptable when it is all that exists; data you have not understood is not, because everything downstream inherits the misunderstanding. Never trade rigour for speed here. |
+| **No rabbit holes** | Platform-first: CSS/stdlib/framework primitives before ANY custom engine. Custom machinery Patrick didn't explicitly request requires asking him BEFORE building it — a technically clean rabbit hole is still a rabbit hole. |
+| **No invisible work, no ungated deploys** | Work exists in version control continuously — ask for WIP-commit permission at session start, or park (`refs/parked/`) before any discard. Show Patrick the cheapest viewable artifact BEFORE building a large feature. Nothing deploys without tests + visual review against the exact SHA being shipped. |
 | **Design prototypes are contracts** | Implement EVERY effect in a prototype. |
 | **PowerShell ONLY for Windows** | The Bash tool runs actual bash. For Windows: `powershell.exe -Command "..."`. Never raw bash syntax for Windows targets. |
 | **Prefer FOSS / winget** | MIT/Apache/BSD over proprietary. Lightweight, offline-capable. |
@@ -48,6 +54,34 @@ These behavioral rules are shared across all of Patrick's repos. They are assemb
 | **Verify repo context** | Before writing files or committing to a repo other than the one open in the IDE, verify the target repo's current branch and confirm it's the correct destination. |
 | **Preserve original media** | Never degrade user-uploaded media. Store originals at full quality; use resized/compressed versions for display only, always with a path to the original. |
 | **Own it all** | Any Claude instance is "me" — don't distance from prior-session work. Environment gaps blocking verification (missing binaries, locked sudo, missing creds) are mine to surface and unblock; "pre-existing on main" is descriptive, not exculpatory. |
+
+## Adding an External Data Source
+
+Patrick, 2026-08-30, on why this is a contract rather than advice: "the process
+that adds a new source config should have a contract that specifies what it takes
+as input."
+
+So before a source is registered, these are established — not assumed, not
+inferred from one happy response:
+
+| Must be known | Why |
+|---------------|-----|
+| **What it returns when it fails** | Many APIs answer HTTP 200 with an error body. `res.ok` proves nothing, and a cached error poisons every later read. |
+| **Its sentinel / fill values** | A sentinel read as data is a measurement of minus nine thousand. They rarely appear in the documentation and always appear in the data. |
+| **Its units, exactly** | A conversion applied twice, or not at all, still produces plausible-looking output. Assert the physics, not the shape. |
+| **What it does at a boundary** | Empty result, a range that crosses a seam, a request larger than its domain, a catalog that does not exist yet at this hour. |
+| **Whether its terms permit caching** | A licensing question, answered before bytes are stored, not after. |
+
+Establish each by RECORDING a real response, not by writing a fixture that agrees
+with you. A hand-made fixture proves the code matches whoever wrote the fixture;
+the asymmetries and ragged edges that make a test meaningful are exactly what a
+tidy hand-made sample smooths away.
+
+Where a source genuinely does not fit the pattern, the answer is a normalising
+middleware in front of it — inputs are whatever the source gives, outputs are the
+shape ingestion already accepts — or an honest, recorded exception. It is never
+another layer of indirection bought with the time that should have gone into
+understanding the source.
 
 ## Coding Standards
 
