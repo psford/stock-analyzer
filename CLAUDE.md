@@ -3,180 +3,6 @@
 <!-- Regenerate: helpers/sync-claude-md.sh <repo> -->
 
 
-# Shared Rules (universal)
-
-<!-- Canonical source: claude-env/shared/claude-md/00-universal.md. Edit HERE, not in any generated CLAUDE.md. -->
-
-These behavioral rules are shared across all of Patrick's repos. They are assembled into each repo's `CLAUDE.md` by `claude-env/helpers/sync-claude-md.sh`. Project-specific contracts live in that repo's `CLAUDE.local.md`.
-
-## Critical Behavioral Checkpoints
-
-| Checkpoint | Rule |
-|------------|------|
-| **DIAGNOSE BEFORE FIX** | Diagnose root cause first (inspect, measure, log). NEVER guess. Verify the fix before reporting. |
-| **PRODUCT DECISIONS** | When Patrick makes a UX/product decision, implement it. Technical objections only for data loss, security, or irreversibility. Record in `docs/decisions.md`. |
-| **TEST BEFORE SUGGESTING** | NEVER tell the user to do something without verifying it works. If you can't test it, say so. |
-| **VERIFY BEFORE CLAIMING DONE** | Every "✓ / verified / works / passing" must be backed by an exact command and its real output. Label provenance: verified-by-me, trusted-from-agent, or not-verified. A bundle-grep proves code shipped, not that the feature works; `curl` does not enforce CORS; a "Skipping X / not installed" message that exits 0 is failure wearing a success mask — treat it as a blocker. |
-| **AUDIT THE CLASS** | When a bug is found as "we forgot X in location Y," immediately search every other location where X might also be missing. Fix the class, not the instance. |
-
-## Principles
-
-| Principle | Description |
-|-----------|-------------|
-| **Rules are hard blocks** | Patrick's rules are HARD BLOCKS. Hooks must fail (non-zero), never warn-and-pass. |
-| **Challenge me** | Push back against bad practices or security vulnerabilities. |
-| **Admit limitations** | Never pretend capabilities you lack. Say so and suggest mitigations. |
-| **UI matches implementation** | Never put placeholder text suggesting unbuilt functionality. |
-| **Evaluate all options** | Before saying "no", consider all tools: Bash, PowerShell, web access, APIs, system commands. |
-| **Do it yourself** | Work autonomously. Never ask the user to do something you can do. Escalate only for commit/deploy approval or genuine capability gaps. |
-| **Act on credentials** | When given API keys/passwords, use them directly — don't hand instructions back. Pull from Key Vault / `.env` before asking. |
-| **Don't propose deferring** | When blocked, push through or ask Patrick to unblock and stand by. Don't recommend "defer to a later session." |
-| **Questions require answers** | If you ask "Ready to commit?" — STOP and wait. Never ask then immediately act. |
-| **No feature regression** | Changes must never silently lose functionality. |
-| **Fix problems immediately** | No technical debt. Fix deprecated code, broken things, suboptimal patterns now. |
-| **Flag deprecated APIs** | Use current APIs in new code. Fix straightforward deprecations; flag complex ones. |
-| **Right-size to scale** | Match engineering effort to actual scope; don't over-engineer hobby projects. But never dodge a firm requirement the user set. |
-| **Design prototypes are contracts** | Implement EVERY effect in a prototype. |
-| **PowerShell ONLY for Windows** | The Bash tool runs actual bash. For Windows: `powershell.exe -Command "..."`. Never raw bash syntax for Windows targets. |
-| **Prefer FOSS / winget** | MIT/Apache/BSD over proprietary. Lightweight, offline-capable. |
-| **No paid services** | Never sign up for paid services on Patrick's behalf. |
-| **No ad tech/tracking** | No advertising, tracking pixels, or data sharing with X/Meta. |
-| **Cite sources** | When making recommendations, cite sources so Patrick can verify. |
-| **Respect public APIs** | Rate limit (single-concurrency, 2s gap), cache in DB, polite User-Agent. |
-| **Log sanitization** | ALL user strings in logs wrapped in sanitization wrappers where applicable. |
-| **Cross-browser / local CSS** | Standard APIs and CSS only. Locally compiled CSS; CDN only for large libs with SRI hashes. Firefox is Patrick's primary browser — verify UI changes there, not just Chromium. |
-| **Verify repo context** | Before writing files or committing to a repo other than the one open in the IDE, verify the target repo's current branch and confirm it's the correct destination. |
-| **Preserve original media** | Never degrade user-uploaded media. Store originals at full quality; use resized/compressed versions for display only, always with a path to the original. |
-| **Own it all** | Any Claude instance is "me" — don't distance from prior-session work. Environment gaps blocking verification (missing binaries, locked sudo, missing creds) are mine to surface and unblock; "pre-existing on main" is descriptive, not exculpatory. |
-
-## Coding Standards
-
-- **Naming:** JavaScript/TypeScript `camelCase` | Python `snake_case` (PEP 8) | Bash `snake_case` | Docs GitHub-flavored Markdown.
-- **Testing:** Code compiling is NOT sufficient. Run tests before committing. Test external dependencies before integrating.
-- **Script validation:** Bash scripts must be shellcheck-clean. Python scripts must pass linting (flake8 or ruff).
-- **Hot loops:** Default to numba `@njit` for tight numerical Python loops (standing approval).
-- **Dependencies:** Walk the peer-dep graph with `npm view` BEFORE installing; never `--force` past a conflict; treat the runtime version as fixed.
-
-### Model Delegation
-| Model | Use for |
-|-------|---------|
-| **Haiku** | Quick scripts, simple file ops, straightforward fixes, running tests |
-| **Sonnet** | General development, coding, debugging (default) |
-| **Opus** | Architecture, complex refactors, deep research, system design |
-
-Run agents in parallel when possible.
-
-## Communication
-
-- **Research before asking** — search the web first; only ask Patrick if still unclear.
-- **Correction vs inquiry** — if Patrick asks "Did you do X?", ask whether it should become a guideline.
-- **Proactive updates** — when agreement is reached on a feedback-based rule, add it to the shared rules immediately.
-- **Always give links** — provide PR/deploy links immediately after pushing; don't make Patrick ask.
-
-## Session Protocol
-
-- **Starting ("hello!"):** read `CLAUDE.md` + the repo's stated session files (e.g. `sessionState.md`, `claudeLog.md`, `docs/decisions.md`).
-- **During:** checkpoint to `sessionState.md` after major tasks, every 10–15 exchanges, and before complex work. Only load files actively needed (CLAUDE.md always loaded). Delete completed plan files; verify git state before working from plans.
-- **Ending ("night!"):** update `sessionState.md`, commit pending changes, update `claudeLog.md`.
-
-## File Management
-
-- **CLAUDE.md backups:** save as `claude_MMDDYYYY-N.md` before a manual update (N/A for generated CLAUDE.md — edit `CLAUDE.local.md` or the shared fragments instead).
-- **Logging:** log to `claudeLog.md` with date, description, result. Omit sensitive data.
-- **Archives:** source to `archive/`. Delete `__pycache__`, `node_modules`, `bin/`, `obj/`, logs, temp files.
-
-## Security
-
-- **Personal identifiers are secrets.** Personal email addresses, phone numbers, home addresses, and personal domains (e.g. `psford.com`) are credentials — never hardcoded in source committed to public repos. Use `example.com` in defaults, docs, and config templates. Real values belong in `.env` (gitignored) or environment variables only. Support/business emails created for a project are fine.
-- Review SAST/DAST coverage when introducing new frameworks (SecurityCodeScan for C#, Bandit for Python).
-- Hooks run automatically — if blocked, try to adjust; if stuck, ask Patrick.
-
-# Git Flow (develop → main)
-
-<!-- Canonical source: claude-env/shared/claude-md/git-flow-develop-main.md. -->
-<!-- Branch names are parameterized: develop / main. -->
-<!-- Repos that do not follow this flow (e.g. a single-trunk `master` model) should -->
-<!-- omit this fragment and document their flow in CLAUDE.local.md. -->
-
-## Critical Git Checkpoints
-
-| Checkpoint | Rule | Enforcement |
-|------------|------|-------------|
-| **COMMITS** | Show status → diff → log → message → WAIT for explicit approval. A question is NOT approval. | Hook reminds; manual |
-| **main BRANCH** | NEVER commit, merge, push --force, or rebase on `main`. | **BLOCKED** |
-| **REVERSE MERGE** | NEVER merge `main` INTO `develop` (flow is `develop` → `main` only). | **BLOCKED** |
-| **PR MERGE** | Patrick merges via GitHub web only — NEVER use `gh pr merge`. | **BLOCKED** |
-| **MERGED PRs** | NEVER edit/push to merged/closed PRs. Always create a NEW PR. | **BLOCKED** |
-| **NO RESET --HARD** | NEVER run `git reset --hard` (it destroyed uncommitted work once). Use `git merge`/`git rebase` to sync; `git stash` first if the tree is dirty. | **BLOCKED** |
-
-## Branching Strategy
-
-```
-develop (work here) → PR → main (production)
-                                  ↑
-                           NEVER reverse this
-```
-
-- **Feature branches** for: new services, architecture changes, multi-file refactors, big UI changes, multi-session work, 5+ files.
-- **Direct on `develop`** for: small fixes, tweaks, internal docs.
-- **NEVER** commit directly to `main`, merge to it via CLI, deploy without an explicit "deploy", or click "Update branch" on the GitHub PR page.
-- Before branching: `git fetch origin` and check `git log origin/main..develop` — never assume branches are in sync, and never offer to reuse the current branch without confirming it isn't `main`.
-
-### Forbidden Operations (on develop)
-| Operation | Why |
-|-----------|-----|
-| `git merge main` | `develop` flows TO `main` only |
-| `git pull origin main` | Pulls and merges `main` into `develop` |
-| `git rebase main` | Rewrites `develop` history based on `main` |
-
-If the branches diverge, merge `develop` into `main` via PR — never the reverse.
-
-## PR Rules
-
-**Verification — when asked to check a PR:**
-1. `git fetch origin` (ALWAYS fetch first).
-2. `git log origin/main..develop --oneline` (ALWAYS `origin/main`, not local).
-3. `gh pr view <N> --json commits` to see what's in the PR.
-4. Report the delta — never just update PR title/body. Never assert PR state from memory; confirm with `gh pr view`.
-
-**Merged PRs** — once merged/closed, a PR is DEAD. After any `git push`:
-1. Check `gh pr list --head develop --base main --state open`.
-2. No open PR → create a NEW one. Never reference old PR numbers without checking state. If Patrick is deploying, the previous PR is already merged — create a new PR for any follow-up fix.
-
-## Pre-Commit Protocol
-
-Before every commit, show Patrick:
-1. `git status` — staged, unstaged, untracked
-2. `git diff` — actual changes
-3. `git log -3` — recent commits for style
-4. Planned commit message
-5. What will NOT happen (no `main`, no deploy, no PR)
-
-Then **WAIT for explicit approval**. A question or comment resets the checkpoint — answer it, then wait again. Also verify: `claudeLog.md` updated, all files staged, feature tested.
-
-# Stack: Web App on Azure
-
-<!-- Canonical source: claude-env/shared/claude-md/stack-web-azure.md. -->
-<!-- Shared by stock-analyzer, road-trip, and (partially) photo-portfolio. -->
-<!-- Project-specific resource names/keys belong in the repo's CLAUDE.local.md. -->
-
-## Endpoint Registry
-- All connection strings and API keys resolve through the endpoint registry (`EndpointRegistry.Resolve("name")`) backed by `endpoints.json`. NEVER read env vars directly for a known endpoint key, and never hardcode connection strings.
-- Enforced by `endpoint_registry_guard.py` + `endpoint_schema_validator.py` (activate when `endpoints.json` exists at repo root).
-
-## Azure Hygiene
-- **Verify from the Azure source of truth** (App Service config / live resource state). Bicep files can be stale — don't trust them as current state.
-- Infrastructure uses the shared Bicep modules published to ACR (e.g. `br:<registry>/bicep/modules/key-vault:<version>`) rather than inline resource blocks.
-- Key Vault secret names and resource group names are project-specific — see CLAUDE.local.md. `azure_sp_identity_guard.py` blocks Azure CLI ops when the logged-in SP doesn't match `.claude/azure-identity.json`.
-- Periodically clean up orphaned resources: stale SQL DBs, old container-registry tags, unused blobs.
-
-## Deployment
-- Deploy only on an explicit "deploy" + the repo's pre-deploy checklist. Deploys run through GitHub Actions (Azure preflight uses the shared `azure-deploy-preflight.yml`); no manual/CLI production deploys, and never click "Update branch" on the PR page.
-- If the user is deploying, the previous PR is already merged — any follow-up fix is a NEW PR.
-
-## Browser-Facing Changes
-- Responsive testing before committing CSS: verify at mobile (390×844), tablet (768×1024), desktop (1400×900). Firefox is the primary browser — test there, and for any origin/CORS change include an OPTIONS preflight check plus a real browser check (curl does not enforce CORS).
-
 # stock-analyzer — project-specific
 
 <!-- Project-specific rules. Universal rules + git flow (develop→main) + web/Azure -->
@@ -187,16 +13,19 @@ Then **WAIT for explicit approval**. A question or comment resets the checkpoint
 
 Last verified: 2026-06-14
 
+A rule written as `specs/<file>.md#<section>` is held by that section of the spec corpus, in claude-harness's `plugins/psford-tickets/specs/`. Read the section before acting on the rule.
+
 ## Project Checkpoints (stock-analyzer-specific)
 
 The universal behavioral checkpoints, git-flow checkpoints, and the deploy gate come
 from the shared fragments above. These are the stock-analyzer-specific ones:
 
+- **SPECS, updated in the same commits as the code:** `specs/code.md#docs-move-with-the-code`. `spec_staleness_guard.py` reminds; it does not block.
+- **EF CORE MIGRATIONS, never raw SQL:** `specs/database.md#migrations`
+- **DTU EXHAUSTION, one heavy query at a time:** `specs/database.md#stock-analyzer-sql-budget`
+
 | Checkpoint | Rule | Enforcement |
 |------------|------|-------------|
-| **SPECS** | Update TECHNICAL_SPEC.md AS you code; stage with code commits. | Advisory — `spec_staleness_guard.py` injects a reminder, it does NOT block. (Previously mislabeled "BLOCKED" — the hook only exits 0.) |
-| **EF CORE MIGRATIONS** | DB schema changes use EF Core migrations, never raw SQL scripts. | **BLOCKED** |
-| **DTU EXHAUSTION** | Every Azure SQL query must consider DTU limits (5 DTU / 60 workers). No concurrent heavy queries. | Manual |
 | **EODHD-LOADER REBUILD** | After committing eodhd-loader changes: kill → rebuild → relaunch. Zero effect until rebuilt. | `eodhd_rebuild_guard.py` reminds |
 
 ---
@@ -212,27 +41,12 @@ from the shared fragments above. These are the stock-analyzer-specific ones:
 
 ### Production Deploy
 
-Pre-deploy checklist:
-1. Show Patrick the Bicep file (`infrastructure/azure/main.bicep`)
-2. TECHNICAL_SPEC.md + FUNCTIONAL_SPEC.md updated
-3. Docs updated in /docs folder
-4. Version history updated in specs
-5. Security scans passed (CI)
-6. User tested on localhost and approved
-
-Deploy: GitHub Actions → "Deploy to Azure Production" → type `deploy` → deploys to https://psfordtaurus.com
-Rollback: See `docs/RUNBOOK.md`
+- **The pre-deploy checklist, and Patrick's run of "Deploy to Azure Production":** `specs/deployment.md#stock-analyzer-deploys`
+- The workflow deploys to https://psfordtaurus.com. Rollback: see `docs/RUNBOOK.md`.
 
 ### Localhost API Testing
 
-1. Kill ALL dotnet/StockAnalyzer.Api processes and clear port 5000
-2. Build: `dotnet build --no-restore -c Release`
-3. Start API with redirected stdout/stderr (`dotnet run` spawns child process with different PID)
-4. Verify port 5000 listening (check ANY process, not just dotnet PID)
-5. Hit an actual endpoint to verify responding
-6. Run test suite: `python helpers/test_dtu_endpoints.py`
-
-Pitfalls: Use Python not `Invoke-WebRequest` for HTTP testing. Kill by process name not PID. Write complex PowerShell to `.ps1` files (bash strips `$variable`). Never tell user "start the API" — do it yourself.
+- **Kill by name, build, start with redirected output, check port 5000, hit a real endpoint, run `test_dtu_endpoints.py`:** `specs/testing.md#stock-analyzer-local-api-checks`
 
 ### EODHD-Loader Rebuild
 
@@ -244,27 +58,25 @@ After committing eodhd-loader changes:
 
 ---
 
-## Azure SQL (5 DTU / 60 Workers)
+## Azure SQL
 
-1. Never run multiple sequential heavy queries — consolidate into one
-2. **Never scan Prices table (43M+ rows)** — use pre-computed coverage tables (`data.SecurityPriceCoverage`, `data.SecurityPriceCoverageByYear`) for gap analysis and summary aggregation. Coverage is updated incrementally by `BulkInsertAsync` and can be bootstrapped via `POST /api/admin/prices/backfill-coverage`.
-3. Compute counts in C#, not SQL
-4. Use `WITH (NOLOCK)` for read-only analytics
-5. Guard against re-entrancy (timer tick + slow query = cascading exhaustion)
-6. Always ask: "What if this runs concurrently with itself?"
-7. Coverage table updates are eventually consistent — failures log warnings and do not block price inserts
-8. **Future-date guard:** `BulkInsertAsync`, `CreateAsync`, and `ForwardFillHolidaysAsync` reject dates beyond `DateTime.UtcNow.Date`. Prevents bad data from entering the Prices table.
+- **Consolidated heavy queries, no scan of Prices, counts in C#, `NOLOCK` for read-only analytics, and re-entrancy guarded:** `specs/database.md#stock-analyzer-sql-budget`
+- The Prices table holds 43M+ rows. The coverage tables (`data.SecurityPriceCoverage`, `data.SecurityPriceCoverageByYear`) are updated incrementally by `BulkInsertAsync` and can be bootstrapped via `POST /api/admin/prices/backfill-coverage`.
+- Coverage table updates are eventually consistent — failures log warnings and do not block price inserts
+- **Future-date guard:** `BulkInsertAsync`, `CreateAsync`, and `ForwardFillHolidaysAsync` reject dates beyond `DateTime.UtcNow.Date`. Prevents bad data from entering the Prices table.
 
 ### Database Migrations
 
-EF Core only (never raw SQL). Apply locally after creating:
+- **EF Core only, applied locally with the command below and on startup in production; an index-attribution schema change also rebuilds `eodhd-loader`:** `specs/database.md#migrations`
+
+The local command:
 ```powershell
 cd src/StockAnalyzer.Api
 dotnet ef database update --project ../StockAnalyzer.Core/StockAnalyzer.Core.csproj --startup-project . --connection "Server=.\SQLEXPRESS;Database=StockAnalyzer;Trusted_Connection=True;TrustServerCertificate=True"
 ```
-Production applies on startup. Start local SQL Express: `net start MSSQL$SQLEXPRESS`
+Start local SQL Express: `net start MSSQL$SQLEXPRESS`
 
-**Cross-project entities:** Index attribution tables (`IndexDefinition`, `IndexConstituent`, `SecurityIdentifier`, `SecurityIdentifierHist`) and the `MicExchangeEntity` reference table (ISO 10383, ~2,817 rows) live in `StockAnalyzer.Core` but are populated by `eodhd-loader` or admin endpoints. `SecurityMasterEntity.MicCode` is a char(4) FK to `MicExchangeEntity`. Schema changes to these tables require migration in `StockAnalyzer.Core` and rebuild of `eodhd-loader`. MIC codes are backfilled via `POST /api/admin/securities/backfill-mic-codes` (EODHD exchange-symbol mapping).
+**Cross-project entities:** Index attribution tables (`IndexDefinition`, `IndexConstituent`, `SecurityIdentifier`, `SecurityIdentifierHist`) and the `MicExchangeEntity` reference table (ISO 10383, ~2,817 rows) live in `StockAnalyzer.Core` but are populated by `eodhd-loader` or admin endpoints. `SecurityMasterEntity.MicCode` is a char(4) FK to `MicExchangeEntity`. MIC codes are backfilled via `POST /api/admin/securities/backfill-mic-codes` (EODHD exchange-symbol mapping).
 
 **Coverage metadata tables:** `SecurityPriceCoverage` and `SecurityPriceCoverageByYear` live in `StockAnalyzer.Core` (`data` schema) and are populated by `SqlPriceRepository.BulkInsertAsync` (incremental) and the backfill endpoint (bootstrap). These replace direct Prices table scans in gap and refresh-summary endpoints.
 
@@ -272,19 +84,16 @@ Production applies on startup. Start local SQL Express: `net start MSSQL$SQLEXPR
 
 ## Infrastructure Hygiene
 
-- **Verify from source of truth** — check Azure App Service config, never guess resource names
-- **Check live Azure state** before recommending changes — Bicep files can be stale
+- **The live Azure state over the Bicep file, no guessed resource names, and periodic cleanup keeping the latest five registry tags:** `specs/deployment.md#azure`
 - **Azure CLI path:** `& 'C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd'`
-- **Periodic cleanup:** orphaned Azure SQL databases, old container registry tags (keep latest + 5), local orphaned files, storage blobs
 
 ### Endpoint Registry
 
-All connection strings and API keys resolve through `EndpointRegistry.Resolve("name")` backed by `endpoints.json` (repo root). Never read env vars directly for endpoint keys.
-
+- **Every connection string and API key resolves through `EndpointRegistry.Resolve("name")` over `endpoints.json`, never a direct env var read:** `specs/api-design.md#endpoint-registry`
 - **Dev**: Env vars (`WSL_SQL_CONNECTION` plus API keys `TWELVEDATA_API_KEY`, `FMP_API_KEY`, `FINNHUB_API_KEY`, `EODHD_API_KEY`, `MARKETAUX_API_TOKEN`). Note: `SA_DESIGN_CONNECTION` is design-time only (EF Core migrations) and is NOT resolved through the registry. `APPLICATIONINSIGHTS_CONNECTION_STRING` is auto-discovered by the App Insights SDK at startup (not resolved through EndpointRegistry, not listed in `endpoints.json` — the SDK gracefully no-ops when unset).
-- **Prod**: Azure Key Vault secrets (vault `kv-stk-{suffix}` — dynamically generated via Bicep, check `az keyvault list --resource-group rg-stock-analyzer` for actual name). Application Insights connection string injected by Bicep (`appi-stockanalyzer-prod`).
+- **Prod**: Azure Key Vault secrets (vault `kv-stockanalyzer-prod`, in resource group `rg-stockanalyzer-prod`). Application Insights connection string injected by Bicep (`appi-stockanalyzer-prod`).
 - **Resolution**: `EndpointRegistry.Resolve("database")`, `EndpointRegistry.Resolve("twelveData.apiKey")`, etc.
-- **Enforcement**: `endpoint_registry_guard.py` (claude-env hook) blocks commits with hardcoded connection strings or direct env var reads for endpoint keys
+- **Enforcement**: none today. claude-env ships `endpoint_registry_guard.py`, but no settings file wires it (checked 2026-09-26).
 
 ### WSL2 Claude Code Sandbox
 
@@ -329,7 +138,7 @@ Both fall back to Windows defaults (appsettings / localdb) when unset, so Window
 
 **GitHub Pages docs:** Served from https://psford.github.io/stock-analyzer/. App's /docs.html fetches from there.
 
-**Version:** When bumping in ROADMAP.md, also update footer in `src/StockAnalyzer.Api/wwwroot/index.html`.
+**Version bumps in ROADMAP.md, and the footer that follows them:** `specs/code.md#docs-move-with-the-code`
 
 **±5% Significant Move Markers:** Include: triangle markers, toggle checkbox, Wikipedia-style hover cards, cat/dog image toggle, news content.
 
