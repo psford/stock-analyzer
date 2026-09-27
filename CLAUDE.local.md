@@ -8,16 +8,19 @@
 
 Last verified: 2026-06-14
 
+A rule written as `specs/<file>.md#<section>` is held by that section of the spec corpus, in claude-harness's `plugins/psford-tickets/specs/`. Read the section before acting on the rule.
+
 ## Project Checkpoints (stock-analyzer-specific)
 
 The universal behavioral checkpoints, git-flow checkpoints, and the deploy gate come
 from the shared fragments above. These are the stock-analyzer-specific ones:
 
+- **SPECS, updated in the same commits as the code:** `specs/code.md#docs-move-with-the-code`. `spec_staleness_guard.py` reminds; it does not block.
+- **EF CORE MIGRATIONS, never raw SQL:** `specs/database.md#migrations`
+- **DTU EXHAUSTION, one heavy query at a time:** `specs/database.md#stock-analyzer-sql-budget`
+
 | Checkpoint | Rule | Enforcement |
 |------------|------|-------------|
-| **SPECS** | Update TECHNICAL_SPEC.md AS you code; stage with code commits. | Advisory — `spec_staleness_guard.py` injects a reminder, it does NOT block. (Previously mislabeled "BLOCKED" — the hook only exits 0.) |
-| **EF CORE MIGRATIONS** | DB schema changes use EF Core migrations, never raw SQL scripts. | **BLOCKED** |
-| **DTU EXHAUSTION** | Every Azure SQL query must consider DTU limits (5 DTU / 60 workers). No concurrent heavy queries. | Manual |
 | **EODHD-LOADER REBUILD** | After committing eodhd-loader changes: kill → rebuild → relaunch. Zero effect until rebuilt. | `eodhd_rebuild_guard.py` reminds |
 
 ---
@@ -33,27 +36,12 @@ from the shared fragments above. These are the stock-analyzer-specific ones:
 
 ### Production Deploy
 
-Pre-deploy checklist:
-1. Show Patrick the Bicep file (`infrastructure/azure/main.bicep`)
-2. TECHNICAL_SPEC.md + FUNCTIONAL_SPEC.md updated
-3. Docs updated in /docs folder
-4. Version history updated in specs
-5. Security scans passed (CI)
-6. User tested on localhost and approved
-
-Deploy: GitHub Actions → "Deploy to Azure Production" → type `deploy` → deploys to https://psfordtaurus.com
-Rollback: See `docs/RUNBOOK.md`
+- **The pre-deploy checklist, and Patrick's run of "Deploy to Azure Production":** `specs/deployment.md#stock-analyzer-deploys`
+- The workflow deploys to https://psfordtaurus.com. Rollback: see `docs/RUNBOOK.md`.
 
 ### Localhost API Testing
 
-1. Kill ALL dotnet/StockAnalyzer.Api processes and clear port 5000
-2. Build: `dotnet build --no-restore -c Release`
-3. Start API with redirected stdout/stderr (`dotnet run` spawns child process with different PID)
-4. Verify port 5000 listening (check ANY process, not just dotnet PID)
-5. Hit an actual endpoint to verify responding
-6. Run test suite: `python helpers/test_dtu_endpoints.py`
-
-Pitfalls: Use Python not `Invoke-WebRequest` for HTTP testing. Kill by process name not PID. Write complex PowerShell to `.ps1` files (bash strips `$variable`). Never tell user "start the API" — do it yourself.
+- **Kill by name, build, start with redirected output, check port 5000, hit a real endpoint, run `test_dtu_endpoints.py`:** `specs/testing.md#stock-analyzer-local-api-checks`
 
 ### EODHD-Loader Rebuild
 
@@ -65,27 +53,25 @@ After committing eodhd-loader changes:
 
 ---
 
-## Azure SQL (5 DTU / 60 Workers)
+## Azure SQL
 
-1. Never run multiple sequential heavy queries — consolidate into one
-2. **Never scan Prices table (43M+ rows)** — use pre-computed coverage tables (`data.SecurityPriceCoverage`, `data.SecurityPriceCoverageByYear`) for gap analysis and summary aggregation. Coverage is updated incrementally by `BulkInsertAsync` and can be bootstrapped via `POST /api/admin/prices/backfill-coverage`.
-3. Compute counts in C#, not SQL
-4. Use `WITH (NOLOCK)` for read-only analytics
-5. Guard against re-entrancy (timer tick + slow query = cascading exhaustion)
-6. Always ask: "What if this runs concurrently with itself?"
-7. Coverage table updates are eventually consistent — failures log warnings and do not block price inserts
-8. **Future-date guard:** `BulkInsertAsync`, `CreateAsync`, and `ForwardFillHolidaysAsync` reject dates beyond `DateTime.UtcNow.Date`. Prevents bad data from entering the Prices table.
+- **Consolidated heavy queries, no scan of Prices, counts in C#, `NOLOCK` for read-only analytics, and re-entrancy guarded:** `specs/database.md#stock-analyzer-sql-budget`
+- The Prices table holds 43M+ rows. The coverage tables (`data.SecurityPriceCoverage`, `data.SecurityPriceCoverageByYear`) are updated incrementally by `BulkInsertAsync` and can be bootstrapped via `POST /api/admin/prices/backfill-coverage`.
+- Coverage table updates are eventually consistent — failures log warnings and do not block price inserts
+- **Future-date guard:** `BulkInsertAsync`, `CreateAsync`, and `ForwardFillHolidaysAsync` reject dates beyond `DateTime.UtcNow.Date`. Prevents bad data from entering the Prices table.
 
 ### Database Migrations
 
-EF Core only (never raw SQL). Apply locally after creating:
+- **EF Core only, applied locally with the command below and on startup in production; an index-attribution schema change also rebuilds `eodhd-loader`:** `specs/database.md#migrations`
+
+The local command:
 ```powershell
 cd src/StockAnalyzer.Api
 dotnet ef database update --project ../StockAnalyzer.Core/StockAnalyzer.Core.csproj --startup-project . --connection "Server=.\SQLEXPRESS;Database=StockAnalyzer;Trusted_Connection=True;TrustServerCertificate=True"
 ```
-Production applies on startup. Start local SQL Express: `net start MSSQL$SQLEXPRESS`
+Start local SQL Express: `net start MSSQL$SQLEXPRESS`
 
-**Cross-project entities:** Index attribution tables (`IndexDefinition`, `IndexConstituent`, `SecurityIdentifier`, `SecurityIdentifierHist`) and the `MicExchangeEntity` reference table (ISO 10383, ~2,817 rows) live in `StockAnalyzer.Core` but are populated by `eodhd-loader` or admin endpoints. `SecurityMasterEntity.MicCode` is a char(4) FK to `MicExchangeEntity`. Schema changes to these tables require migration in `StockAnalyzer.Core` and rebuild of `eodhd-loader`. MIC codes are backfilled via `POST /api/admin/securities/backfill-mic-codes` (EODHD exchange-symbol mapping).
+**Cross-project entities:** Index attribution tables (`IndexDefinition`, `IndexConstituent`, `SecurityIdentifier`, `SecurityIdentifierHist`) and the `MicExchangeEntity` reference table (ISO 10383, ~2,817 rows) live in `StockAnalyzer.Core` but are populated by `eodhd-loader` or admin endpoints. `SecurityMasterEntity.MicCode` is a char(4) FK to `MicExchangeEntity`. MIC codes are backfilled via `POST /api/admin/securities/backfill-mic-codes` (EODHD exchange-symbol mapping).
 
 **Coverage metadata tables:** `SecurityPriceCoverage` and `SecurityPriceCoverageByYear` live in `StockAnalyzer.Core` (`data` schema) and are populated by `SqlPriceRepository.BulkInsertAsync` (incremental) and the backfill endpoint (bootstrap). These replace direct Prices table scans in gap and refresh-summary endpoints.
 
@@ -93,19 +79,16 @@ Production applies on startup. Start local SQL Express: `net start MSSQL$SQLEXPR
 
 ## Infrastructure Hygiene
 
-- **Verify from source of truth** — check Azure App Service config, never guess resource names
-- **Check live Azure state** before recommending changes — Bicep files can be stale
+- **The live Azure state over the Bicep file, no guessed resource names, and periodic cleanup keeping the latest five registry tags:** `specs/deployment.md#azure`
 - **Azure CLI path:** `& 'C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd'`
-- **Periodic cleanup:** orphaned Azure SQL databases, old container registry tags (keep latest + 5), local orphaned files, storage blobs
 
 ### Endpoint Registry
 
-All connection strings and API keys resolve through `EndpointRegistry.Resolve("name")` backed by `endpoints.json` (repo root). Never read env vars directly for endpoint keys.
-
+- **Every connection string and API key resolves through `EndpointRegistry.Resolve("name")` over `endpoints.json`, never a direct env var read:** `specs/api-design.md#endpoint-registry`
 - **Dev**: Env vars (`WSL_SQL_CONNECTION` plus API keys `TWELVEDATA_API_KEY`, `FMP_API_KEY`, `FINNHUB_API_KEY`, `EODHD_API_KEY`, `MARKETAUX_API_TOKEN`). Note: `SA_DESIGN_CONNECTION` is design-time only (EF Core migrations) and is NOT resolved through the registry. `APPLICATIONINSIGHTS_CONNECTION_STRING` is auto-discovered by the App Insights SDK at startup (not resolved through EndpointRegistry, not listed in `endpoints.json` — the SDK gracefully no-ops when unset).
-- **Prod**: Azure Key Vault secrets (vault `kv-stk-{suffix}` — dynamically generated via Bicep, check `az keyvault list --resource-group rg-stock-analyzer` for actual name). Application Insights connection string injected by Bicep (`appi-stockanalyzer-prod`).
+- **Prod**: Azure Key Vault secrets (vault `kv-stockanalyzer-prod`, in resource group `rg-stockanalyzer-prod`). Application Insights connection string injected by Bicep (`appi-stockanalyzer-prod`).
 - **Resolution**: `EndpointRegistry.Resolve("database")`, `EndpointRegistry.Resolve("twelveData.apiKey")`, etc.
-- **Enforcement**: `endpoint_registry_guard.py` (claude-env hook) blocks commits with hardcoded connection strings or direct env var reads for endpoint keys
+- **Enforcement**: none today. claude-env ships `endpoint_registry_guard.py`, but no settings file wires it (checked 2026-09-26).
 
 ### WSL2 Claude Code Sandbox
 
@@ -150,7 +133,7 @@ Both fall back to Windows defaults (appsettings / localdb) when unset, so Window
 
 **GitHub Pages docs:** Served from https://psford.github.io/stock-analyzer/. App's /docs.html fetches from there.
 
-**Version:** When bumping in ROADMAP.md, also update footer in `src/StockAnalyzer.Api/wwwroot/index.html`.
+**Version bumps in ROADMAP.md, and the footer that follows them:** `specs/code.md#docs-move-with-the-code`
 
 **±5% Significant Move Markers:** Include: triangle markers, toggle checkbox, Wikipedia-style hover cards, cat/dog image toggle, news content.
 
