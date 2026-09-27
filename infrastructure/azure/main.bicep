@@ -89,10 +89,6 @@ resource appService 'Microsoft.Web/sites@2023-01-01' = {
           value: 'Production'
         }
         {
-          name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-          value: appInsights.properties.ConnectionString
-        }
-        {
           name: 'Finnhub__ApiKey'
           value: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=FinnhubApiKey)'
         }
@@ -261,29 +257,6 @@ resource keyVaultDeployAccess 'Microsoft.Authorization/roleAssignments@2022-04-0
     principalType: 'ServicePrincipal'
   }
   dependsOn: [ kv ]
-}
-
-// Log Analytics workspace (required by App Insights)
-resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
-  name: 'log-stockanalyzer-prod'
-  location: location
-  properties: {
-    sku: {
-      name: 'PerGB2018'
-    }
-    retentionInDays: 30
-  }
-}
-
-// Application Insights
-resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
-  name: 'appi-stockanalyzer-prod'
-  location: location
-  kind: 'web'
-  properties: {
-    Application_Type: 'web'
-    WorkspaceResourceId: logAnalytics.id
-  }
 }
 
 // Outputs
