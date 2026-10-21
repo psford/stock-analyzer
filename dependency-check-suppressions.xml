@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Suppressions for the OWASP Dependency-Check run in .github/workflows/dotnet-ci.yml
+     (security-scan). Every entry says why, and has an `until` date: past it the
+     suppression lapses and the scan fails again, so it gets looked at again. -->
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+    <suppress until="2027-01-20Z">
+        <notes><![CDATA[
+braces 3.0.3, GHSA-vfj7-8cjw-p6xm (CVSS 7.5, published 2026-09-18): deeply nested
+brace patterns exhaust the stack and crash the Node.js process. No fixed version
+exists; every braces release through 3.0.3 is affected.
+
+Why it's accepted (2026-10-20):
+- braces is a dev-only build dependency (tailwindcss -> chokidar / micromatch ->
+  braces) of src/StockAnalyzer.Api/package.json, used only to build
+  wwwroot/css/styles.css from src/input.css.
+- It never reaches production. styles.css is committed, node_modules isn't, and the
+  deploy builds the image from a clean checkout with no npm install, so the
+  Tailwind step is skipped and the runtime image holds only the dotnet publish output.
+- The patterns it parses are the content globs in tailwind.config.js, which we write.
+  No outside input reaches it.
+
+Re-check by the until date: drop this entry once braces ships a fix (then
+`npm update braces` in src/StockAnalyzer.Api) or tailwindcss stops depending on it.
+        ]]></notes>
+        <packageUrl>pkg:npm/braces@3.0.3</packageUrl>
+        <vulnerabilityName>GHSA-vfj7-8cjw-p6xm</vulnerabilityName>
+    </suppress>
+</suppressions>

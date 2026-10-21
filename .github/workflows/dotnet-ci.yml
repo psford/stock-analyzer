@@ -153,6 +153,7 @@ jobs:
         args: >
           --failOnCVSS 7
           --enableRetired
+          --suppression /github/workspace/dependency-check-suppressions.xml
 
     - name: Upload Dependency Check Report
       uses: actions/upload-artifact@v6
