@@ -19,7 +19,7 @@ on:
 
 env:
   DOTNET_VERSION: '8.0.x'
-  NODE_VERSION: '20.x'
+  NODE_VERSION: '22.x'
   SOLUTION_PATH: 'StockAnalyzer.sln'
   FRONTEND_PATH: 'src/StockAnalyzer.Api/wwwroot'
 
