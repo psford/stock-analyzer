@@ -2109,7 +2109,7 @@ The project has two CI/CD systems configured:
 **Stages:**
 ```
 Frontend Tests:
-Checkout → Setup Node.js 20.x → npm install → Jest tests → Upload coverage
+Checkout → Setup Node.js 22.x → npm install → Jest tests → Upload coverage
 
 .NET Build:
 Checkout → Setup .NET 8.0 → Restore → Build (Release) → Test → Upload Artifacts
