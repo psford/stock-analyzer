@@ -1,0 +1,7 @@
+# Local env files hold API keys; they never go into the build context.
+**/.env
+**/.env.*
+
+# Local node_modules would trigger the csproj Tailwind step, and the sdk image has no node.
+# CI's fresh checkout has none, so excluding it makes local builds match CI.
+**/node_modules
