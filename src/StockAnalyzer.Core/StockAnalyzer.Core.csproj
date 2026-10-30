@@ -6,6 +6,13 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- ImageSharp 3.2+ fails Release builds without a Six Labors licence. CI passes it
+       from the SIXLABORS_LICENSE_KEY secret; locally, a gitignored sixlabors.lic beside
+       this file works too, and the Docker build mounts one there as a build secret. -->
+  <PropertyGroup Condition="'$(SixLaborsLicenseKey)' == ''">
+    <SixLaborsLicenseKey>$(SIXLABORS_LICENSE_KEY)</SixLaborsLicenseKey>
+  </PropertyGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="StockAnalyzer.Core.Tests" />
   </ItemGroup>
@@ -32,7 +39,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.2.0" />
     <PackageReference Include="VaderSharp2" Version="3.3.2.1" />
   </ItemGroup>
 

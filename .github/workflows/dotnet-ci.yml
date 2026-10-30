@@ -103,6 +103,9 @@ jobs:
 
     - name: Build
       run: dotnet build ${{ env.SOLUTION_PATH }} --configuration Release --no-restore
+      env:
+        # ImageSharp 3.2+ fails Release builds without a Six Labors licence
+        SIXLABORS_LICENSE_KEY: ${{ secrets.SIXLABORS_LICENSE_KEY }}
 
     - name: Run tests
       run: dotnet test ${{ env.SOLUTION_PATH }} --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx"
@@ -183,3 +186,6 @@ jobs:
 
     - name: Build
       run: dotnet build ${{ env.SOLUTION_PATH }} --configuration Release --no-restore
+      env:
+        # ImageSharp 3.2+ fails Release builds without a Six Labors licence
+        SIXLABORS_LICENSE_KEY: ${{ secrets.SIXLABORS_LICENSE_KEY }}

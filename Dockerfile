@@ -7,9 +7,14 @@ COPY src/StockAnalyzer.Api/StockAnalyzer.Api.csproj src/StockAnalyzer.Api/
 COPY src/StockAnalyzer.Core/StockAnalyzer.Core.csproj src/StockAnalyzer.Core/
 RUN dotnet restore src/StockAnalyzer.Api/StockAnalyzer.Api.csproj
 
-# Copy everything else and build
+# Copy everything else and build. ImageSharp 3.2+ fails Release builds without a
+# Six Labors licence, so pass it as a build secret:
+#   docker build --secret id=sixlabors_license,env=SIXLABORS_LICENSE_KEY .
+# It is mounted as sixlabors.lic beside the Core project for this step only and
+# never lands in an image layer (.dockerignore keeps any local copy out too).
 COPY . .
-RUN dotnet publish src/StockAnalyzer.Api/StockAnalyzer.Api.csproj -c Release -o /app/publish
+RUN --mount=type=secret,id=sixlabors_license,target=/src/src/StockAnalyzer.Core/sixlabors.lic \
+    dotnet publish src/StockAnalyzer.Api/StockAnalyzer.Api.csproj -c Release -o /app/publish
 
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime

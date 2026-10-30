@@ -5,3 +5,6 @@
 # Local node_modules would trigger the csproj Tailwind step, and the sdk image has no node.
 # CI's fresh checkout has none, so excluding it makes local builds match CI.
 **/node_modules
+
+# Six Labors licence keys are private; the Docker build gets one as a build secret.
+**/sixlabors.lic
