@@ -167,7 +167,7 @@ This specification covers:
 | News Data | Finnhub REST API | Custom HttpClient |
 | News Data (Alt) | Marketaux REST API | 100 calls/day free |
 | ML Runtime | Microsoft.ML.OnnxRuntime | NuGet 1.17.0 |
-| Image Processing | SixLabors.ImageSharp | NuGet 3.1.7 |
+| Image Processing | SixLabors.ImageSharp | NuGet 3.2.0 (Release builds need a licence key, see CI/CD Pipeline) |
 | Object Detection | YOLOv8n ONNX | ~12MB model |
 | Charting | Plotly.js | 2.27.0 (CDN) |
 | Tile Layout | GridStack.js | 12.4.2 (local) |
@@ -3058,6 +3058,13 @@ The production database (`stockanalyzer-db`) is **NOT created or managed by Bice
 |--------|---------|
 | `AZURE_CREDENTIALS` | Service principal JSON for Azure CLI |
 | `ACR_PASSWORD` | Azure Container Registry admin password |
+| `SIXLABORS_LICENSE_KEY` | Six Labors community licence for ImageSharp (also used by `.NET CI`) |
+
+**ImageSharp licence:** ImageSharp 3.2+ fails Release builds without a Six Labors licence key (Debug builds only warn). The key is an unrestricted community key, so it stays private:
+- CI and the deploy pass `SIXLABORS_LICENSE_KEY` to the Release `dotnet build`, which `StockAnalyzer.Core.csproj` maps to `SixLaborsLicenseKey`.
+- The Docker build takes it as a build secret (`docker build --secret id=sixlabors_license,env=SIXLABORS_LICENSE_KEY .`), mounted as `sixlabors.lic` for the publish step only.
+- Local Release builds (including eodhd-loader on Windows): save the licence string as `src/StockAnalyzer.Core/sixlabors.lic` (gitignored and dockerignored), or set `SIXLABORS_LICENSE_KEY`.
+- The key expires 2028-01-28. Renew at https://licensing.sixlabors.com/ in the final 90 days, then update the secret and local copies.
 
 **Manual App Service Restart:**
 ```bash

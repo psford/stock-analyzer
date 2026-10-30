@@ -164,6 +164,9 @@ jobs:
 
       - name: Build
         run: dotnet build StockAnalyzer.sln --configuration Release --no-restore
+        env:
+          # ImageSharp 3.2+ fails Release builds without a Six Labors licence
+          SIXLABORS_LICENSE_KEY: ${{ secrets.SIXLABORS_LICENSE_KEY }}
 
       - name: Test
         run: dotnet test StockAnalyzer.sln --configuration Release --no-build --verbosity normal
@@ -185,9 +188,11 @@ jobs:
         run: az acr login --name ${{ env.ACR_NAME }}
 
       - name: Build and push to ACR
+        env:
+          SIXLABORS_LICENSE_KEY: ${{ secrets.SIXLABORS_LICENSE_KEY }}
         run: |
           cd .
-          docker build -t ${{ env.ACR_LOGIN_SERVER }}/stockanalyzer:latest .
+          docker build --secret id=sixlabors_license,env=SIXLABORS_LICENSE_KEY -t ${{ env.ACR_LOGIN_SERVER }}/stockanalyzer:latest .
           docker tag ${{ env.ACR_LOGIN_SERVER }}/stockanalyzer:latest ${{ env.ACR_LOGIN_SERVER }}/stockanalyzer:prod-${{ github.run_number }}
           docker push ${{ env.ACR_LOGIN_SERVER }}/stockanalyzer:latest
           docker push ${{ env.ACR_LOGIN_SERVER }}/stockanalyzer:prod-${{ github.run_number }}
