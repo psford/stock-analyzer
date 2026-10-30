@@ -156,6 +156,7 @@ The repository includes automated deployment via `.github/workflows/azure-deploy
 
    Go to repository Settings → Secrets and variables → Actions:
    - `AZURE_CREDENTIALS`: Output from step 1 (JSON)
+   - `SIXLABORS_LICENSE_KEY`: Six Labors community licence string for ImageSharp Release builds (from https://licensing.sixlabors.com/)
 
 3. **Trigger Deployment:**
 

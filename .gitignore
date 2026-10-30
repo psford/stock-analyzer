@@ -34,6 +34,11 @@ node_modules/
 # Development secrets (use user-secrets or env vars instead)
 appsettings.Development.json
 
+# Local env files hold API keys; a .env.example template stays tracked
+.env
+.env.*
+!.env.example
+
 # Generated client-side symbol data (created at runtime)
 src/StockAnalyzer.Api/wwwroot/data/
 
@@ -42,3 +47,8 @@ src/StockAnalyzer.Api/MLModels/finbert-onnx/
 
 # Database exports (too large for git, store in Azure Blob or local backup)
 *.bacpac
+
+# Six Labors licence key for ImageSharp: private. CI and Docker use the
+# SIXLABORS_LICENSE_KEY secret; Windows marks downloaded copies with a Zone.Identifier stub.
+sixlabors.lic
+*:Zone.Identifier

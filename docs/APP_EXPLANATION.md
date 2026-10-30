@@ -392,6 +392,7 @@ Production secrets are stored in GitHub Secrets, never in code:
 - `AZURE_SQL_CONNECTION` - Database connection string
 - `FINNHUB_API_KEY` - News API authentication
 - `ACR_PASSWORD` - Container registry access
+- `SIXLABORS_LICENSE_KEY` - ImageSharp licence for Release builds
 
 The `.secrets.baseline` file tracks known false positives in secret detection, preventing alert fatigue while maintaining vigilance.
 
