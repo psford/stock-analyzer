@@ -23,7 +23,7 @@ on:
 
 env:
   AZURE_WEBAPP_NAME: app-stockanalyzer-prod
-  DOTNET_VERSION: '8.0.x'
+  DOTNET_VERSION: '10.0.x'
   ACR_NAME: acrstockanalyzerer34ug
   ACR_LOGIN_SERVER: acrstockanalyzerer34ug.azurecr.io
 
