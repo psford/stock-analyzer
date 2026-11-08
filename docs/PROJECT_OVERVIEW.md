@@ -82,8 +82,8 @@ The application provides interactive stock charts, technical indicators, news co
 
 ### Backend Stack
 
-- **Framework:** ASP.NET Core 8.0 Minimal APIs
-- **Data Access:** Entity Framework Core 8.0 with Azure SQL
+- **Framework:** ASP.NET Core 10.0 Minimal APIs
+- **Data Access:** Entity Framework Core 10.0 with Azure SQL
 - **External APIs:**
   - Yahoo Finance (via OoplesFinance.YahooFinanceAPI)
   - Finnhub (company news, profiles)
@@ -312,9 +312,9 @@ This project was built using AI-assisted development with Claude Code (Anthropic
 
 ### Technologies Used
 
-- .NET 8.0, C# 12
+- .NET 10.0, C# 14
 - ASP.NET Core Minimal APIs
-- Entity Framework Core 8.0
+- Entity Framework Core 10.0
 - Tailwind CSS, Plotly.js
 - Azure App Service, SQL Database, Key Vault
 - GitHub Actions, CodeQL

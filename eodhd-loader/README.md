@@ -34,7 +34,7 @@ A standalone Windows WPF application for managing stock index constituents and e
 
 ## Prerequisites
 
-1. **.NET 8.0 SDK** - Required to build and run the application
+1. **.NET 10.0 SDK** - Required to build and run the application
 2. **Stock Analyzer API** - Running locally (http://localhost:5000) or deployed to production (https://psfordtaurus.com)
 3. **SQL Server Express** - Local database at `.\SQLEXPRESS` (for local testing)
 4. **Azure SQL Database** - Production database (for production backfills)
@@ -86,7 +86,7 @@ dotnet run
 
 Or after building, run the executable directly:
 ```powershell
-.\src\EodhdLoader\bin\Debug\net8.0-windows\EodhdLoader.exe
+.\src\EodhdLoader\bin\Debug\net10.0-windows10.0.19041\EodhdLoader.exe
 ```
 
 ## Usage
