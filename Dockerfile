@@ -1,5 +1,5 @@
 # Build stage
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Copy csproj files and restore
@@ -17,13 +17,13 @@ RUN --mount=type=secret,id=sixlabors_license,target=/src/src/StockAnalyzer.Core/
     dotnet publish src/StockAnalyzer.Api/StockAnalyzer.Api.csproj -c Release -o /app/publish
 
 # Runtime stage
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 # eMudhra intermediate CA keys turned out to be recoverable (2026-10-20,
-# https://emudhra.we-have-a-problem.com/). Debian 12's fix is ca-certificates
-# 20250419~deb12u2 (bookworm-security); the aspnet:8.0 image of 2026-10-13 still
-# has deb12u1, and .NET checks outbound TLS against this store. Upgrade it here;
-# once Microsoft republishes the image this is a no-op.
+# https://emudhra.we-have-a-problem.com/), and .NET checks outbound TLS against
+# this store. Images built before the distros shipped the fix carry the old
+# ca-certificates, so upgrade it here; on a current image this is a no-op.
+# (aspnet:10.0 is Ubuntu 24.04; aspnet:8.0 was Debian 12.)
 RUN apt-get update \
  && apt-get install -y --no-install-recommends --only-upgrade ca-certificates \
  && rm -rf /var/lib/apt/lists/*

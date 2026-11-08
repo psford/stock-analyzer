@@ -624,7 +624,6 @@ try
         return Results.Ok(enrichedInfo);
     })
     .WithName("GetStockInfo")
-    .WithOpenApi()
     .Produces<StockAnalyzer.Core.Models.StockInfo>(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status404NotFound);
 
@@ -654,7 +653,6 @@ try
             : Results.NotFound(new { error = "Historical data not found", symbol = ticker });
     })
     .WithName("GetStockHistory")
-    .WithOpenApi()
     .Produces<StockAnalyzer.Core.Models.HistoricalDataResult>(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status404NotFound);
 
@@ -704,7 +702,6 @@ try
         });
     })
     .WithName("GetStockNews")
-    .WithOpenApi()
     .Produces<StockAnalyzer.Core.Models.NewsResult>(StatusCodes.Status200OK);
 
     // GET /api/stock/{ticker}/significant - Get significant price moves (no news - use /news/move for lazy loading)
@@ -746,7 +743,6 @@ try
         return Results.Ok(moves);
     })
     .WithName("GetSignificantMoves")
-    .WithOpenApi()
     .Produces<StockAnalyzer.Core.Models.SignificantMovesResult>(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status404NotFound);
 
@@ -791,7 +787,6 @@ try
         });
     })
     .WithName("GetMoveNews")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest);
 
@@ -829,7 +824,6 @@ try
         });
     })
     .WithName("GetStockAnalysis")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status404NotFound);
 
@@ -889,7 +883,6 @@ try
         });
     })
     .WithName("GetChartData")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status404NotFound);
 
@@ -922,7 +915,6 @@ try
         });
     })
     .WithName("GetReturns")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status404NotFound);
 
@@ -950,7 +942,6 @@ try
         });
     })
     .WithName("SearchTickers")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest);
 
@@ -984,7 +975,6 @@ try
         return Results.Ok(results);
     })
     .WithName("SearchIndices")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK);
 
     // GET /api/trending - Get trending stocks
@@ -998,7 +988,6 @@ try
         });
     })
     .WithName("GetTrendingStocks")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK);
 
     // Image API endpoints
@@ -1017,7 +1006,6 @@ try
             : Results.NotFound(new { error = "No cat images available. Cache may be warming up." });
     })
     .WithName("GetCatImage")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK, contentType: "image/jpeg")
     .Produces(StatusCodes.Status404NotFound);
 
@@ -1035,7 +1023,6 @@ try
             : Results.NotFound(new { error = "No dog images available. Cache may be warming up." });
     })
     .WithName("GetDogImage")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK, contentType: "image/jpeg")
     .Produces(StatusCodes.Status404NotFound);
 
@@ -1052,7 +1039,6 @@ try
         });
     })
     .WithName("GetImageCacheStatus")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK);
 
     // Admin endpoints for symbol database management
@@ -1075,7 +1061,6 @@ try
         }
     })
     .WithName("RefreshSymbols")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status500InternalServerError);
@@ -1103,7 +1088,6 @@ try
         });
     })
     .WithName("GetSymbolStatus")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK);
 
     // GET /api/admin/symbols/export - Export all symbols for client-side search (pipe-delimited)
@@ -1166,7 +1150,6 @@ try
         });
     })
     .WithName("GetPriceStatus")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK);
 
     // GET /api/admin/prices/test-eodhd - Test EODHD API connectivity (debug endpoint)
@@ -1225,8 +1208,7 @@ try
             return Results.Ok(new { error = ex.Message, stackTrace = ex.StackTrace });
         }
     })
-    .WithName("TestEodhd")
-    .WithOpenApi();
+    .WithName("TestEodhd");
 
     // POST /api/admin/prices/sync-securities - Sync SecurityMaster from Symbols table
     app.MapPost("/api/admin/prices/sync-securities", async (PriceRefreshService? refreshService) =>
@@ -1246,7 +1228,6 @@ try
         }
     })
     .WithName("SyncSecurities")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status500InternalServerError);
@@ -1284,7 +1265,6 @@ try
         }
     })
     .WithName("SyncEodhd")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status500InternalServerError);
@@ -1324,7 +1304,6 @@ try
         }
     })
     .WithName("RefreshPricesForDate")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status500InternalServerError);
@@ -1389,7 +1368,6 @@ try
         }
     })
     .WithName("BulkLoadPrices")
-    .WithOpenApi()
     .Produces(StatusCodes.Status202Accepted)
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status500InternalServerError);
@@ -1420,7 +1398,6 @@ try
         });
     })
     .WithName("GetCoverageDates")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest);
 
@@ -1473,7 +1450,6 @@ try
         }
     })
     .WithName("LoadTickerPrices")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status500InternalServerError);
@@ -1528,7 +1504,6 @@ try
         }
     })
     .WithName("BackfillTickerPrices")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status500InternalServerError);
@@ -1559,7 +1534,6 @@ try
         }
     })
     .WithName("BackfillGaps")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status500InternalServerError);
 
@@ -1696,7 +1670,6 @@ SELECT @@ROWCOUNT";
         }
     })
     .WithName("BackfillPriceCoverage")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status409Conflict)
@@ -1746,7 +1719,6 @@ SELECT @@ROWCOUNT";
         }
     })
     .WithName("ExportSecurities")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status500InternalServerError);
@@ -1828,7 +1800,6 @@ SELECT @@ROWCOUNT";
         }
     })
     .WithName("ExportPrices")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status500InternalServerError);
@@ -1888,7 +1859,6 @@ SELECT @@ROWCOUNT";
         }
     })
     .WithName("PriceSummary")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status500InternalServerError);
@@ -1980,7 +1950,6 @@ SELECT @@ROWCOUNT";
         }
     })
     .WithName("SeedTrackedSecurities")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status500InternalServerError);
@@ -2152,7 +2121,6 @@ SELECT @@ROWCOUNT";
         }
     })
     .WithName("ResetTrackedSecurities")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status500InternalServerError);
@@ -2265,7 +2233,6 @@ SELECT @@ROWCOUNT";
         }
     })
     .WithName("PriceMonitor")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status500InternalServerError);
@@ -2436,7 +2403,6 @@ SELECT @@ROWCOUNT";
         }
     })
     .WithName("PriceGaps")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status500InternalServerError);
@@ -2571,7 +2537,6 @@ SELECT @@ROWCOUNT";
         }
     })
     .WithName("SecurityGaps")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status404NotFound)
     .Produces(StatusCodes.Status500InternalServerError);
@@ -2625,7 +2590,6 @@ SELECT @@ROWCOUNT";
         }
     })
     .WithName("MarkEodhdUnavailable")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status404NotFound)
     .Produces(StatusCodes.Status500InternalServerError);
@@ -2680,7 +2644,6 @@ SELECT @@ROWCOUNT";
         }
     })
     .WithName("MarkEodhdComplete")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status404NotFound)
     .Produces(StatusCodes.Status500InternalServerError);
@@ -2811,7 +2774,6 @@ SELECT @@ROWCOUNT";
         }
     })
     .WithName("BulkMarkEodhdComplete")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status500InternalServerError);
 
@@ -2907,7 +2869,6 @@ SELECT @@ROWCOUNT";
         }
     })
     .WithName("ResetUnavailableSecurities")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status500InternalServerError);
 
@@ -3136,7 +3097,6 @@ SELECT @@ROWCOUNT";
         }
     })
     .WithName("CalculateImportanceScores")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status500InternalServerError);
@@ -3285,7 +3245,6 @@ SELECT @@ROWCOUNT";
         }
     })
     .WithName("BackfillMicCodes")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status409Conflict)
@@ -3400,7 +3359,6 @@ SELECT @@ROWCOUNT";
         }
     })
     .WithName("PromoteUntrackedSecurities")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status500InternalServerError);
@@ -3601,7 +3559,6 @@ SELECT @@ROWCOUNT";
         }
     })
     .WithName("GetDashboardStats")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK);
 
     // GET /api/admin/dashboard/heatmap - Bivariate heatmap data (Year x ImportanceScore)
@@ -3672,7 +3629,6 @@ SELECT @@ROWCOUNT";
         }
     })
     .WithName("GetDashboardHeatmap")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK);
 
     // POST /api/admin/dashboard/refresh-summary - Refresh the CoverageSummary pre-aggregation table
@@ -3766,7 +3722,6 @@ SELECT @@ROWCOUNT";
         }
     })
     .WithName("RefreshDashboardSummary")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK);
 
     // GET /api/admin/prices/holidays/analyze - Analyze holidays missing price data
@@ -3810,7 +3765,6 @@ SELECT @@ROWCOUNT";
         }
     })
     .WithName("AnalyzeHolidays")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status500InternalServerError);
@@ -3855,7 +3809,6 @@ SELECT @@ROWCOUNT";
         }
     })
     .WithName("ForwardFillHolidays")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status500InternalServerError);
@@ -3965,7 +3918,6 @@ SELECT @@ROWCOUNT";
         }
     })
     .WithName("PopulateUsBusinessCalendar")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status500InternalServerError);
 
@@ -3996,7 +3948,6 @@ SELECT @@ROWCOUNT";
         });
     })
     .WithName("GetUsBusinessCalendar")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK);
 
     // Health check endpoints
@@ -4052,7 +4003,6 @@ SELECT @@ROWCOUNT";
         });
     })
     .WithName("GetVersion")
-    .WithOpenApi()
     .Produces(StatusCodes.Status200OK);
 
     // Watchlist API endpoints
@@ -4064,7 +4014,6 @@ SELECT @@ROWCOUNT";
         return Results.Ok(watchlists);
     })
     .WithName("GetWatchlists")
-    .WithOpenApi()
     .Produces<List<StockAnalyzer.Core.Models.Watchlist>>(StatusCodes.Status200OK);
 
     // POST /api/watchlists - Create a new watchlist
@@ -4077,7 +4026,6 @@ SELECT @@ROWCOUNT";
         return Results.Created($"/api/watchlists/{watchlist.Id}", watchlist);
     })
     .WithName("CreateWatchlist")
-    .WithOpenApi()
     .Produces<StockAnalyzer.Core.Models.Watchlist>(StatusCodes.Status201Created)
     .Produces(StatusCodes.Status400BadRequest);
 
@@ -4090,7 +4038,6 @@ SELECT @@ROWCOUNT";
             : Results.NotFound(new { error = "Watchlist not found", id });
     })
     .WithName("GetWatchlist")
-    .WithOpenApi()
     .Produces<StockAnalyzer.Core.Models.Watchlist>(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status404NotFound);
 
@@ -4106,7 +4053,6 @@ SELECT @@ROWCOUNT";
             : Results.NotFound(new { error = "Watchlist not found", id });
     })
     .WithName("UpdateWatchlist")
-    .WithOpenApi()
     .Produces<StockAnalyzer.Core.Models.Watchlist>(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status404NotFound);
@@ -4120,7 +4066,6 @@ SELECT @@ROWCOUNT";
             : Results.NotFound(new { error = "Watchlist not found", id });
     })
     .WithName("DeleteWatchlist")
-    .WithOpenApi()
     .Produces(StatusCodes.Status204NoContent)
     .Produces(StatusCodes.Status404NotFound);
 
@@ -4136,7 +4081,6 @@ SELECT @@ROWCOUNT";
             : Results.NotFound(new { error = "Watchlist not found", id });
     })
     .WithName("AddTickerToWatchlist")
-    .WithOpenApi()
     .Produces<StockAnalyzer.Core.Models.Watchlist>(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status404NotFound);
@@ -4150,7 +4094,6 @@ SELECT @@ROWCOUNT";
             : Results.NotFound(new { error = "Watchlist not found", id });
     })
     .WithName("RemoveTickerFromWatchlist")
-    .WithOpenApi()
     .Produces<StockAnalyzer.Core.Models.Watchlist>(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status404NotFound);
 
@@ -4163,7 +4106,6 @@ SELECT @@ROWCOUNT";
             : Results.NotFound(new { error = "Watchlist not found", id });
     })
     .WithName("GetWatchlistQuotes")
-    .WithOpenApi()
     .Produces<WatchlistQuotes>(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status404NotFound);
 
@@ -4192,7 +4134,6 @@ SELECT @@ROWCOUNT";
         }
     })
     .WithName("UpdateWatchlistHoldings")
-    .WithOpenApi()
     .Produces<StockAnalyzer.Core.Models.Watchlist>(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status404NotFound);
@@ -4214,7 +4155,6 @@ SELECT @@ROWCOUNT";
             : Results.NotFound(new { error = "Watchlist not found or no data available", id });
     })
     .WithName("GetCombinedPortfolio")
-    .WithOpenApi()
     .Produces<CombinedPortfolioResult>(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status404NotFound);
 
@@ -4225,7 +4165,6 @@ SELECT @@ROWCOUNT";
         return Results.Ok(result);
     })
     .WithName("GetMarketNews")
-    .WithOpenApi()
     .Produces<NewsResult>(StatusCodes.Status200OK);
 
     // GET /api/stock/{ticker}/news/aggregated - Get aggregated news from multiple sources with relevance scoring
@@ -4245,7 +4184,6 @@ SELECT @@ROWCOUNT";
         return Results.Ok(result);
     })
     .WithName("GetAggregatedNews")
-    .WithOpenApi()
     .Produces<AggregatedNewsResult>(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest);
 
@@ -4256,7 +4194,6 @@ SELECT @@ROWCOUNT";
         return Results.Ok(result);
     })
     .WithName("GetAggregatedMarketNews")
-    .WithOpenApi()
     .Produces<AggregatedNewsResult>(StatusCodes.Status200OK);
 
     // Add request logging
