@@ -13,7 +13,7 @@
 
 The Stock Analyzer Dashboard is a web-based application that provides interactive stock market analysis, visualization, and news integration. It enables users to research equity securities through charts, financial metrics, and news correlation for significant price movements.
 
-This document covers the **C#/.NET 8 implementation** with a custom HTML/CSS/JavaScript frontend using Tailwind CSS and Plotly.js.
+This document covers the **C#/.NET 10 implementation** with a custom HTML/CSS/JavaScript frontend using Tailwind CSS and Plotly.js.
 
 ### 1.2 Scope
 
@@ -1991,7 +1991,7 @@ public AnalysisService(NewsService? newsService = null)
 
 ### 9.1 Prerequisites
 
-- .NET 8.0 SDK
+- .NET 10.0 SDK
 - Finnhub API key (free tier: https://finnhub.io/)
 
 ### 9.2 Installation Steps
@@ -2112,7 +2112,7 @@ Frontend Tests:
 Checkout → Setup Node.js 22.x → npm install → Jest tests → Upload coverage
 
 .NET Build:
-Checkout → Setup .NET 8.0 → Restore → Build (Release) → Test → Upload Artifacts
+Checkout → Setup .NET 10.0 → Restore → Build (Release) → Test → Upload Artifacts
 ```
 
 #### Jenkins (Local Docker)
@@ -2932,7 +2932,7 @@ Maintains the historical price database with automatic daily updates.
 
 Location: `eodhd-loader/src/EodhdLoader/`
 
-WPF desktop application (.NET 8, `net8.0-windows10.0.19041`) for managing price data loading. Connects to the Stock Analyzer API.
+WPF desktop application (.NET 10, `net10.0-windows10.0.19041`) for managing price data loading. Connects to the Stock Analyzer API.
 
 | Tab | View | ViewModel | Purpose |
 |-----|------|-----------|---------|
@@ -3243,7 +3243,7 @@ private static decimal? TryGetDecimal(object? value)
 |-------|-------|----------|
 | `Port 5000 already in use` | Another process using port | Kill process or change port in launchSettings.json |
 | `Unable to find package` | NuGet restore needed | Run `dotnet restore` |
-| Build errors | SDK version mismatch | Ensure .NET 8.0 SDK installed |
+| Build errors | SDK version mismatch | Ensure .NET 10.0 SDK installed |
 
 ### 11.2 No Data Displayed
 
