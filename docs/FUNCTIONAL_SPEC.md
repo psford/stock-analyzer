@@ -14,7 +14,7 @@
 
 The Stock Analyzer Dashboard is a web-based tool that allows users to research publicly traded stocks through interactive charts, company information, and news analysis. It helps investors understand price movements by correlating significant market events with relevant news stories.
 
-This document covers the **C#/.NET 8 implementation** with a custom HTML/CSS/JavaScript frontend.
+This document covers the **C#/.NET 10 implementation** with a custom HTML/CSS/JavaScript frontend.
 
 ### 1.2 Business Objectives
 

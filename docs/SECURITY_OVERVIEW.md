@@ -339,7 +339,7 @@ For security concerns, contact the repository owner through GitHub.
 
 | Tool | Version | License |
 |------|---------|---------|
-| .NET SDK | 8.0.x | MIT |
+| .NET SDK | 10.0.x | MIT |
 | CodeQL | v4 | MIT |
 | SecurityCodeScan | 5.x | LGPL |
 | OWASP Dependency Check | Latest | Apache 2.0 |

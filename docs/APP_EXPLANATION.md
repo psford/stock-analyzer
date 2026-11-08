@@ -95,10 +95,10 @@ Security identifiers are particularly useful for professional investors who need
 
 ### Why .NET?
 
-Stock Analyzer began as a Python/Streamlit prototype, then migrated to C#/.NET 8. The migration decision was driven by several factors:
+Stock Analyzer began as a Python/Streamlit prototype, then migrated to C#/.NET 8 (it has since moved to .NET 10). The migration decision was driven by several factors:
 
 1. **Type Safety** - C#'s static typing catches entire categories of bugs at compile time
-2. **Performance** - .NET 8 offers excellent throughput for web APIs
+2. **Performance** - .NET offers excellent throughput for web APIs
 3. **Ecosystem** - Mature libraries for finance, ML, and enterprise deployment
 4. **Deployment Flexibility** - Easy containerization and cloud deployment
 5. **Future-Proofing** - .NET's active development and long-term support
@@ -238,7 +238,7 @@ User ─────────────────────────
                                    │   Instance      │
                                    │                 │
                                    │  Docker Image   │
-                                   │  (.NET 8 API)   │
+                                   │  (.NET 10 API)  │
                                    └────────┬────────┘
                                             │
                                             ▼
