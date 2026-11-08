@@ -1,6 +1,6 @@
 # Stock Analyzer
 
-Source for [psfordtaurus.com](https://psfordtaurus.com) — an interactive web app for equity research and portfolio analysis, built on .NET 8 and Azure.
+Source for [psfordtaurus.com](https://psfordtaurus.com) — an interactive web app for equity research and portfolio analysis, built on .NET 10 and Azure.
 
 Pull up a ticker to get candlestick or line charts across ten time ranges, overlay technical indicators, compare normalized performance against benchmarks, and read deduplicated news from multiple sources. Watchlists and portfolios stay in your browser — nothing about you is stored server-side.
 
@@ -21,8 +21,8 @@ It's a personal project, not an open-source one, but the code is here to read. T
 
 | Layer | Choice |
 |-------|--------|
-| Backend | .NET 8.0 (LTS), ASP.NET Core minimal APIs, C# 12 |
-| Data access | Entity Framework Core 8 on SQL Server |
+| Backend | .NET 10.0 (LTS), ASP.NET Core minimal APIs, C# 14 |
+| Data access | Entity Framework Core 10 on SQL Server |
 | Frontend | Plain HTML/CSS/JS — no SPA framework |
 | Styling | Tailwind CSS 3.4, compiled locally |
 | Charting | Plotly.js, GridStack.js |
